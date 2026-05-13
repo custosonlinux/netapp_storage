@@ -273,7 +273,7 @@ def _prov_ontap_resources():
                 "svm":  (v.get("svm") or {}).get("name", ""),
             })
     except Exception as exc:
-        log.warning(f"[netapp_ontap] prov ontap-resources volumes: {exc}")
+        log.warning(f"[netapp_storage] prov ontap-resources volumes: {exc}")
 
     luns = []
     try:
@@ -286,7 +286,7 @@ def _prov_ontap_resources():
                 "serial":      lun.get("serial_number", ""),
             })
     except Exception as exc:
-        log.warning(f"[netapp_ontap] prov ontap-resources luns: {exc}")
+        log.warning(f"[netapp_storage] prov ontap-resources luns: {exc}")
 
     igroups = []
     try:
@@ -299,7 +299,7 @@ def _prov_ontap_resources():
                 "initiators": [i.get("name", "") for i in (ig.get("initiators") or [])],
             })
     except Exception as exc:
-        log.warning(f"[netapp_ontap] prov ontap-resources igroups: {exc}")
+        log.warning(f"[netapp_storage] prov ontap-resources igroups: {exc}")
 
     aggregates = []
     try:
@@ -311,7 +311,7 @@ def _prov_ontap_resources():
                 "node":            ag.get("node", ""),
             })
     except Exception as exc:
-        log.warning(f"[netapp_ontap] prov ontap-resources aggregates: {exc}")
+        log.warning(f"[netapp_storage] prov ontap-resources aggregates: {exc}")
 
     return {"volumes": volumes, "luns": luns, "igroups": igroups, "aggregates": aggregates}
 
@@ -442,7 +442,7 @@ def _run_provision(job_id, ds_id, params, username):
             _set_ds_status(db, ds_id, "error", f"Protocol not implemented: {protocol}")
             _fail_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] provision job {job_id}: {exc}")
+        log.error(f"[netapp_storage] provision job {job_id}: {exc}")
         jlog.log(f"ERROR: {exc}")
         _set_ds_status(db, ds_id, "error", str(exc))
         _fail_job(db, job_id)
@@ -646,8 +646,8 @@ def _provision_iscsi(ds_id, params, db, jlog):
     vg_q  = shlex.quote(vg_name)
     sid_q = shlex.quote(pve_storage_id)
     lvm_pool_name_final = params.get("lvm_pool_name") or (
-        db.query_one("SELECT lvm_pool_name FROM netapp_provisioned_datastores WHERE id=?",
-                     (ds_id,)) or {}).get("lvm_pool_name", "") or "data"
+        dict(db.query_one("SELECT lvm_pool_name FROM netapp_provisioned_datastores WHERE id=?",
+                          (ds_id,)) or {})).get("lvm_pool_name", "") or "data"
     if lvm_type == "thin":
         pvesm_cmd = (f"pvesm add lvmthin {sid_q} --vgname {vg_q}"
                      f" --thinpool {shlex.quote(lvm_pool_name_final)}"
@@ -677,8 +677,8 @@ def _provision_iscsi(ds_id, params, db, jlog):
 
     # ── Register volume_mapping for each host (enables Snapshots tab) ──────────
     lvm_pool_name = params.get("lvm_pool_name") or (
-        db.query_one("SELECT lvm_pool_name FROM netapp_provisioned_datastores WHERE id=?",
-                     (ds_id,)) or {}).get("lvm_pool_name", "")
+        dict(db.query_one("SELECT lvm_pool_name FROM netapp_provisioned_datastores WHERE id=?",
+                          (ds_id,)) or {})).get("lvm_pool_name", "")
     now = _now()
     for hid in ordered_hosts:
         mid = str(_uuid.uuid4())
@@ -722,7 +722,7 @@ def _run_resize(job_id, ds_id, new_size_bytes, username):
         jlog.log("Resize not yet implemented.")
         _fail_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] resize job {job_id}: {exc}")
+        log.error(f"[netapp_storage] resize job {job_id}: {exc}")
         jlog.log(f"ERROR: {exc}")
         _fail_job(db, job_id)
 
@@ -746,7 +746,7 @@ def _run_add_host(job_id, ds_id, host_id, username):
         _finish_job(db, job_id)
         jlog.log("Host added successfully.")
     except Exception as exc:
-        log.error(f"[netapp_ontap] add_host job {job_id}: {exc}")
+        log.error(f"[netapp_storage] add_host job {job_id}: {exc}")
         jlog.log(f"ERROR: {exc}")
         _fail_job(db, job_id)
 
@@ -919,7 +919,7 @@ def _run_remove_host(job_id, ds_id, host_id, username):
         jlog.log("Remove-host not yet implemented.")
         _fail_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] remove_host job {job_id}: {exc}")
+        log.error(f"[netapp_storage] remove_host job {job_id}: {exc}")
         jlog.log(f"ERROR: {exc}")
         _fail_job(db, job_id)
 
@@ -956,7 +956,7 @@ def _run_remove(job_id, ds_id, delete_ontap, username):
         _finish_job(db, job_id)
         jlog.log("Datastore removed.")
     except Exception as exc:
-        log.error(f"[netapp_ontap] remove job {job_id}: {exc}")
+        log.error(f"[netapp_storage] remove job {job_id}: {exc}")
         jlog.log(f"ERROR: {exc}")
         _set_ds_status(db, ds_id, "error", str(exc))
         _fail_job(db, job_id)
