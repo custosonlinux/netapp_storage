@@ -1357,6 +1357,17 @@ def _provision_nvme(ds_id, params, db, jlog):
     endpoint = get_endpoint(db, endpoint_id)
     client   = build_ontap_client(endpoint)
 
+    # Resume from a previous failed run: inject persisted ONTAP UUIDs into params
+    # so creation steps are skipped if the objects already exist on ONTAP.
+    _saved = dict(db.query_one(
+        "SELECT ns_uuid, volume_uuid, volume_name, subsystem_uuid, subsystem_name "
+        "FROM netapp_provisioned_datastores WHERE id=?", (ds_id,)) or {})
+    for _k in ("ns_uuid", "volume_uuid", "volume_name", "subsystem_uuid", "subsystem_name"):
+        if _saved.get(_k) and not params.get(_k):
+            params[_k] = _saved[_k]
+    if _saved.get("ns_uuid") or _saved.get("subsystem_uuid"):
+        jlog.log("Resuming provisioning — reusing existing ONTAP objects.")
+
     # ── ONTAP: Volume ────────────────────────────────────────────────────────
     volume_uuid = params.get("volume_uuid", "")
     volume_name = params.get("volume_name", "")
