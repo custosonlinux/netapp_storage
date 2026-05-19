@@ -53,6 +53,7 @@ def _init_db():
         _add_column_if_missing(db, "netapp_snapshot_schedules", "pre_script",  "TEXT DEFAULT ''")
         _add_column_if_missing(db, "netapp_snapshot_schedules", "post_script", "TEXT DEFAULT ''")
 
+        _add_column_if_missing(db, "netapp_pve_hosts",  "nfs_ip",        "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(db, "netapp_endpoints", "skip_nfs",      "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(db, "netapp_endpoints", "san_optimized", "INTEGER NOT NULL DEFAULT 0")
 
@@ -65,10 +66,11 @@ def _init_db():
         _add_column_if_missing(db, "netapp_volume_mapping", "lvm_pool_name",         "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(db, "netapp_volume_mapping", "snapinfo_initialized",  "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(db, "netapp_volume_mapping", "snapinfo_lv_name",      "TEXT NOT NULL DEFAULT 'netapp_snapmanifest'")
+        _add_column_if_missing(db, "netapp_volume_mapping", "created_at",            "TEXT NOT NULL DEFAULT ''")
 
-        log.info("[netapp_ontap] DB tables initialised")
+        log.info("[netapp_storage] DB tables initialised")
     except Exception as e:
-        log.error(f"[netapp_ontap] DB init failed: {e}")
+        log.error(f"[netapp_storage] DB init failed: {e}")
         raise
 
 
@@ -78,9 +80,9 @@ def _add_column_if_missing(db, table, column, col_def):
         existing = {r["name"] for r in rows}
         if column not in existing:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
-            log.info(f"[netapp_ontap] Added column {table}.{column}")
+            log.info(f"[netapp_storage] Added column {table}.{column}")
     except Exception as e:
-        log.warning(f"[netapp_ontap] Migration {table}.{column} failed: {e}")
+        log.warning(f"[netapp_storage] Migration {table}.{column} failed: {e}")
 
 
 def register(app):
@@ -104,4 +106,4 @@ def register(app):
     reg_provisioning()
     start_scheduler()
 
-    log.info(f"[PLUGINS] {PLUGIN_NAME} registriert (UI: /api/plugins/netapp_ontap/api/ui)")
+    log.info(f"[PLUGINS] {PLUGIN_NAME} registriert (UI: /api/plugins/netapp_storage/api/ui)")

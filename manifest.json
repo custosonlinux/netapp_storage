@@ -1,5 +1,5 @@
 {
-    "id": "netapp_ontap",
+    "id": "netapp_storage",
     "name": "NetApp Storage",
     "version": "0.9.8",
     "author": "Birger Peer Küpper",

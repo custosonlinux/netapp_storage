@@ -139,7 +139,7 @@ def _execute_schedule(schedule):
                 if nodes:
                     node = nodes[0]
         except Exception as exc:
-            log.warning(f"[netapp_ontap] Schedule node lookup failed: {exc}")
+            log.warning(f"[netapp_storage] Schedule node lookup failed: {exc}")
 
     sched_name_safe = re.sub(r'[^a-zA-Z0-9_-]', '-', schedule.get("name", ""))[:30].strip('-')
     data = {
@@ -163,7 +163,7 @@ def _execute_schedule(schedule):
     try:
         start_snapshot_job(job_id, data, f"schedule:{schedule['name']}")
     except Exception as exc:
-        log.error(f"[netapp_ontap] Schedule '{schedule['name']}' failed: {exc}")
+        log.error(f"[netapp_storage] Schedule '{schedule['name']}' failed: {exc}")
         status = "failed"
 
     db.execute(
@@ -203,15 +203,15 @@ def _execute_schedule(schedule):
                                 if del_job:
                                     client.poll_job(del_job, timeout_s=60)
                 except Exception as exc:
-                    log.warning(f"[netapp_ontap] Retention delete failed: {exc}")
+                    log.warning(f"[netapp_storage] Retention delete failed: {exc}")
                 db.execute("DELETE FROM netapp_snapshots WHERE id=?", (old_snap["id"],))
     except Exception as exc:
-        log.warning(f"[netapp_ontap] Retention failed: {exc}")
+        log.warning(f"[netapp_storage] Retention failed: {exc}")
 
 
 def _scheduler_loop():
     """Runs as daemon thread; checks for due schedules every minute."""
-    log.info("[netapp_ontap] Schedule thread started")
+    log.info("[netapp_storage] Schedule thread started")
     while not _scheduler_stop.wait(60):
         try:
             db = get_db()
@@ -225,8 +225,8 @@ def _scheduler_loop():
                         target=_execute_schedule, args=(s,), daemon=True
                     ).start()
         except Exception as exc:
-            log.error(f"[netapp_ontap] Schedule loop error: {exc}")
-    log.info("[netapp_ontap] Schedule thread stopped")
+            log.error(f"[netapp_storage] Schedule loop error: {exc}")
+    log.info("[netapp_storage] Schedule thread stopped")
 
 
 def start_scheduler():

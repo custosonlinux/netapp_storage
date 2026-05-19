@@ -1,7 +1,7 @@
 """
 Snapshot API
 
-Routes under /api/plugins/netapp_ontap/api/...
+Routes under /api/plugins/netapp_storage/api/...
 
   endpoints               GET/POST – manage endpoints
   endpoints/add           POST
@@ -130,7 +130,7 @@ def _test_endpoint():
 
 def _list_pve_hosts():
     db = get_db()
-    rows = db.query("SELECT id, name, host, port, username, ssl_verify, created_at "
+    rows = db.query("SELECT id, name, host, port, username, ssl_verify, nfs_ip, created_at "
                     "FROM netapp_pve_hosts ORDER BY name")
     return [dict(r) for r in rows]
 
@@ -148,12 +148,13 @@ def _add_pve_host():
     now = datetime.now(timezone.utc).isoformat()
     db.execute(
         "INSERT INTO netapp_pve_hosts (id, name, host, port, username, password_encrypted, "
-        "ssl_verify, created_at) VALUES (?,?,?,?,?,?,?,?)",
+        "ssl_verify, nfs_ip, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (hid, data["name"], data["host"],
          int(data.get("port", 8006)),
          data["username"],
          db._encrypt(data["password"]),
          1 if data.get("ssl_verify", False) else 0,
+         data.get("nfs_ip", "").strip(),
          now),
     )
     return {"success": True, "id": hid}
@@ -316,7 +317,7 @@ def _list_snapshots():
                     "san_optimized": bool(m.get("san_optimized", 0)),
                 })
         except Exception as exc:
-            log.warning(f"[netapp_ontap] ONTAP snapshot scan {m.get('volume_name')}: {exc}")
+            log.warning(f"[netapp_storage] ONTAP snapshot scan {m.get('volume_name')}: {exc}")
 
     result.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     return result[:300]
@@ -429,7 +430,7 @@ def _delete_snapshot():
             if del_job:
                 client.poll_job(del_job, timeout_s=120)
     except Exception as exc:
-        log.warning(f"[netapp_ontap] ONTAP snapshot deletion failed: {exc}")
+        log.warning(f"[netapp_storage] ONTAP snapshot deletion failed: {exc}")
 
     db.execute("DELETE FROM netapp_snapshots WHERE id=?", (snapshot_id,))
     return {"success": True}
@@ -465,12 +466,12 @@ def _vms_for_mapping():
                 pve = build_pve_client(db, hid)
 
                 nodes = list(pve.get_node_status().keys())
-                log.warning(f"[netapp_ontap] vms-for-mapping {storage_id}: host={pve.host} nodes={nodes}")
+                log.warning(f"[netapp_storage] vms-for-mapping {storage_id}: host={pve.host} nodes={nodes}")
                 for node_name in nodes:
                     rc = pve._api_get(
                         f"{pve._base}/nodes/{node_name}/storage/{storage_id}/content"
                     )
-                    log.warning(f"[netapp_ontap] vms-for-mapping content {node_name}/{storage_id}: HTTP {rc.status_code} data={rc.json().get('data') if rc.ok else rc.text[:200]}")
+                    log.warning(f"[netapp_storage] vms-for-mapping content {node_name}/{storage_id}: HTTP {rc.status_code} data={rc.json().get('data') if rc.ok else rc.text[:200]}")
                     if rc.ok:
                         for item in rc.json().get("data", []):
                             vmid = item.get("vmid")
@@ -492,10 +493,10 @@ def _vms_for_mapping():
                                 "status": res.get("status"),
                             }
             except Exception as _exc:
-                log.warning(f"[netapp_ontap] vms-for-mapping {storage_id} host {hid}: {_exc}")
+                log.warning(f"[netapp_storage] vms-for-mapping {storage_id} host {hid}: {_exc}")
                 continue
 
-        log.warning(f"[netapp_ontap] vms-for-mapping {storage_id}: found vmids={storage_vmids}")
+        log.warning(f"[netapp_storage] vms-for-mapping {storage_id}: found vmids={storage_vmids}")
         vms = [
             vm_info_map.get(vid, {"vmid": vid, "name": f"vm-{vid}",
                                   "node": "", "type": "qemu", "status": "unknown"})

@@ -122,7 +122,7 @@ def _run_restore_sfsr(job_id, params, username):
         jlog.log("Job cancelled by user")
         _cancel_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] SFSR job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] SFSR job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
     finally:
@@ -240,7 +240,7 @@ def _run_restore_flexclone(job_id, params, username):
         jlog.log("Job cancelled by user")
         _cancel_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] FlexClone job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] FlexClone job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
 
@@ -344,7 +344,7 @@ def _run_restore_san(job_id, params, username):
         _reg_unregister(job_id)
         return
     except Exception as exc:
-        log.error(f"[netapp_ontap] SAN restore job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] SAN restore job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
         _reg_unregister(job_id)
@@ -367,33 +367,33 @@ def _cleanup_san_clone(client, protocol,
             try:
                 client.unmap_lun(temp_lun_uuid, igroup_uuid)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] unmap clone LUN: {exc}")
+                log.warning(f"[netapp_storage] unmap clone LUN: {exc}")
         if temp_iscsi_clone_vol_uuid:
             try:
                 client.delete_volume(temp_iscsi_clone_vol_uuid)
                 if jlog:
                     jlog.log("Clone volume removed.")
             except Exception as exc:
-                log.warning(f"[netapp_ontap] delete clone volume: {exc}")
+                log.warning(f"[netapp_storage] delete clone volume: {exc}")
         else:
             try:
                 client.delete_lun(temp_lun_uuid)
                 if jlog:
                     jlog.log("Clone LUN removed.")
             except Exception as exc:
-                log.warning(f"[netapp_ontap] delete clone LUN: {exc}")
+                log.warning(f"[netapp_storage] delete clone LUN: {exc}")
     elif protocol == "nvme" and temp_ns_uuid:
         if subsystem_uuid:
             try:
                 client.remove_nvme_namespace_from_subsystem(subsystem_uuid, temp_ns_uuid)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] unmap clone NS: {exc}")
+                log.warning(f"[netapp_storage] unmap clone NS: {exc}")
         try:
             client.delete_namespace(temp_ns_uuid)
             if jlog:
                 jlog.log("Clone namespace removed.")
         except Exception as exc:
-            log.warning(f"[netapp_ontap] delete clone namespace: {exc}")
+            log.warning(f"[netapp_storage] delete clone namespace: {exc}")
 
 
 def _run_restore_san_single(job_id, params, username):
@@ -555,7 +555,7 @@ def _run_restore_san_single(job_id, params, username):
                 jlog.log("Clone namespace already in subsystem (ASA volume clone) …")
             else:
                 jlog.log("Mapping clone namespace to NVMe subsystem …")
-                client.add_nvme_namespace_to_subsystem(subsystem_uuid, temp_ns_uuid)
+                client.add_nvme_namespace_to_subsystem(subsystem_uuid, temp_ns_uuid, svm_name=svm_name)
 
             jlog.log("Rescanning NVMe controllers …")
             nvme_ns_rescan(pve_host, pve_user, pve_pass, pve_key)
@@ -640,7 +640,7 @@ def _run_restore_san_single(job_id, params, username):
         try:
             vg_rescan_and_activate(pve_host, pve_user, pve_pass, pve_key, vg_name)
         except Exception as exc:
-            log.warning(f"[netapp_ontap] vg rescan after cleanup failed: {exc}")
+            log.warning(f"[netapp_storage] vg rescan after cleanup failed: {exc}")
 
         # ── 7. Restore VM config + start ─────────────────────────────
         jlog.log("Restoring VM config …")
@@ -656,7 +656,7 @@ def _run_restore_san_single(job_id, params, username):
                 from .san_helpers import cleanup_restore_vg
                 cleanup_restore_vg(pve_host, pve_user, pve_pass, pve_key, temp_vg_name)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] single restore cancel cleanup VG failed: {ce}")
+                log.warning(f"[netapp_storage] single restore cancel cleanup VG failed: {ce}")
         if client and (temp_lun_uuid or temp_ns_uuid or temp_iscsi_clone_vol_uuid):
             try:
                 _cleanup_san_clone(client, protocol,
@@ -664,17 +664,17 @@ def _run_restore_san_single(job_id, params, username):
                                    temp_ns_uuid, subsystem_uuid,
                                    temp_iscsi_clone_vol_uuid)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] single restore cancel cleanup clone failed: {ce}")
+                log.warning(f"[netapp_storage] single restore cancel cleanup clone failed: {ce}")
             if protocol == "iscsi" and temp_iscsi_serial and pve_host:
                 try:
                     from .san_helpers import flush_iscsi_clone_device
                     flush_iscsi_clone_device(pve_host, pve_user, pve_pass, pve_key, temp_iscsi_serial)
                 except Exception as ce:
-                    log.warning(f"[netapp_ontap] flush multipath on cancel failed: {ce}")
+                    log.warning(f"[netapp_storage] flush multipath on cancel failed: {ce}")
         _reg_unregister(job_id)
         return
     except Exception as exc:
-        log.error(f"[netapp_ontap] SAN single restore job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] SAN single restore job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
         if temp_vg_name:
@@ -682,7 +682,7 @@ def _run_restore_san_single(job_id, params, username):
                 from .san_helpers import cleanup_restore_vg
                 cleanup_restore_vg(pve_host, pve_user, pve_pass, pve_key, temp_vg_name)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] single restore cleanup VG failed: {ce}")
+                log.warning(f"[netapp_storage] single restore cleanup VG failed: {ce}")
         if client and (temp_lun_uuid or temp_ns_uuid or temp_iscsi_clone_vol_uuid):
             try:
                 _cleanup_san_clone(client, protocol,
@@ -690,13 +690,13 @@ def _run_restore_san_single(job_id, params, username):
                                    temp_ns_uuid, subsystem_uuid,
                                    temp_iscsi_clone_vol_uuid)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] single restore cleanup clone failed: {ce}")
+                log.warning(f"[netapp_storage] single restore cleanup clone failed: {ce}")
             if protocol == "iscsi" and temp_iscsi_serial and pve_host:
                 try:
                     from .san_helpers import flush_iscsi_clone_device
                     flush_iscsi_clone_device(pve_host, pve_user, pve_pass, pve_key, temp_iscsi_serial)
                 except Exception as ce:
-                    log.warning(f"[netapp_ontap] flush multipath on error failed: {ce}")
+                    log.warning(f"[netapp_storage] flush multipath on error failed: {ce}")
         _reg_unregister(job_id)
         return
 
@@ -848,7 +848,7 @@ def _run_restore_dr(job_id, params, username):
         jlog.log("Job cancelled by user")
         _cancel_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] DR restore job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] DR restore job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
 
@@ -862,7 +862,7 @@ def _run_restore_dr(job_id, params, username):
                         f"rmdir {shlex.quote(dr_mount_point)} 2>/dev/null || true",
                         key_material=pve_key)
             except Exception as e:
-                log.warning(f"[netapp_ontap] DR cleanup unmount failed: {e}")
+                log.warning(f"[netapp_storage] DR cleanup unmount failed: {e}")
         _reg_unregister(job_id)
 
     if not _job_failed(db, job_id):
@@ -890,7 +890,7 @@ def _flexclone_cleanup(job_id, clone_mount_point, clone_vol_uuid, snap, jlog, db
                     f"rmdir {shlex.quote(clone_mount_point)} 2>/dev/null || true",
                     key_material=pve_key)
         except Exception as e:
-            log.warning(f"[netapp_ontap] cleanup unmount failed: {e}")
+            log.warning(f"[netapp_storage] cleanup unmount failed: {e}")
 
     if clone_vol_uuid and snap:
         try:
@@ -903,7 +903,7 @@ def _flexclone_cleanup(job_id, clone_mount_point, clone_vol_uuid, snap, jlog, db
                 client.poll_job(del_job, timeout_s=120)
             jlog.log("FlexClone deleted.")
         except Exception as e:
-            log.warning(f"[netapp_ontap] clone deletion failed: {e}")
+            log.warning(f"[netapp_storage] clone deletion failed: {e}")
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -947,7 +947,7 @@ def _vm_stop(mgr, node, vmid, vm_type="qemu"):
             if r.ok and r.json().get("data", {}).get("status") == "stopped":
                 return
     except Exception as e:
-        log.warning(f"[netapp_ontap] VM-Stop {vmid}: {e}")
+        log.warning(f"[netapp_storage] VM-Stop {vmid}: {e}")
 
 
 def _vm_start(mgr, node, vmid, vm_type="qemu"):
@@ -956,7 +956,7 @@ def _vm_start(mgr, node, vmid, vm_type="qemu"):
         port = getattr(mgr, "port", 8006)
         mgr._api_post(f"https://{mgr.host}:{port}/api2/json/nodes/{node}/{vt}/{vmid}/status/start")
     except Exception as e:
-        log.warning(f"[netapp_ontap] VM-Start {vmid}: {e}")
+        log.warning(f"[netapp_storage] VM-Start {vmid}: {e}")
 
 
 def _load_manifest(snap, mapping, node, mgr, pve_host, pve_user, pve_pass, pve_key):
@@ -981,7 +981,7 @@ def _load_manifest(snap, mapping, node, mgr, pve_host, pve_user, pve_pass, pve_k
                       capture=True, key_material=pve_key)
         return json.loads(out)
     except Exception as ssh_err:
-        log.warning(f"[netapp_ontap] manifest exact path failed: {ssh_err}")
+        log.warning(f"[netapp_storage] manifest exact path failed: {ssh_err}")
 
     # DB fallback
     manifest_json = snap.get("manifest_json", "")
@@ -1003,10 +1003,10 @@ def _load_manifest(snap, mapping, node, mgr, pve_host, pve_user, pve_pass, pve_k
                 out2 = ssh_run(pve_host, pve_user, pve_pass,
                                f"cat {shlex.quote(found)}",
                                capture=True, key_material=pve_key)
-                log.info(f"[netapp_ontap] Manifest found via search: {found}")
+                log.info(f"[netapp_storage] Manifest found via search: {found}")
                 return json.loads(out2)
         except Exception as find_err:
-            log.warning(f"[netapp_ontap] manifest search failed: {find_err}")
+            log.warning(f"[netapp_storage] manifest search failed: {find_err}")
 
     raise RuntimeError(f"Manifest not found in: {snap_manifest_dir}")
 
@@ -1084,7 +1084,7 @@ def _rescan_and_start(mgr, node, vmid, vm_type, pve_host, pve_user, pve_pass, pv
             ssh_run(pve_host, pve_user, pve_pass,
                     f"pct rescan {vmid} 2>/dev/null || true", key_material=pve_key)
     except Exception as e:
-        log.warning(f"[netapp_ontap] rescan {vmid}: {e}")
+        log.warning(f"[netapp_storage] rescan {vmid}: {e}")
     _vm_start(mgr, node, vmid, vm_type)
 
 

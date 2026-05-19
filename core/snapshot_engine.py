@@ -363,7 +363,7 @@ def _run_snapshot(job_id, params, username):
                 (now, snapshot_id),
             )
     except Exception as exc:
-        log.error(f"[netapp_ontap] snapshot job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] snapshot job {job_id} failed: {exc}")
         now = datetime.now(timezone.utc).isoformat()
         db.execute("UPDATE netapp_jobs SET status='failed', completed_at=? WHERE id=?", (now, job_id))
         if snapshot_id:
@@ -390,7 +390,7 @@ def _run_snapshot(job_id, params, username):
                     log_lines=log_entries,
                 )
             except Exception as ne:
-                log.warning(f"[netapp_ontap] Notification failed for job {job_id}: {ne}")
+                log.warning(f"[netapp_storage] Notification failed for job {job_id}: {ne}")
 
 
 # ── VM type detection ───────────────────────────────────────────────────────
@@ -453,14 +453,14 @@ def _resolve_node_host(mgr, node_name):
                 if item.get("type") == "node" and item.get("name") == node_name:
                     ip = item.get("ip", "")
                     if ip:
-                        log.debug(f"[netapp_ontap] SSH target for {node_name}: {ip} (cluster/status)")
+                        log.debug(f"[netapp_storage] SSH target for {node_name}: {ip} (cluster/status)")
                         return ip
     except Exception:
         pass
     # Fallback: configured host address (works for single-node setups)
     host = getattr(mgr, "host", None)
     if host:
-        log.debug(f"[netapp_ontap] SSH target for {node_name}: {host} (mgr.host fallback)")
+        log.debug(f"[netapp_storage] SSH target for {node_name}: {host} (mgr.host fallback)")
         return host
     return node_name
 
@@ -473,7 +473,7 @@ def _qemu_fsfreeze(mgr, node, vmid):
         r = mgr._api_post(url)
         return r.status_code == 200
     except Exception as e:
-        log.warning(f"[netapp_ontap] fsfreeze VM {vmid}: {e}")
+        log.warning(f"[netapp_storage] fsfreeze VM {vmid}: {e}")
         return False
 
 
@@ -482,7 +482,7 @@ def _qemu_fsthaw(mgr, node, vmid):
         url = f"https://{mgr.host}:8006/api2/json/nodes/{node}/qemu/{vmid}/agent/fsfreeze-thaw"
         mgr._api_post(url)
     except Exception as e:
-        log.warning(f"[netapp_ontap] fsthaw VM {vmid}: {e}")
+        log.warning(f"[netapp_storage] fsthaw VM {vmid}: {e}")
 
 
 def _vm_suspend(mgr, node, vmid, vm_type="qemu"):
@@ -492,7 +492,7 @@ def _vm_suspend(mgr, node, vmid, vm_type="qemu"):
         r = mgr._api_post(url)
         return r is not None and r.status_code in (200, 202)
     except Exception as e:
-        log.warning(f"[netapp_ontap] suspend {vm_type} {vmid}: {e}")
+        log.warning(f"[netapp_storage] suspend {vm_type} {vmid}: {e}")
         return False
 
 
@@ -503,7 +503,7 @@ def _vm_resume(mgr, node, vmid, vm_type="qemu"):
         r = mgr._api_post(url)
         return r is not None and r.status_code in (200, 202)
     except Exception as e:
-        log.warning(f"[netapp_ontap] resume {vm_type} {vmid}: {e}")
+        log.warning(f"[netapp_storage] resume {vm_type} {vmid}: {e}")
         return False
 
 

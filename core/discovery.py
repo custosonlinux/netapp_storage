@@ -189,14 +189,14 @@ def run_discovery(endpoint_id=None):
 
         # SAN-only Systeme (z. B. NetApp ASA) überspringen beim NFS-Scan
         if ep.get("skip_nfs"):
-            log.info(f"[netapp_ontap] NFS-Scan übersprungen für '{ep['name']}' (skip_nfs=1)")
+            log.info(f"[netapp_storage] NFS-Scan übersprungen für '{ep['name']}' (skip_nfs=1)")
             continue
 
         try:
             client = build_ontap_client(ep)
         except Exception as exc:
             msg = f"ONTAP '{ep['name']}' ({ep['host']}): Verbindung fehlgeschlagen: {exc}"
-            log.warning(f"[netapp_ontap] {msg}")
+            log.warning(f"[netapp_storage] {msg}")
             debug_info["no_match_reasons"].append(msg)
             continue
 
@@ -204,7 +204,7 @@ def run_discovery(endpoint_id=None):
             ip_to_svm = client.get_lif_svm_map()
         except Exception as exc:
             msg = f"ONTAP '{ep['name']}': LIF-Abfrage fehlgeschlagen: {exc}"
-            log.warning(f"[netapp_ontap] {msg}")
+            log.warning(f"[netapp_storage] {msg}")
             debug_info["no_match_reasons"].append(msg)
             ip_to_svm = {}
 
@@ -212,7 +212,7 @@ def run_discovery(endpoint_id=None):
             ontap_volumes = client.get_volumes()
         except Exception as exc:
             msg = f"ONTAP '{ep['name']}': Volume-Abfrage fehlgeschlagen: {exc}"
-            log.warning(f"[netapp_ontap] {msg}")
+            log.warning(f"[netapp_storage] {msg}")
             debug_info["no_match_reasons"].append(msg)
             continue
 
@@ -300,13 +300,13 @@ def run_discovery(endpoint_id=None):
                 if row:
                     found_mappings.append(dict(row))
                 log.info(
-                    f"[netapp_ontap] Mapping: {pve_host_id}/{stor['storage_id']} "
+                    f"[netapp_storage] Mapping: {pve_host_id}/{stor['storage_id']} "
                     f"→ SVM {matched_svm}/{vol_name} (LIF {matched_ip})"
                 )
             except Exception as exc:
                 msg = (f"DB-Insert fehlgeschlagen für '{stor['storage_id']}': {exc} "
                        f"| endpoint_id={ep['id']} vol_uuid={vol_uuid!r} vol_name={vol_name!r}")
-                log.warning(f"[netapp_ontap] {msg}")
+                log.warning(f"[netapp_storage] {msg}")
                 debug_info["no_match_reasons"].append(msg)
 
     # ── SAN-Discovery (iSCSI / NVMe-oF) ─────────────────────────────────────
@@ -378,7 +378,7 @@ def _get_pve_lvm_storages(pve_host):
                 if len(parts) >= 2:
                     pv_map.setdefault(parts[1].strip(), []).append(parts[0].strip())
         except Exception as exc:
-            log.warning(f"[netapp_ontap] pvs auf {pve_host['host']} fehlgeschlagen: {exc}")
+            log.warning(f"[netapp_storage] pvs auf {pve_host['host']} fehlgeschlagen: {exc}")
             return lvm_storages, f"pvs fehlgeschlagen: {exc}"
 
         # SSH: Device-Basename → SCSI-Seriennummer
@@ -396,7 +396,7 @@ def _get_pve_lvm_storages(pve_host):
                 if len(parts) >= 2 and parts[1].strip():
                     serial_map[parts[0].lstrip()] = parts[1].strip()
         except Exception as exc:
-            log.warning(f"[netapp_ontap] lsblk auf {pve_host['host']} fehlgeschlagen: {exc}")
+            log.warning(f"[netapp_storage] lsblk auf {pve_host['host']} fehlgeschlagen: {exc}")
             serial_map = {}
 
         # Alles zusammenführen
@@ -404,7 +404,7 @@ def _get_pve_lvm_storages(pve_host):
             pvs_for_vg = pv_map.get(stor["vg_name"], [])
             if not pvs_for_vg:
                 log.debug(
-                    f"[netapp_ontap] VG {stor['vg_name']}: kein PV-Device in pvs-Output "
+                    f"[netapp_storage] VG {stor['vg_name']}: kein PV-Device in pvs-Output "
                     f"(bekannte VGs: {sorted(pv_map.keys())})"
                 )
                 continue
@@ -440,10 +440,10 @@ def _get_pve_lvm_storages(pve_host):
                         ns_uuid = uuid_out2.strip().lower()
                     stor["nvme_ns_uuid"] = ns_uuid
                     log.info(
-                        f"[netapp_ontap] NVMe UUID {pv_dev} (NS={ns_dev}): {ns_uuid or '—'}"
+                        f"[netapp_storage] NVMe UUID {pv_dev} (NS={ns_dev}): {ns_uuid or '—'}"
                     )
                 except Exception as exc:
-                    log.debug(f"[netapp_ontap] NVMe UUID-Lookup {pv_dev}: {exc}")
+                    log.debug(f"[netapp_storage] NVMe UUID-Lookup {pv_dev}: {exc}")
             else:
                 # iSCSI: Extract serial from device.
                 # Case 1: multipath device — /dev/mapper/<WWID> where WWID is the
@@ -459,7 +459,7 @@ def _get_pve_lvm_storages(pve_host):
                     if len(wwid) == 33 and wwid.upper().startswith("3600A098"):
                         # NetApp ONTAP NAA-6 WWID: strip 1 DM prefix + 8 NAA/OUI chars
                         serial = wwid[9:].upper()
-                        log.info(f"[netapp_ontap] iSCSI multipath {pv_dev}: "
+                        log.info(f"[netapp_storage] iSCSI multipath {pv_dev}: "
                                  f"extracted serial {serial} from WWID")
                     if not serial:
                         # Fallback: try lsblk on mapper device
@@ -690,7 +690,7 @@ def _san_upsert(db, ep, location, svm_obj, lun_uuid, lun_path,
         if row:
             found_mappings.append(dict(row))
         log.info(
-            f"[netapp_ontap] SAN-Mapping: {stor['pve_host_id']}/{stor['storage_id']} "
+            f"[netapp_storage] SAN-Mapping: {stor['pve_host_id']}/{stor['storage_id']} "
             f"→ {svm_name}/{vol_name} ({stor['protocol'].upper()}, "
             f"VG={stor['vg_name']}, LUN={lun_path})"
         )
@@ -699,5 +699,5 @@ def _san_upsert(db, ep, location, svm_obj, lun_uuid, lun_path,
             f"SAN DB-Insert fehlgeschlagen '{stor['storage_id']}': {exc} | "
             f"lun_uuid={lun_uuid!r} vol_uuid={vol_uuid!r}"
         )
-        log.warning(f"[netapp_ontap] {msg}")
+        log.warning(f"[netapp_storage] {msg}")
         debug_info["no_match_reasons"].append(msg)

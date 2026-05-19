@@ -151,9 +151,9 @@ def _get_nodes():
         nodes = sorted(mgr.get_node_status().keys())
         if nodes:
             return {"nodes": nodes}
-        log.warning("[netapp_ontap] clone/nodes: get_node_status returned empty for %s", pve_cluster_id)
+        log.warning("[netapp_storage] clone/nodes: get_node_status returned empty for %s", pve_cluster_id)
     except Exception as exc:
-        log.warning("[netapp_ontap] clone/nodes: PVE API failed for %s: %s", pve_cluster_id, exc)
+        log.warning("[netapp_storage] clone/nodes: PVE API failed for %s: %s", pve_cluster_id, exc)
     # Fallback: collect nodes seen in recent snapshots for this cluster
     rows = db.query(
         "SELECT DISTINCT node FROM netapp_snapshots "
@@ -162,7 +162,7 @@ def _get_nodes():
         (pve_cluster_id,),
     )
     nodes = list(dict.fromkeys(r["node"] for r in rows))
-    log.info("[netapp_ontap] clone/nodes: fallback returned %d nodes for %s", len(nodes), pve_cluster_id)
+    log.info("[netapp_storage] clone/nodes: fallback returned %d nodes for %s", len(nodes), pve_cluster_id)
     return {"nodes": nodes}
 
 

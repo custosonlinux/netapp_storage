@@ -44,12 +44,12 @@ sys.modules['pegaprox.core.db'].get_db = MagicMock()
 sys.modules['pegaprox.constants'].PEGAPROX_VERSION = 'test'
 sys.modules['pegaprox.utils.ssh_pool'].controlmaster_args = lambda host, user, **kw: []
 
-from plugins.netapp_ontap.core.snapshot_engine import (
+from plugins.netapp_storage.core.snapshot_engine import (
     _extract_disk_files,
     _config_to_conf_string,
     _resolve_node_host,
 )
-from plugins.netapp_ontap.core._helpers import get_ssh_creds
+from plugins.netapp_storage.core._helpers import get_ssh_creds
 
 
 class TestExtractDiskFiles(unittest.TestCase):

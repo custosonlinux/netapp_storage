@@ -128,7 +128,7 @@ class OntapClient:
             svm  = (rec.get("svm") or {}).get("name", "")
             if addr and svm:
                 ip_svm[addr] = svm
-        log.info(f"[netapp_ontap] NFS LIF map ({len(ip_svm)} entries): {ip_svm}")
+        log.info(f"[netapp_storage] NFS LIF map ({len(ip_svm)} entries): {ip_svm}")
         return ip_svm
 
     # ── SVMs ───────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ class OntapClient:
             # ASA: "not supported on this platform" (code 1638644)
             if exc.status_code == 400 and ("1638644" in str(exc) or
                                             "not supported on this platform" in str(exc)):
-                log.info("[netapp_ontap] ASA platform: volume snapshot not supported, "
+                log.info("[netapp_storage] ASA platform: volume snapshot not supported, "
                          "trying CG/CLI fallback")
                 return self._create_snapshot_asa(volume_uuid, snap_name, comment, snapmirror_label)
             raise
@@ -216,10 +216,10 @@ class OntapClient:
                         f"application/consistency-groups/{cg_uuid}/snapshots",
                         body=body, params={"return_timeout": 0},
                     )
-                    log.info(f"[netapp_ontap] ASA CG snapshot created via CG '{cg.get('name')}'")
+                    log.info(f"[netapp_storage] ASA CG snapshot created via CG '{cg.get('name')}'")
                     return (resp.get("job") or {}).get("uuid", "")
         except Exception as cg_exc:
-            log.info(f"[netapp_ontap] CG snapshot fallback failed: {cg_exc}")
+            log.info(f"[netapp_storage] CG snapshot fallback failed: {cg_exc}")
 
         # Stage 2: CLI bridge (synchronous, no job UUID)
         try:
@@ -233,7 +233,7 @@ class OntapClient:
             if comment:
                 cli_body["comment"] = comment
             self._post("private/cli/snapshot", body=cli_body)
-            log.info(f"[netapp_ontap] ASA Snapshot via CLI-Bridge: {svm_name}/{vol_name}/{snap_name}")
+            log.info(f"[netapp_storage] ASA Snapshot via CLI-Bridge: {svm_name}/{vol_name}/{snap_name}")
             return ""  # synchronous, no job
         except Exception as cli_exc:
             raise OntapError(
@@ -365,10 +365,23 @@ class OntapClient:
         return records[0]
 
     def delete_volume(self, volume_uuid):
-        """Deletes a volume (e.g. FlexClone after restore). Returns job UUID."""
-        resp = self._delete(f"storage/volumes/{volume_uuid}",
-                            params={"return_timeout": 0})
-        return resp.get("job", {}).get("uuid", "")
+        """Deletes a volume. Returns job UUID. Falls back to CLI bridge on ASA (405)."""
+        try:
+            resp = self._delete(f"storage/volumes/{volume_uuid}", params={"return_timeout": 0})
+            return (resp.get("job") or {}).get("uuid", "")
+        except OntapError as exc:
+            if exc.status_code != 405:
+                raise
+        # ASA: REST DELETE not supported — resolve name/SVM and use CLI bridge
+        try:
+            vol = self._get(f"storage/volumes/{volume_uuid}", params={"fields": "name,svm.name"})
+            vol_name = vol.get("name", "")
+            svm_name = (vol.get("svm") or {}).get("name", "")
+        except OntapError:
+            vol_name = ""
+            svm_name = ""
+        self._delete_clone_volume(volume_uuid, vol_name, svm_name)
+        return ""
 
     # ── SnapMirror® ───────────────────────────────────────────────────
 
@@ -432,19 +445,25 @@ class OntapClient:
         }
         return self._post(f"protocols/nfs/export-policies/{export_policy_id}/rules", body=body)
 
-    def get_nfs_lif_for_svm(self, svm_name):
-        """Returns the first NFS LIF IP of the SVM."""
+    def list_nfs_lifs(self, svm_name):
+        """Returns list of {name, ip} for all up NFS LIFs of the SVM."""
         records = self._get_all_records(
             "network/ip/interfaces",
             params={"services": "data_nfs", "svm.name": svm_name,
-                    "fields": "ip.address,state", "max_records": 50},
+                    "fields": "name,ip.address,state", "max_records": 50},
         )
+        result = []
         for rec in records:
             if rec.get("state", "up") == "up":
                 addr = (rec.get("ip") or {}).get("address", "")
                 if addr:
-                    return addr
-        return ""
+                    result.append({"name": rec.get("name", addr), "ip": addr})
+        return result
+
+    def get_nfs_lif_for_svm(self, svm_name):
+        """Returns the first NFS LIF IP of the SVM."""
+        lifs = self.list_nfs_lifs(svm_name)
+        return lifs[0]["ip"] if lifs else ""
 
     # ── Volume mount/unmount ───────────────────────────────────────────
 
@@ -571,6 +590,14 @@ class OntapClient:
             body={"name": initiator_name},
         )
 
+    def remove_igroup_initiator(self, igroup_uuid, initiator_name):
+        """Removes an initiator (IQN) from an iGroup (best-effort)."""
+        try:
+            self._delete(
+                f"protocols/san/igroups/{igroup_uuid}/initiators/{initiator_name}")
+        except OntapError as exc:
+            log.warning(f"[netapp_storage] remove igroup initiator: {exc}")
+
     def delete_igroup(self, igroup_uuid):
         self._delete(f"protocols/san/igroups/{igroup_uuid}")
 
@@ -677,8 +704,12 @@ class OntapClient:
             raise OntapError(f"Volume '{vol_name}' not found after creation")
         return vol_uuid
 
-    def create_lun(self, svm_name, volume_name, lun_name, size_bytes, os_type="linux"):
-        """Creates a thin-provisioned LUN. Returns (lun_uuid, serial_number)."""
+    def create_lun(self, svm_name, volume_name, lun_name, size_bytes, os_type="linux",
+                   auto_provision_as_flexvol=False):
+        """Creates a thin-provisioned LUN. Returns (lun_uuid, serial_number).
+
+        auto_provision_as_flexvol=True: ONTAP auto-creates the containing volume (ASA).
+        """
         lun_path = f"/vol/{volume_name}/{lun_name}"
         body = {
             "name": lun_path,
@@ -689,6 +720,8 @@ class OntapClient:
                 "guarantee": {"requested": False},
             },
         }
+        if auto_provision_as_flexvol:
+            body["auto_provision_as_flexvol"] = True
         resp = self._post("storage/luns", body=body, params={"return_timeout": 30})
         lun_uuid = resp.get("uuid", "")
         if not lun_uuid:
@@ -728,13 +761,13 @@ class OntapClient:
             if exc.status_code != 404:
                 raise
 
-        log.info("[netapp_ontap] protocols/nvme/namespaces → 404, trying CLI fallback")
+        log.info("[netapp_storage] protocols/nvme/namespaces → 404, trying CLI fallback")
         try:
             return self._list_nvme_namespaces_cli(svm_name)
         except OntapError:
             pass
 
-        log.info("[netapp_ontap] NVMe CLI fallback → 404, trying subsystem-maps fallback")
+        log.info("[netapp_storage] NVMe CLI fallback → 404, trying subsystem-maps fallback")
         return self._list_nvme_namespaces_via_subsystem_maps(svm_name)
 
     def _list_nvme_namespaces_cli(self, svm_name=None):
@@ -760,7 +793,7 @@ class OntapClient:
             data = self._get("private/cli/nvme/namespace", params=params)
             cli_records = data.get("records", [])
         except Exception as exc:
-            log.warning(f"[netapp_ontap] NVMe CLI fallback failed: {exc}")
+            log.warning(f"[netapp_storage] NVMe CLI fallback failed: {exc}")
             raise OntapError(f"NVMe CLI fallback failed: {exc}")
 
         if not cli_records:
@@ -822,7 +855,7 @@ class OntapClient:
         try:
             maps = self._get_all_records("protocols/nvme/subsystem-maps", params=params)
         except Exception as exc:
-            log.warning(f"[netapp_ontap] NVMe subsystem-maps fallback failed: {exc}")
+            log.warning(f"[netapp_storage] NVMe subsystem-maps fallback failed: {exc}")
             raise OntapError(f"NVMe subsystem-maps fallback failed: {exc}")
 
         # Build volume UUID cache.
@@ -889,7 +922,7 @@ class OntapClient:
                         item["svm"]["name"] = (detail.get("svm") or {}).get("name", "")
                     continue
             except Exception as exc:
-                log.info(f"[netapp_ontap] Namespace {item['uuid']} direkt GET: {exc}")
+                log.info(f"[netapp_storage] Namespace {item['uuid']} direkt GET: {exc}")
 
             # Phase 2b: try namespace name as volume name.
             # NetApp ASA default: volume name == namespace name (e.g. ucnlabproxnvme_1).
@@ -900,7 +933,7 @@ class OntapClient:
                 if vol_uuid_by_name:
                     item["location"] = {"volume": {"name": ns_bare, "uuid": vol_uuid_by_name}}
                     log.info(
-                        f"[netapp_ontap] Namespace {item['uuid']}: Volume via Name-Match "
+                        f"[netapp_storage] Namespace {item['uuid']}: Volume via Name-Match "
                         f"→ {svm_n}/{ns_bare}"
                     )
                     continue
@@ -915,12 +948,12 @@ class OntapClient:
                 vol_name_fb, vol_uuid_fb = non_root[0]
                 item["location"] = {"volume": {"name": vol_name_fb, "uuid": vol_uuid_fb}}
                 log.info(
-                    f"[netapp_ontap] Namespace {item['uuid']}: Volume via SVM-Fallback "
+                    f"[netapp_storage] Namespace {item['uuid']}: Volume via SVM-Fallback "
                     f"→ {svm_n}/{vol_name_fb}"
                 )
             else:
                 log.warning(
-                    f"[netapp_ontap] Namespace {item['uuid']}: no volume resolvable. "
+                    f"[netapp_storage] Namespace {item['uuid']}: no volume resolvable. "
                     f"SVM={svm_n}, known volumes: "
                     f"{sorted(vn for (vs, vn) in vol_uuid_cache if vs == svm_n)}"
                 )
@@ -970,13 +1003,13 @@ class OntapClient:
         except OntapError as exc:
             if exc.status_code != 404:
                 raise
-        log.info("[netapp_ontap] protocols/nvme/namespaces POST → 404, trying FlexClone REST fallback")
+        log.info("[netapp_storage] protocols/nvme/namespaces POST → 404, trying FlexClone REST fallback")
         try:
             return self._clone_namespace_flexvol(snap_name, dest_volume_name, dest_ns_name, svm_name)
         except OntapError as exc:
             if exc.status_code not in (405, 404):
                 raise
-        log.info("[netapp_ontap] FlexClone REST → 405, trying volume clone CLI bridge (ASA)")
+        log.info("[netapp_storage] FlexClone REST → 405, trying volume clone CLI bridge (ASA)")
         return self._clone_namespace_via_cli_volume_clone(snap_name, dest_volume_name, dest_ns_name, svm_name, source_ns_uuid)
 
     def _clone_namespace_flexvol(self, snap_name, src_volume_name, dest_ns_name, svm_name):
@@ -988,7 +1021,7 @@ class OntapClient:
         Returns (clone_ns_uuid, "").
         """
         clone_vol_name = f"pgxvol_{dest_ns_name}"[:64]
-        log.info(f"[netapp_ontap] FlexClone: {src_volume_name}@{snap_name} → {clone_vol_name}")
+        log.info(f"[netapp_storage] FlexClone: {src_volume_name}@{snap_name} → {clone_vol_name}")
         body = {
             "name": clone_vol_name,
             "svm": {"name": svm_name},
@@ -1017,7 +1050,7 @@ class OntapClient:
             if loc.get("uuid") == clone_vol_uuid or loc.get("name") == clone_vol_name:
                 ns_uuid = ns["uuid"]
                 self._clone_vol_for_ns[ns_uuid] = {"uuid": clone_vol_uuid, "name": clone_vol_name, "svm": svm_name}
-                log.info(f"[netapp_ontap] FlexClone ns UUID: {ns_uuid} in vol {clone_vol_name}")
+                log.info(f"[netapp_storage] FlexClone ns UUID: {ns_uuid} in vol {clone_vol_name}")
                 return ns_uuid, ""
 
         try:
@@ -1060,7 +1093,7 @@ class OntapClient:
                 -parent-volume <vol> -parent-snapshot <snap> -junction-active true -foreground true
         """
         clone_vol_name = f"pgxvol_{dest_ns_name}"[:64]
-        log.info(f"[netapp_ontap] CLI bridge volume clone: {src_volume_name}@{snap_name} → {clone_vol_name}")
+        log.info(f"[netapp_storage] CLI bridge volume clone: {src_volume_name}@{snap_name} → {clone_vol_name}")
 
         # Pre-fetch source namespace path + subsystem before creating clone
         src_ns_path, src_subsystem_uuid, src_subsystem_name = self._get_ns_info_from_subsystem_maps(source_ns_uuid, svm_name)
@@ -1227,10 +1260,10 @@ class OntapClient:
             job = (resp.get("job") or {}).get("uuid", "")
             if job:
                 self.poll_job(job, interval_s=2, timeout_s=60)
-            log.info(f"[netapp_ontap] Clone volume {clone_vol_uuid} deleted")
+            log.info(f"[netapp_storage] Clone volume {clone_vol_uuid} deleted")
             return
         except OntapError as exc:
-            log.warning(f"[netapp_ontap] REST delete clone volume {clone_vol_uuid} failed: {exc}")
+            log.warning(f"[netapp_storage] REST delete clone volume {clone_vol_uuid} failed: {exc}")
 
         # Attempt 2: CLI bridge — volume must be offline before delete on ASA (error 917658).
         # PATCH private/cli/volume sets state=offline, then DELETE removes it.
@@ -1241,15 +1274,15 @@ class OntapClient:
                 r = self._session.patch(cli_url, json={"state": "offline"},
                                         params=cli_params, timeout=self.timeout)
                 if not r.ok:
-                    log.warning(f"[netapp_ontap] CLI volume offline {clone_vol_name}: "
+                    log.warning(f"[netapp_storage] CLI volume offline {clone_vol_name}: "
                                 f"{r.status_code}: {r.text[:200]}")
                 self._delete("private/cli/volume", params=cli_params)
-                log.info(f"[netapp_ontap] Clone volume {clone_vol_name} deleted via CLI bridge")
+                log.info(f"[netapp_storage] Clone volume {clone_vol_name} deleted via CLI bridge")
                 return
             except OntapError as exc:
-                log.warning(f"[netapp_ontap] CLI bridge delete clone volume {clone_vol_name} failed: {exc}")
+                log.warning(f"[netapp_storage] CLI bridge delete clone volume {clone_vol_name} failed: {exc}")
 
-        log.warning(f"[netapp_ontap] All delete attempts for clone volume "
+        log.warning(f"[netapp_storage] All delete attempts for clone volume "
                     f"{clone_vol_uuid} ({clone_vol_name}) failed — manual cleanup needed on ONTAP")
 
     def delete_namespace(self, ns_uuid):
@@ -1264,10 +1297,18 @@ class OntapClient:
                 clone_vol_uuid = clone_info  # legacy str path
                 clone_vol_name = ""
                 svm_name       = ""
-            log.info(f"[netapp_ontap] Deleting clone volume {clone_vol_uuid} ({clone_vol_name}) for ns {ns_uuid}")
+            log.info(f"[netapp_storage] Deleting clone volume {clone_vol_uuid} ({clone_vol_name}) for ns {ns_uuid}")
             self._delete_clone_volume(clone_vol_uuid, clone_vol_name, svm_name)
             return ""
-        resp = self._delete(f"protocols/nvme/namespaces/{ns_uuid}",
+        try:
+            resp = self._delete(f"protocols/nvme/namespaces/{ns_uuid}",
+                                params={"return_timeout": 0})
+            return (resp.get("job") or {}).get("uuid", "")
+        except OntapError as exc:
+            if exc.status_code != 404:
+                raise
+        # ASA R2: protocols/nvme/namespaces DELETE → 404; use storage/namespaces
+        resp = self._delete(f"storage/namespaces/{ns_uuid}",
                             params={"return_timeout": 0})
         return (resp.get("job") or {}).get("uuid", "")
 
@@ -1294,11 +1335,32 @@ class OntapClient:
                 return m.get("subsystem") or {}
         return {}
 
-    def add_nvme_namespace_to_subsystem(self, subsystem_uuid, ns_uuid):
-        """Maps an NVMe namespace to a subsystem."""
+    def add_nvme_namespace_to_subsystem(self, subsystem_uuid, ns_uuid, svm_name=""):
+        """Maps an NVMe namespace to a subsystem.
+
+        Falls back to POST protocols/nvme/subsystem-maps on ASA R2
+        (protocols/nvme/subsystems/{uuid}/namespaces → 404).
+        svm_name is required for the subsystem-maps fallback.
+        """
+        try:
+            return self._post(
+                f"protocols/nvme/subsystems/{subsystem_uuid}/namespaces",
+                body={"uuid": ns_uuid},
+                params={"return_timeout": 15},
+            )
+        except OntapError as exc:
+            if exc.status_code != 404:
+                raise
+        # ASA R2 fallback: subsystem-maps collection endpoint (requires svm)
+        body = {
+            "subsystem": {"uuid": subsystem_uuid},
+            "namespace": {"uuid": ns_uuid},
+        }
+        if svm_name:
+            body["svm"] = {"name": svm_name}
         return self._post(
-            f"protocols/nvme/subsystems/{subsystem_uuid}/namespaces",
-            body={"uuid": ns_uuid},
+            "protocols/nvme/subsystem-maps",
+            body=body,
             params={"return_timeout": 15},
         )
 
@@ -1315,7 +1377,7 @@ class OntapClient:
             return
         except OntapError as exc:
             if exc.status_code != 404:
-                log.warning(f"[netapp_ontap] unmap namespace from subsystem: {exc}")
+                log.warning(f"[netapp_storage] unmap namespace from subsystem: {exc}")
                 return
         # ASA fallback: use subsystem-maps collection endpoint
         try:
@@ -1324,4 +1386,375 @@ class OntapClient:
                 params={"subsystem.uuid": subsystem_uuid, "namespace.uuid": ns_uuid},
             )
         except OntapError as exc:
-            log.warning(f"[netapp_ontap] unmap namespace via subsystem-maps: {exc}")
+            log.warning(f"[netapp_storage] unmap namespace via subsystem-maps: {exc}")
+
+    def create_namespace(self, svm_name, volume_name, ns_name, size_bytes, os_type="linux",
+                         aggregate_name=None):
+        """Creates an NVMe namespace inside an existing volume. Returns ns_uuid.
+
+        Fallback chain for ASA R2 (protocols/nvme/namespaces POST → 404):
+          1. POST protocols/nvme/namespaces  (standard ONTAP 9.6+)
+          2. POST storage/storage-units       (ASA R2 unified API, 9.16.1+)
+          3. POST private/cli/nvme/namespace  (CLI bridge last resort)
+        """
+        body = {
+            "name": f"/vol/{volume_name}/{ns_name}",
+            "svm":  {"name": svm_name},
+            "space": {"size": size_bytes},
+            "os_type": os_type,
+        }
+        try:
+            resp = self._post("protocols/nvme/namespaces", body=body,
+                              params={"return_timeout": 30})
+            ns_uuid  = resp.get("uuid", "")
+            job_uuid = (resp.get("job") or {}).get("uuid", "")
+            if job_uuid:
+                self.poll_job(job_uuid, interval_s=2, timeout_s=120)
+            if not ns_uuid:
+                for ns in self.list_nvme_namespaces(svm_name=svm_name):
+                    loc = (ns.get("location") or {})
+                    if ((loc.get("volume") or {}).get("name") == volume_name
+                            and loc.get("namespace") == ns_name):
+                        ns_uuid = ns["uuid"]
+                        break
+            if not ns_uuid:
+                raise OntapError(f"Namespace '{ns_name}' not found after creation")
+            return ns_uuid
+        except OntapError as exc:
+            if exc.status_code == 404:
+                log.info("[netapp_storage] protocols/nvme/namespaces POST → 404, "
+                         "trying ASA fallback")
+                return self._create_namespace_asa(svm_name, volume_name, ns_name,
+                                                  size_bytes, os_type, aggregate_name)
+            raise
+
+    def _create_namespace_asa(self, svm_name, volume_name, ns_name, size_bytes,
+                               os_type="linux", aggregate_name=None):
+        """ASA R2 fallback for NVMe namespace creation.
+
+        Stage 1: POST storage/namespaces  (ASA R2, ONTAP 9.16.1+)
+          — Replaces protocols/nvme/namespaces on ASA R2; size via space.size.
+        Stage 2: POST private/cli/nvme/namespace  (CLI bridge last resort)
+          — On ASA R2 the CLI auto-provisions the volume when given a full /vol/ path.
+
+        Returns ns_uuid after looking it up via the CLI bridge or subsystem-maps.
+        """
+        size_gb = max(1, -(-size_bytes // (1024 ** 3)))  # ceiling division
+
+        # Stage 1: POST storage/namespaces (ASA R2 replacement for protocols/nvme/namespaces)
+        try:
+            body = {
+                "name":    ns_name,
+                "svm":     {"name": svm_name},
+                "space":   {"size": size_bytes},
+                "os_type": os_type,
+            }
+            resp = self._post("storage/namespaces", body=body,
+                              params={"return_timeout": 30})
+            ns_uuid  = resp.get("uuid", "")
+            job_uuid = (resp.get("job") or {}).get("uuid", "")
+            if job_uuid:
+                self.poll_job(job_uuid, interval_s=2, timeout_s=120)
+            if ns_uuid:
+                log.info(f"[netapp_storage] ASA storage/namespaces: {ns_name} → {ns_uuid}")
+                return ns_uuid
+            # UUID missing from response — look it up
+            ns_uuid = self._find_namespace_uuid_after_asa_create(svm_name, volume_name, ns_name)
+            if ns_uuid:
+                return ns_uuid
+            raise OntapError(f"Namespace '{ns_name}' not found after storage/namespaces POST")
+        except OntapError as exc:
+            if exc.status_code not in (404, 405):
+                raise
+            log.info(f"[netapp_storage] storage/namespaces → {exc.status_code}; "
+                     "trying private/cli/nvme/namespace")
+
+        # Stage 2: CLI bridge
+        ns_path = f"/vol/{volume_name}/{ns_name}"
+        cli_body = {
+            "vserver": svm_name,
+            "path":    ns_path,
+            "size":    f"{size_gb}g",
+            "ostype":  os_type,
+        }
+        log.info(f"[netapp_storage] ASA CLI nvme namespace create: {ns_path} ({size_gb}G)")
+        self._post("private/cli/nvme/namespace", body=cli_body,
+                   params={"return_timeout": 30}, timeout=60)
+
+        # Locate the namespace UUID after CLI creation
+        ns_uuid = self._find_namespace_uuid_after_asa_create(svm_name, volume_name, ns_name)
+        if not ns_uuid:
+            raise OntapError(
+                f"NVMe namespace '{ns_name}' not found after ASA CLI creation"
+            )
+        return ns_uuid
+
+    def _find_namespace_uuid_after_asa_create(self, svm_name, volume_name, ns_name):
+        """Multi-strategy UUID lookup for a namespace just created on ASA R2."""
+        # Strategy 0: storage/namespaces by name (ASA R2 endpoint, namespace name lookup)
+        try:
+            records = self._get_all_records(
+                "storage/namespaces",
+                params={"name": ns_name, "svm.name": svm_name,
+                        "fields": "uuid,name", "max_records": 10},
+            )
+            if records:
+                return records[0].get("uuid", "")
+        except OntapError:
+            pass
+
+        # Strategy 1: protocols/nvme/namespaces by volume name
+        try:
+            records = self._get_all_records(
+                "protocols/nvme/namespaces",
+                params={
+                    "location.volume.name": volume_name,
+                    "svm.name":             svm_name,
+                    "fields":               "uuid,name",
+                    "max_records":          10,
+                },
+            )
+            for r in records:
+                loc = (r.get("location") or {})
+                if (loc.get("namespace") == ns_name
+                        or (loc.get("volume") or {}).get("name") == volume_name):
+                    return r.get("uuid", "")
+        except OntapError:
+            pass
+
+        # Strategy 2: CLI bridge by volume name (proven to work on ASA R2)
+        try:
+            data = self._get(
+                "private/cli/nvme/namespace",
+                params={"vserver": svm_name, "volume": volume_name,
+                        "fields": "uuid,path,volume"},
+            )
+            for r in data.get("records", []):
+                if r.get("volume") == volume_name:
+                    return r.get("uuid", "")
+        except OntapError:
+            pass
+
+        # Strategy 3: bulk scan via list_nvme_namespaces (uses its own fallback chain)
+        for ns in self.list_nvme_namespaces(svm_name=svm_name):
+            loc = (ns.get("location") or {}).get("volume", {})
+            if loc.get("name") == volume_name:
+                return ns.get("uuid", "")
+
+        return ""
+
+    def get_namespace(self, ns_uuid):
+        """Returns namespace details (location, space, os_type).
+
+        Falls back to storage/namespaces on ASA R2 (protocols/nvme/namespaces → 404).
+        """
+        try:
+            return self._get(f"protocols/nvme/namespaces/{ns_uuid}",
+                             params={"fields": "uuid,name,location,space,os_type,svm"})
+        except OntapError as exc:
+            if exc.status_code != 404:
+                raise
+        # ASA R2: try the new endpoint
+        return self._get(f"storage/namespaces/{ns_uuid}",
+                         params={"fields": "uuid,name,location,space,os_type,svm"})
+
+    def create_nvme_subsystem(self, svm_name, subsystem_name, os_type="linux"):
+        """Creates an NVMe subsystem (analogous to iGroup). Returns subsystem_uuid."""
+        body = {
+            "name":    subsystem_name,
+            "svm":     {"name": svm_name},
+            "os_type": os_type,
+        }
+        resp = self._post("protocols/nvme/subsystems", body=body,
+                          params={"return_timeout": 30})
+        sub_uuid = resp.get("uuid", "")
+        if not sub_uuid:
+            for s in self.list_nvme_subsystems(svm_name=svm_name):
+                if s.get("name") == subsystem_name:
+                    sub_uuid = s["uuid"]
+                    break
+        if not sub_uuid:
+            raise OntapError(f"NVMe subsystem '{subsystem_name}' not found after creation")
+        return sub_uuid
+
+    def get_nvme_subsystem(self, subsystem_uuid):
+        """Returns subsystem details (name, uuid, hosts, target_nqn if available)."""
+        try:
+            return self._get(f"protocols/nvme/subsystems/{subsystem_uuid}",
+                             params={"fields": "uuid,name,svm.name,os_type,hosts.nqn,target_nqn"})
+        except OntapError:
+            return self._get(f"protocols/nvme/subsystems/{subsystem_uuid}",
+                             params={"fields": "uuid,name,svm.name,os_type,hosts.nqn"})
+
+    def add_nvme_host_to_subsystem(self, subsystem_uuid, host_nqn):
+        """Adds a host NQN to an NVMe subsystem."""
+        return self._post(
+            f"protocols/nvme/subsystems/{subsystem_uuid}/hosts",
+            body={"nqn": host_nqn},
+            params={"return_timeout": 15},
+        )
+
+    def remove_nvme_host_from_subsystem(self, subsystem_uuid, host_nqn):
+        """Removes a host NQN from an NVMe subsystem (best-effort)."""
+        try:
+            self._delete(f"protocols/nvme/subsystems/{subsystem_uuid}/hosts/{host_nqn}")
+        except OntapError as exc:
+            log.warning(f"[netapp_storage] remove NVMe host from subsystem: {exc}")
+
+    def delete_nvme_subsystem(self, subsystem_uuid):
+        """Deletes an NVMe subsystem."""
+        try:
+            self._delete(f"protocols/nvme/subsystems/{subsystem_uuid}")
+        except OntapError as exc:
+            log.warning(f"[netapp_storage] delete NVMe subsystem: {exc}")
+
+    def get_nvme_lifs_for_svm(self, svm_name):
+        """Returns list of NVMe/TCP LIF IPs for the SVM."""
+        records = self._get_all_records(
+            "network/ip/interfaces",
+            params={"services": "data_nvme_tcp", "svm.name": svm_name,
+                    "fields": "ip.address,state", "max_records": 50},
+        )
+        return [
+            (rec.get("ip") or {}).get("address", "")
+            for rec in records
+            if rec.get("state", "up") == "up"
+            and (rec.get("ip") or {}).get("address", "")
+        ]
+
+    # ── Resize ────────────────────────────────────────────────────────────────
+
+    def resize_volume(self, volume_uuid, new_size_bytes):
+        """Grows (or shrinks for NFS) a volume to new_size_bytes."""
+        url = f"{self.base_url}/storage/volumes/{volume_uuid}"
+        try:
+            r = self._session.patch(url, json={"size": new_size_bytes},
+                                    params={"return_timeout": 30}, timeout=self.timeout)
+        except Exception as exc:
+            raise OntapError(f"PATCH volume/{volume_uuid} network error: {exc}")
+        if not r.ok:
+            raise OntapError(f"PATCH volume/{volume_uuid} → {r.status_code}: {r.text[:300]}")
+        resp = r.json() if r.content else {}
+        job = (resp.get("job") or {}).get("uuid", "")
+        if job:
+            self.poll_job(job, interval_s=2, timeout_s=120)
+
+    def resize_lun(self, lun_uuid, new_size_bytes):
+        """Grows a LUN to new_size_bytes."""
+        url = f"{self.base_url}/storage/luns/{lun_uuid}"
+        try:
+            r = self._session.patch(url,
+                                    json={"space": {"size": new_size_bytes}},
+                                    params={"return_timeout": 30}, timeout=self.timeout)
+        except Exception as exc:
+            raise OntapError(f"PATCH lun/{lun_uuid} network error: {exc}")
+        if not r.ok:
+            raise OntapError(f"PATCH lun/{lun_uuid} → {r.status_code}: {r.text[:300]}")
+
+    def resize_namespace(self, ns_uuid, new_size_bytes):
+        """Grows an NVMe namespace to new_size_bytes.
+
+        Falls back to PATCH storage/namespaces on ASA R2.
+        """
+        for path in (f"protocols/nvme/namespaces/{ns_uuid}",
+                     f"storage/namespaces/{ns_uuid}"):
+            url = f"{self.base_url}/{path}"
+            try:
+                r = self._session.patch(url,
+                                        json={"space": {"size": new_size_bytes}},
+                                        params={"return_timeout": 30}, timeout=self.timeout)
+            except Exception as exc:
+                raise OntapError(f"PATCH {path} network error: {exc}")
+            if r.ok:
+                return
+            if r.status_code == 404 and path.startswith("protocols"):
+                log.info(f"[netapp_storage] PATCH protocols/nvme/namespaces → 404, "
+                         "trying storage/namespaces")
+                continue
+            raise OntapError(f"PATCH {path} → {r.status_code}: {r.text[:300]}")
+
+    # ── NFS Volume provisioning ───────────────────────────────────────────────
+
+    def create_volume_nfs(self, svm_name, vol_name, size_bytes,
+                          junction_path, aggregate_name=None, export_policy="default"):
+        """Creates an NFS volume with a junction path. Returns volume UUID."""
+        body = {
+            "name":      vol_name,
+            "svm":       {"name": svm_name},
+            "size":      size_bytes,
+            "style":     "flexvol",
+            "guarantee": {"type": "none"},
+            "snapshot_policy": {"name": "none"},
+            "space": {"snapshot": {"reserve_percent": 0}},
+            "nas": {
+                "path":          junction_path,
+                "export_policy": {"name": export_policy},
+            },
+        }
+        if aggregate_name:
+            body["aggregates"] = [{"name": aggregate_name}]
+        resp = self._post("storage/volumes", body=body, params={"return_timeout": 30})
+        vol_uuid = resp.get("uuid", "")
+        job_uuid = (resp.get("job") or {}).get("uuid", "")
+        if job_uuid:
+            self.poll_job(job_uuid, interval_s=3, timeout_s=180)
+        if not vol_uuid:
+            for v in self.get_volumes(svm_name=svm_name):
+                if v.get("name") == vol_name:
+                    vol_uuid = v.get("uuid", "")
+                    break
+        if not vol_uuid:
+            raise OntapError(f"NFS volume '{vol_name}' not found after creation")
+        return vol_uuid
+
+    def create_export_policy(self, svm_name, policy_name):
+        """Creates an NFS export policy. Returns policy id (int)."""
+        body = {"name": policy_name, "svm": {"name": svm_name}}
+        resp = self._post("protocols/nfs/export-policies", body=body,
+                          params={"return_timeout": 15})
+        policy_id = resp.get("id", 0)
+        if not policy_id:
+            records = self._get_all_records(
+                "protocols/nfs/export-policies",
+                params={"name": policy_name, "svm.name": svm_name,
+                        "fields": "id", "max_records": 5},
+            )
+            if records:
+                policy_id = records[0].get("id", 0)
+        if not policy_id:
+            raise OntapError(f"Export policy '{policy_name}' not found after creation")
+        return policy_id
+
+    def add_nfs_export_rule_rw(self, export_policy_id, client_match="0.0.0.0/0"):
+        """Adds a read-write NFS export rule (used for provisioned datastores)."""
+        body = {
+            "clients":    [{"match": client_match}],
+            "ro_rule":    ["any"],
+            "rw_rule":    ["any"],
+            "superuser":  ["any"],
+        }
+        return self._post(
+            f"protocols/nfs/export-policies/{export_policy_id}/rules", body=body)
+
+    def set_volume_export_policy(self, volume_uuid, policy_name):
+        """Assigns an export policy to a volume by name."""
+        url = f"{self.base_url}/storage/volumes/{volume_uuid}"
+        try:
+            r = self._session.patch(
+                url,
+                json={"nas": {"export_policy": {"name": policy_name}}},
+                params={"return_timeout": 15},
+                timeout=self.timeout,
+            )
+        except Exception as exc:
+            raise OntapError(f"PATCH volume/{volume_uuid} export_policy: {exc}")
+        if not r.ok:
+            raise OntapError(
+                f"PATCH volume/{volume_uuid} export_policy → {r.status_code}: {r.text[:300]}")
+
+    def delete_export_policy(self, export_policy_id):
+        """Deletes an NFS export policy (best-effort)."""
+        try:
+            self._delete(f"protocols/nfs/export-policies/{export_policy_id}")
+        except OntapError as exc:
+            log.warning(f"[netapp_storage] delete export policy {export_policy_id}: {exc}")

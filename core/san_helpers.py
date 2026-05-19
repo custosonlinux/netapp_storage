@@ -41,12 +41,12 @@ def detect_lvm_type(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
             parts = line.split()
             if len(parts) >= 2 and parts[1].startswith("t"):
                 pool_name = parts[0].strip()
-                log.info(f"[netapp_ontap] VG {vg_name}: LVM thin, Pool='{pool_name}'")
+                log.info(f"[netapp_storage] VG {vg_name}: LVM thin, Pool='{pool_name}'")
                 return "thin", pool_name
-        log.info(f"[netapp_ontap] VG {vg_name}: LVM linear")
+        log.info(f"[netapp_storage] VG {vg_name}: LVM linear")
         return "linear", ""
     except Exception as exc:
-        log.warning(f"[netapp_ontap] LVM type detection {vg_name} failed: {exc}")
+        log.warning(f"[netapp_storage] LVM type detection {vg_name} failed: {exc}")
         return "linear", ""
 
 
@@ -69,7 +69,7 @@ def get_vg_lv_map(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
                 }
         return result
     except Exception as exc:
-        log.warning(f"[netapp_ontap] LV list {vg_name} failed: {exc}")
+        log.warning(f"[netapp_storage] LV list {vg_name} failed: {exc}")
         return {}
 
 
@@ -95,7 +95,7 @@ def snapmanifest_initialize(ssh_host, ssh_user, ssh_pass, ssh_key,
         capture=True, key_material=ssh_key,
     )
     if "EXISTS" in out:
-        log.info(f"[netapp_ontap] snapmanifest LV {vg_name}/{lv_name} already exists")
+        log.info(f"[netapp_storage] snapmanifest LV {vg_name}/{lv_name} already exists")
         return True
 
     # Freien Platz prüfen
@@ -123,7 +123,7 @@ def snapmanifest_initialize(ssh_host, ssh_user, ssh_pass, ssh_key,
         f"mkfs.ext4 -F {dev_q}",
         key_material=ssh_key, timeout=60,
     )
-    log.info(f"[netapp_ontap] snapmanifest LV {vg_name}/{lv_name} created ({size_mb} MB, ext4)")
+    log.info(f"[netapp_storage] snapmanifest LV {vg_name}/{lv_name} created ({size_mb} MB, ext4)")
     return True
 
 
@@ -143,7 +143,7 @@ def snapmanifest_write_manifest(ssh_host, ssh_user, ssh_pass, ssh_key,
     mp_q  = shlex.quote(mp)
 
     def _log(msg):
-        log.info(f"[netapp_ontap] {msg}")
+        log.info(f"[netapp_storage] {msg}")
         if jlog:
             jlog.log(msg)
 
@@ -189,14 +189,14 @@ def snapmanifest_write_manifest(ssh_host, ssh_user, ssh_pass, ssh_key,
                         f"umount {mp_q} 2>/dev/null; rmdir {mp_q} 2>/dev/null",
                         key_material=ssh_key)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] snapmanifest umount failed: {exc}")
+                log.warning(f"[netapp_storage] snapmanifest umount failed: {exc}")
         if activated:
             try:
                 ssh_run(ssh_host, ssh_user, ssh_pass,
                         f"lvchange -an {vg_q}/{lv_q}",
                         key_material=ssh_key)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] snapmanifest deactivate failed: {exc}")
+                log.warning(f"[netapp_storage] snapmanifest deactivate failed: {exc}")
 
 
 # ── snapmanifest LV: read manifest ───────────────────────────────────────────
@@ -248,14 +248,14 @@ def snapmanifest_read_manifest(ssh_host, ssh_user, ssh_pass, ssh_key,
                         f"umount {mp_q} 2>/dev/null; rmdir {mp_q} 2>/dev/null",
                         key_material=ssh_key)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] snapmanifest read umount failed: {exc}")
+                log.warning(f"[netapp_storage] snapmanifest read umount failed: {exc}")
         if activated:
             try:
                 ssh_run(ssh_host, ssh_user, ssh_pass,
                         f"lvchange -an {vg_q}/{lv_q}",
                         key_material=ssh_key)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] snapmanifest read deactivate failed: {exc}")
+                log.warning(f"[netapp_storage] snapmanifest read deactivate failed: {exc}")
 
 
 # ── iSCSI: Rescan + Device-Lookup ────────────────────────────────────────────
@@ -270,10 +270,10 @@ def get_iscsi_initiator_iqn(ssh_host, ssh_user, ssh_pass, ssh_key):
         )
         iqn = out.strip()
         if iqn.startswith("iqn."):
-            log.info(f"[netapp_ontap] IQN of {ssh_host}: {iqn}")
+            log.info(f"[netapp_storage] IQN of {ssh_host}: {iqn}")
             return iqn
     except Exception as exc:
-        log.warning(f"[netapp_ontap] Cannot get IQN from {ssh_host}: {exc}")
+        log.warning(f"[netapp_storage] Cannot get IQN from {ssh_host}: {exc}")
     return ""
 
 
@@ -289,9 +289,9 @@ def rescan_iscsi(ssh_host, ssh_user, ssh_pass, ssh_key):
                 "sleep 2; "
                 "true",
                 key_material=ssh_key, timeout=60)
-        log.info("[netapp_ontap] iSCSI rescan completed")
+        log.info("[netapp_storage] iSCSI rescan completed")
     except Exception as exc:
-        log.warning(f"[netapp_ontap] iSCSI rescan failed: {exc}")
+        log.warning(f"[netapp_storage] iSCSI rescan failed: {exc}")
 
 
 def _iscsi_serial_to_mapper(serial):
@@ -331,7 +331,7 @@ def find_device_by_serial(ssh_host, ssh_user, ssh_pass, ssh_key, serial, timeout
                 capture=True, key_material=ssh_key, timeout=10,
             )
             if out.strip() == "yes":
-                log.info(f"[netapp_ontap] multipath device for serial {serial}: {mapper_dev}")
+                log.info(f"[netapp_storage] multipath device for serial {serial}: {mapper_dev}")
                 return mapper_dev
         except Exception:
             pass
@@ -377,9 +377,9 @@ def flush_iscsi_clone_device(ssh_host, ssh_user, ssh_pass, ssh_key, serial):
     try:
         ssh_run(ssh_host, ssh_user, ssh_pass, flush_cmd,
                 key_material=ssh_key, timeout=30)
-        log.info(f"[netapp_ontap] flushed multipath device {wwid} (serial={serial})")
+        log.info(f"[netapp_storage] flushed multipath device {wwid} (serial={serial})")
     except Exception as exc:
-        log.warning(f"[netapp_ontap] flush multipath (serial={serial}): {exc}")
+        log.warning(f"[netapp_storage] flush multipath (serial={serial}): {exc}")
 
 
 # ── Restore: VG importieren ───────────────────────────────────────────────────
@@ -436,7 +436,7 @@ def vg_import_clone(ssh_host, ssh_user, ssh_pass, ssh_key, device, base_vg_name)
             f"xargs -r -I{{}} dmsetup remove --force {{}} 2>/dev/null; true",
             key_material=ssh_key)
 
-    log.info(f"[netapp_ontap] VG clone imported as '{actual}' from {device}")
+    log.info(f"[netapp_storage] VG clone imported as '{actual}' from {device}")
     return actual
 
 
@@ -472,7 +472,7 @@ def lv_copy(ssh_host, ssh_user, ssh_pass, ssh_key,
     dst_q = shlex.quote(f"/dev/{dst_vg}/{dst_lv}")
 
     msg = f"LV copy: {src_vg}/{src_lv} → {dst_vg}/{dst_lv}"
-    log.info(f"[netapp_ontap] {msg}")
+    log.info(f"[netapp_storage] {msg}")
     if jlog:
         jlog.log(msg)
 
@@ -481,7 +481,7 @@ def lv_copy(ssh_host, ssh_user, ssh_pass, ssh_key,
             key_material=ssh_key, timeout=14400)
 
     done = f"LV copy completed: {src_vg}/{src_lv}"
-    log.info(f"[netapp_ontap] {done}")
+    log.info(f"[netapp_storage] {done}")
     if jlog:
         jlog.log(done)
     return True
@@ -500,9 +500,9 @@ def cleanup_restore_vg(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
         ssh_run(ssh_host, ssh_user, ssh_pass,
                 f"vgchange -an {vg_q} 2>/dev/null; vgremove -f {vg_q} 2>/dev/null; true",
                 key_material=ssh_key)
-        log.info(f"[netapp_ontap] restore VG '{vg_name}' removed")
+        log.info(f"[netapp_storage] restore VG '{vg_name}' removed")
     except Exception as exc:
-        log.warning(f"[netapp_ontap] VG cleanup {vg_name} failed: {exc}")
+        log.warning(f"[netapp_storage] VG cleanup {vg_name} failed: {exc}")
 
 
 # ── SAN-Restore: VG deaktivieren / reaktivieren ───────────────────────────────
@@ -516,7 +516,7 @@ def vg_deactivate(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
     ssh_run(ssh_host, ssh_user, ssh_pass,
             f"vgchange -an {vg_q}",
             key_material=ssh_key)
-    log.info(f"[netapp_ontap] VG '{vg_name}' deactivated")
+    log.info(f"[netapp_storage] VG '{vg_name}' deactivated")
 
 
 # ── LV management ─────────────────────────────────────────────────────────────
@@ -552,7 +552,7 @@ def create_lv(ssh_host, ssh_user, ssh_pass, ssh_key,
                 f"lvcreate -L {size_bytes}B -n {lv_q} {vg_q}"
                 f" --zero n --wipesignatures n",
                 key_material=ssh_key)
-    log.info(f"[netapp_ontap] LV created: {vg_name}/{lv_name} ({size_bytes} B, {lvm_type})")
+    log.info(f"[netapp_storage] LV created: {vg_name}/{lv_name} ({size_bytes} B, {lvm_type})")
 
 
 # ── NVMe-oF: Rescan + Device-Discovery ───────────────────────────────────────
@@ -584,9 +584,9 @@ def nvme_ns_rescan(ssh_host, ssh_user, ssh_pass, ssh_key):
                         key_material=ssh_key, timeout=15)
             except Exception:
                 pass
-        log.info("[netapp_ontap] NVMe namespace rescan completed")
+        log.info("[netapp_storage] NVMe namespace rescan completed")
     except Exception as exc:
-        log.warning(f"[netapp_ontap] NVMe rescan failed: {exc}")
+        log.warning(f"[netapp_storage] NVMe rescan failed: {exc}")
 
 
 def find_new_nvme_device(ssh_host, ssh_user, ssh_pass, ssh_key,
@@ -602,10 +602,69 @@ def find_new_nvme_device(ssh_host, ssh_user, ssh_pass, ssh_key,
         new_devs = current - devices_before
         if new_devs:
             dev = sorted(new_devs)[0]
-            log.info(f"[netapp_ontap] New NVMe namespace device: {dev}")
+            log.info(f"[netapp_storage] New NVMe namespace device: {dev}")
             return dev
         time.sleep(2)
     raise RuntimeError(f"New NVMe namespace device not found after {timeout_s}s")
+
+
+def get_nvme_host_nqn(ssh_host, ssh_user, ssh_pass, ssh_key):
+    """Returns the host NQN from /etc/nvme/hostnqn, or empty string."""
+    try:
+        out = ssh_run(ssh_host, ssh_user, ssh_pass,
+                      "cat /etc/nvme/hostnqn 2>/dev/null || true",
+                      capture=True, key_material=ssh_key, timeout=10)
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("nqn."):
+                return line
+    except Exception as exc:
+        log.warning(f"[netapp_storage] get_nvme_host_nqn {ssh_host}: {exc}")
+    return ""
+
+
+def nvme_connect_all(ssh_host, ssh_user, ssh_pass, ssh_key, timeout_s=60):
+    """Runs nvme connect-all (reads discovery.conf) and triggers a namespace rescan.
+
+    Uses Linux timeout(1) to cap the nvme connect-all call: in environments
+    where discovery.conf contains LIFs without a DDC (port 8009), nvme discover
+    hangs per entry. The actual data connections complete quickly; the Linux
+    timeout kills the stalled discovery without failing the overall operation.
+    The SSH timeout is set slightly above the inner timeout to give it room.
+    """
+    inner = max(20, timeout_s - 10)
+    ssh_run(ssh_host, ssh_user, ssh_pass,
+            f"timeout {inner} nvme connect-all 2>/dev/null; sleep 2; true",
+            key_material=ssh_key, timeout=timeout_s)
+    nvme_ns_rescan(ssh_host, ssh_user, ssh_pass, ssh_key)
+
+
+def nvme_disconnect_by_vg(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
+    """Disconnects the NVMe controller that backs the given VG.
+
+    Finds the PV device (e.g. /dev/nvme0n1), derives the controller (/dev/nvme0),
+    and runs nvme disconnect on it.
+    """
+    try:
+        out = ssh_run(ssh_host, ssh_user, ssh_pass,
+                      f"pvs --noheadings -o pv_name --select 'vgname={vg_name}' 2>/dev/null || true",
+                      capture=True, key_material=ssh_key, timeout=15)
+        for line in out.splitlines():
+            pv = line.strip()
+            if not pv:
+                continue
+            # /dev/nvme0n1 or /dev/nvme0n1p1 → /dev/nvme0
+            import re as _re
+            m = _re.match(r'(/dev/nvme\d+)', pv)
+            if m:
+                ctrl = m.group(1)
+                ssh_run(ssh_host, ssh_user, ssh_pass,
+                        f"timeout 10 nvme disconnect --device {shlex.quote(ctrl)} 2>/dev/null; true",
+                        key_material=ssh_key, timeout=20)
+                log.info(f"[netapp_storage] nvme disconnect {ctrl} on {ssh_host}")
+                return
+    except Exception as exc:
+        log.warning(f"[netapp_storage] nvme_disconnect_by_vg {ssh_host}: {exc}")
 
 
 def vg_rescan_and_activate(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
@@ -618,4 +677,4 @@ def vg_rescan_and_activate(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
     ssh_run(ssh_host, ssh_user, ssh_pass,
             f"pvscan --cache 2>/dev/null; vgchange -ay {vg_q}",
             key_material=ssh_key)
-    log.info(f"[netapp_ontap] VG '{vg_name}' reactivated")
+    log.info(f"[netapp_storage] VG '{vg_name}' reactivated")

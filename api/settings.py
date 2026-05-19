@@ -1,19 +1,22 @@
 """
-Settings API — SMTP / email notification configuration.
+Settings API — SMTP / email notification configuration + DB export/import.
 
   settings/smtp           GET   – load SMTP config (password omitted)
   settings/smtp/save      POST  – save SMTP config
   settings/smtp/test      POST  – test SMTP connection with stored config
+  settings/export         GET   – download all netapp_* tables as JSON
+  settings/import         POST  – restore from exported JSON (idempotent upsert)
 """
 
 import smtplib
 import ssl
 import email.mime.text
 import email.mime.multipart
+import json
 import logging
 from datetime import datetime, timezone
 
-from flask import request, jsonify
+from flask import request, jsonify, Response
 from pegaprox.core.db import get_db
 from pegaprox.api.plugins import register_plugin_route
 
@@ -90,7 +93,7 @@ def _smtp_save():
             "WHERE id='default'",
             (host, port, username, from_address, encryption, enabled, now),
         )
-    log.info("[netapp_ontap] SMTP config saved")
+    log.info("[netapp_storage] SMTP config saved")
     return jsonify({'success': True})
 
 
@@ -115,7 +118,7 @@ def _smtp_test():
         _test_smtp_connection(host, port, username, password, encryption)
         return jsonify({'success': True})
     except Exception as exc:
-        log.warning(f"[netapp_ontap] SMTP test failed: {exc}")
+        log.warning(f"[netapp_storage] SMTP test failed: {exc}")
         return jsonify({'success': False, 'error': str(exc)})
 
 
@@ -194,9 +197,9 @@ def send_job_notification(schedule_name, job_status, snap_name,
         msg.attach(email.mime.text.MIMEText(body, 'plain', 'utf-8'))
 
         _send_smtp(host, port, username, password, encryption, from_addr, recipients, msg.as_string())
-        log.info(f"[netapp_ontap] Notification sent for schedule '{schedule_name}' ({job_status})")
+        log.info(f"[netapp_storage] Notification sent for schedule '{schedule_name}' ({job_status})")
     except Exception as exc:
-        log.warning(f"[netapp_ontap] Notification send failed: {exc}")
+        log.warning(f"[netapp_storage] Notification send failed: {exc}")
 
 
 def _send_smtp(host, port, username, password, encryption, from_addr, recipients, raw_message):
@@ -262,11 +265,98 @@ def _notify_test():
 
     try:
         _send_smtp(host, port, username, password, encryption, from_addr, recipients, msg.as_string())
-        log.info(f"[netapp_ontap] Test notification sent to {recipients_csv}")
+        log.info(f"[netapp_storage] Test notification sent to {recipients_csv}")
         return jsonify({'success': True})
     except Exception as exc:
-        log.warning(f"[netapp_ontap] Test notification failed: {exc}")
+        log.warning(f"[netapp_storage] Test notification failed: {exc}")
         return jsonify({'success': False, 'error': str(exc)})
+
+
+# Tables exported in dependency order (parents before children so import doesn't
+# hit FK constraints on a fresh DB).
+_EXPORT_TABLES = [
+    'netapp_endpoints',
+    'netapp_pve_hosts',
+    'netapp_smtp_config',
+    'netapp_volume_mapping',
+    'netapp_provisioned_datastores',
+    'netapp_snapshot_schedules',
+]
+
+
+def _db_export():
+    err = _require_admin()
+    if err:
+        return err
+    db = get_db()
+    payload = {
+        'version': '1',
+        'plugin':  'netapp_storage',
+        'exported_at': datetime.now(timezone.utc).isoformat(),
+        'tables': {},
+    }
+    for table in _EXPORT_TABLES:
+        rows = db.query(f"SELECT * FROM {table}")
+        payload['tables'][table] = [dict(r) for r in rows]
+
+    ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+    filename = f'netapp_storage_backup_{ts}.json'
+    return Response(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+def _db_import():
+    err = _require_admin()
+    if err:
+        return err
+
+    # Accept both JSON body and multipart file upload
+    if request.content_type and 'multipart' in request.content_type:
+        f = request.files.get('file')
+        if not f:
+            return jsonify({'error': 'No file uploaded'}), 400
+        try:
+            payload = json.load(f)
+        except Exception as exc:
+            return jsonify({'error': f'Invalid JSON: {exc}'}), 400
+    else:
+        try:
+            payload = request.get_json(force=True) or {}
+        except Exception as exc:
+            return jsonify({'error': f'Invalid JSON: {exc}'}), 400
+
+    if payload.get('plugin') != 'netapp_storage':
+        return jsonify({'error': 'Backup file is not from the netapp_storage plugin'}), 400
+    if str(payload.get('version')) != '1':
+        return jsonify({'error': f"Unsupported backup version: {payload.get('version')}"}), 400
+
+    tables = payload.get('tables', {})
+    db = get_db()
+    stats = {}
+
+    for table in _EXPORT_TABLES:
+        rows = tables.get(table, [])
+        if not rows:
+            stats[table] = 0
+            continue
+        inserted = 0
+        for row in rows:
+            cols = ', '.join(row.keys())
+            placeholders = ', '.join(['?' for _ in row])
+            sql = f'INSERT OR REPLACE INTO {table} ({cols}) VALUES ({placeholders})'
+            try:
+                db.execute(sql, list(row.values()))
+                inserted += 1
+            except Exception as exc:
+                log.warning(f'[netapp_storage] import: skipped row in {table}: {exc}')
+        stats[table] = inserted
+
+    total = sum(stats.values())
+    log.info(f'[netapp_storage] DB import: {total} rows restored — {stats}')
+    return jsonify({'success': True, 'rows_imported': total, 'per_table': stats})
 
 
 def register_routes():
@@ -274,3 +364,5 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, 'settings/smtp/save',      _smtp_save)
     register_plugin_route(PLUGIN_ID, 'settings/smtp/test',      _smtp_test)
     register_plugin_route(PLUGIN_ID, 'settings/notify-test',    _notify_test)
+    register_plugin_route(PLUGIN_ID, 'settings/export',         _db_export)
+    register_plugin_route(PLUGIN_ID, 'settings/import',         _db_import)

@@ -184,7 +184,7 @@ def _run_clone(job_id, params, username):
             except Exception:
                 pass
     except Exception as exc:
-        log.error(f"[netapp_ontap] Clone job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] Clone job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
         if conf_path_reserved and pve_host:
@@ -390,7 +390,7 @@ def _run_clone_san(job_id, params, username):
                 jlog.log("Clone namespace already in subsystem (ASA volume clone) …")
             else:
                 jlog.log("Mapping clone namespace to NVMe subsystem …")
-                client.add_nvme_namespace_to_subsystem(subsystem_uuid, temp_ns_uuid)
+                client.add_nvme_namespace_to_subsystem(subsystem_uuid, temp_ns_uuid, svm_name=svm_name)
 
             jlog.log("Rescanning NVMe controllers …")
             nvme_ns_rescan(pve_host, pve_user, pve_pass, pve_key)
@@ -544,7 +544,7 @@ def _run_clone_san(job_id, params, username):
                 from .san_helpers import cleanup_restore_vg
                 cleanup_restore_vg(pve_host, pve_user, pve_pass, pve_key, temp_vg_name)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] SAN clone cancel cleanup VG failed: {ce}")
+                log.warning(f"[netapp_storage] SAN clone cancel cleanup VG failed: {ce}")
         if client and (temp_lun_uuid or temp_ns_uuid or temp_iscsi_clone_vol_uuid or temp_igroup_uuid):
             try:
                 _cleanup_san_clone(client, protocol,
@@ -553,13 +553,13 @@ def _run_clone_san(job_id, params, username):
                                    temp_iscsi_clone_vol_uuid,
                                    temp_igroup_uuid=temp_igroup_uuid)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] SAN clone cancel cleanup LUN/NS failed: {ce}")
+                log.warning(f"[netapp_storage] SAN clone cancel cleanup LUN/NS failed: {ce}")
             if protocol == "iscsi" and temp_iscsi_serial and pve_host:
                 try:
                     from .san_helpers import flush_iscsi_clone_device
                     flush_iscsi_clone_device(pve_host, pve_user, pve_pass, pve_key, temp_iscsi_serial)
                 except Exception as ce:
-                    log.warning(f"[netapp_ontap] flush multipath on cancel failed: {ce}")
+                    log.warning(f"[netapp_storage] flush multipath on cancel failed: {ce}")
         if conf_path_reserved and pve_host:
             try:
                 ssh_run(pve_host, pve_user, pve_pass,
@@ -567,7 +567,7 @@ def _run_clone_san(job_id, params, username):
             except Exception:
                 pass
     except Exception as exc:
-        log.error(f"[netapp_ontap] SAN clone job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] SAN clone job {job_id} failed: {exc}")
         _fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
         # Best-effort cleanup
@@ -576,7 +576,7 @@ def _run_clone_san(job_id, params, username):
                 from .san_helpers import cleanup_restore_vg
                 cleanup_restore_vg(pve_host, pve_user, pve_pass, pve_key, temp_vg_name)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] SAN clone cleanup VG failed: {ce}")
+                log.warning(f"[netapp_storage] SAN clone cleanup VG failed: {ce}")
         if client and (temp_lun_uuid or temp_ns_uuid or temp_iscsi_clone_vol_uuid or temp_igroup_uuid):
             try:
                 _cleanup_san_clone(client, protocol,
@@ -585,13 +585,13 @@ def _run_clone_san(job_id, params, username):
                                    temp_iscsi_clone_vol_uuid,
                                    temp_igroup_uuid=temp_igroup_uuid)
             except Exception as ce:
-                log.warning(f"[netapp_ontap] SAN clone cleanup LUN/NS failed: {ce}")
+                log.warning(f"[netapp_storage] SAN clone cleanup LUN/NS failed: {ce}")
             if protocol == "iscsi" and temp_iscsi_serial and pve_host:
                 try:
                     from .san_helpers import flush_iscsi_clone_device
                     flush_iscsi_clone_device(pve_host, pve_user, pve_pass, pve_key, temp_iscsi_serial)
                 except Exception as ce:
-                    log.warning(f"[netapp_ontap] flush multipath on error failed: {ce}")
+                    log.warning(f"[netapp_storage] flush multipath on error failed: {ce}")
         if conf_path_reserved and pve_host:
             try:
                 ssh_run(pve_host, pve_user, pve_pass,
@@ -617,7 +617,7 @@ def _cleanup_san_clone(client, protocol,
             try:
                 client.unmap_lun(temp_lun_uuid, igroup_uuid)
             except Exception as exc:
-                log.warning(f"[netapp_ontap] unmap clone LUN: {exc}")
+                log.warning(f"[netapp_storage] unmap clone LUN: {exc}")
         if temp_iscsi_clone_vol_uuid:
             # LUN lives inside a FlexClone volume — delete the volume
             try:
@@ -625,14 +625,14 @@ def _cleanup_san_clone(client, protocol,
                 if jlog:
                     jlog.log("Clone volume removed.")
             except Exception as exc:
-                log.warning(f"[netapp_ontap] delete clone volume: {exc}")
+                log.warning(f"[netapp_storage] delete clone volume: {exc}")
         else:
             try:
                 client.delete_lun(temp_lun_uuid)
                 if jlog:
                     jlog.log("Clone LUN removed.")
             except Exception as exc:
-                log.warning(f"[netapp_ontap] delete clone LUN: {exc}")
+                log.warning(f"[netapp_storage] delete clone LUN: {exc}")
 
     elif protocol == "nvme" and temp_ns_uuid:
         if subsystem_uuid:
@@ -642,7 +642,7 @@ def _cleanup_san_clone(client, protocol,
             if jlog:
                 jlog.log("Clone namespace removed.")
         except Exception as exc:
-            log.warning(f"[netapp_ontap] delete clone namespace: {exc}")
+            log.warning(f"[netapp_storage] delete clone namespace: {exc}")
 
     # Delete temp igroup (created for this clone only, now empty after LUN/volume removal)
     if temp_igroup_uuid:
@@ -651,7 +651,7 @@ def _cleanup_san_clone(client, protocol,
             if jlog:
                 jlog.log("Temp igroup removed.")
         except Exception as exc:
-            log.warning(f"[netapp_ontap] delete temp igroup {temp_igroup_uuid}: {exc}")
+            log.warning(f"[netapp_storage] delete temp igroup {temp_igroup_uuid}: {exc}")
 
 
 # ── Hilfsfunktionen ───────────────────────────────────────────────────────────
@@ -971,7 +971,7 @@ def _run_dr_clone(job_id, params, username):
         jlog.log("Job cancelled by user")
         _cancel_job(db, job_id)
     except Exception as exc:
-        log.error(f"[netapp_ontap] DR-Clone job {job_id} failed: {exc}")
+        log.error(f"[netapp_storage] DR-Clone job {job_id} failed: {exc}")
         _re_fail_job(db, job_id)
         jlog.log(f"ERROR: {exc}")
 
@@ -985,7 +985,7 @@ def _run_dr_clone(job_id, params, username):
                         f"rmdir {shlex.quote(dr_mount_point)} 2>/dev/null || true",
                         key_material=pve_key)
             except Exception as e:
-                log.warning(f"[netapp_ontap] DR-Clone cleanup failed: {e}")
+                log.warning(f"[netapp_storage] DR-Clone cleanup failed: {e}")
         _reg_unregister(job_id)
 
     if not _re_job_failed(db, job_id):

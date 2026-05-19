@@ -32,7 +32,7 @@ def scan_relationships(db):
         mapping_by_src_path[key] = m
 
     known_paths = list(mapping_by_src_path.keys())
-    log.warning(f"[netapp_ontap] SnapMirror scan: known source paths: {known_paths}")
+    log.warning(f"[netapp_storage] SnapMirror scan: known source paths: {known_paths}")
 
     # Scan all endpoints (including destination cluster)
     all_ep_rows = db.query("SELECT id FROM netapp_endpoints") or []
@@ -46,7 +46,7 @@ def scan_relationships(db):
             client = build_ontap_client(ep)
             rels = client.list_snapmirror_relationships()
             log.warning(
-                f"[netapp_ontap] SnapMirror scan '{ep.get('name','?')}': "
+                f"[netapp_storage] SnapMirror scan '{ep.get('name','?')}': "
                 f"{len(rels)} relationships — paths: "
                 f"{[((r.get('source') or {}).get('path','?')) for r in rels]}"
             )
@@ -56,9 +56,9 @@ def scan_relationships(db):
                 if mapping:
                     _upsert_relationship(db, rel, mapping)
                     found += 1
-                    log.warning(f"[netapp_ontap] SnapMirror matched: {src_path}")
+                    log.warning(f"[netapp_storage] SnapMirror matched: {src_path}")
         except Exception as exc:
-            log.warning(f"[netapp_ontap] SnapMirror scan endpoint '{ep_id}': {exc}")
+            log.warning(f"[netapp_storage] SnapMirror scan endpoint '{ep_id}': {exc}")
             errors.append(str(exc))
 
     match_endpoints(db)
@@ -111,9 +111,9 @@ def match_endpoints(db):
                 "WHERE id=?",
                 (matched_ep["id"], vol_uuid, nfs_ip, junction, rel["id"]),
             )
-            log.info(f"[netapp_ontap] SnapMirror endpoint matched: {rel['dest_cluster_name']} → {matched_ep['name']}")
+            log.info(f"[netapp_storage] SnapMirror endpoint matched: {rel['dest_cluster_name']} → {matched_ep['name']}")
         except Exception as exc:
-            log.warning(f"[netapp_ontap] SnapMirror endpoint match failed {rel['dest_cluster_name']}: {exc}")
+            log.warning(f"[netapp_storage] SnapMirror endpoint match failed {rel['dest_cluster_name']}: {exc}")
 
 
 def _upsert_relationship(db, rel, mapping):
@@ -203,14 +203,14 @@ def trigger_update_for_volume(db, volume_uuid, source_endpoint_id, jlog=None):
             if jlog:
                 jlog.log(msg)
             else:
-                log.info(f"[netapp_ontap] {msg}")
+                log.info(f"[netapp_storage] {msg}")
             started += 1
         except Exception as exc:
             msg = f"SnapMirror® update failed for {rel['dest_volume']}: {exc}"
             if jlog:
                 jlog.log(msg)
             else:
-                log.warning(f"[netapp_ontap] {msg}")
+                log.warning(f"[netapp_storage] {msg}")
 
     return started
 
@@ -291,7 +291,7 @@ def ensure_secondary_nfs_export(db, relationship_id):
         if not has_open_rule:
             client.add_nfs_export_rule(policy_id)
             created = True
-            log.info(f"[netapp_ontap] NFS export rule 0.0.0.0/0 created for {rel['dest_volume']}")
+            log.info(f"[netapp_storage] NFS export rule 0.0.0.0/0 created for {rel['dest_volume']}")
 
     if not rel["dest_junction_path"] and junction:
         db.execute(

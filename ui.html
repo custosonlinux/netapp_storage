@@ -157,8 +157,10 @@
   .btn-primary:hover { filter: brightness(1.1); }
   .btn-ghost  { background: transparent; color: var(--muted); border-color: var(--border); }
   .btn-ghost:hover  { color: var(--text); border-color: var(--text); background: var(--hover); }
-  .btn-danger { background: transparent; color: var(--error); border-color: transparent; }
-  .btn-danger:hover { background: rgba(248,81,73,.1); border-color: var(--error); }
+  .btn-danger  { background: transparent; color: var(--error);   border-color: var(--error); }
+  .btn-danger:hover  { background: rgba(248,81,73,.1); }
+  .btn-success { background: transparent; color: var(--success); border-color: var(--success); }
+  .btn-success:hover { background: rgba(63,185,80,.1); }
   .btn-warning { background: transparent; color: #f0a040; border-color: transparent; }
   .btn-warning:hover { background: rgba(229,112,0,.1); border-color: #f0a040; }
   .btn-sm { padding: 4px 10px; font-size: 11px; }
@@ -1626,7 +1628,7 @@ function applyI18n() {
         <button class="btn btn-ghost" onclick="loadProvDatastores()">Refresh</button>
       </div>
 
-      <!-- ── Wizard ─────────────────────────────────────────────── -->
+      <!-- ── Wizard ────────────────────────────────────────────── -->
       <div id="provWizCard" class="card" style="display:none;margin-bottom:12px">
 
         <!-- Step indicator -->
@@ -1643,13 +1645,13 @@ function applyI18n() {
               <label>Protocol</label>
               <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
                 <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="provProto" value="iscsi" checked> iSCSI
+                  <input type="radio" name="provProto" value="iscsi" checked onchange="provProtoChange()"> iSCSI
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer;opacity:.45" title="Coming soon">
-                  <input type="radio" name="provProto" value="nvme" disabled> NVMe-oF
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                  <input type="radio" name="provProto" value="nvme" onchange="provProtoChange()"> NVMe-oF
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer;opacity:.45" title="Coming soon">
-                  <input type="radio" name="provProto" value="nfs" disabled> NFS
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                  <input type="radio" name="provProto" value="nfs" onchange="provProtoChange()"> NFS
                 </label>
               </div>
             </div>
@@ -1675,13 +1677,15 @@ function applyI18n() {
           </div>
         </div>
 
-        <!-- Step 2: ONTAP resource (volume + LUN + iGroup) -->
+        <!-- Step 2: ONTAP resource — protocol-specific sections -->
         <div id="provWizStep2" style="display:none">
+
+          <!-- Common: Volume selector -->
           <div class="form-grid" style="margin-bottom:6px">
             <div class="form-group">
               <label>Volume</label>
               <select class="form-control" id="provWizVolume" onchange="provWizVolumeChange()">
-                <option value="__new__">— create new —</option>
+                <option value="__new__">— create new volume —</option>
               </select>
             </div>
             <div class="form-group" id="provWizNewVolRow" style="display:none">
@@ -1689,45 +1693,112 @@ function applyI18n() {
               <input class="form-control" id="provWizVolName" placeholder="e.g. ucnlabprox_san01">
             </div>
             <div class="form-group" id="provWizAggRow">
-              <label>Aggregate <span style="font-weight:400;color:var(--muted)">(for new volume)</span></label>
+              <label>Aggregate <span style="font-weight:400;color:var(--muted)">(for new volume, optional)</span></label>
               <select class="form-control" id="provWizAggregate">
                 <option value="">— loading… —</option>
               </select>
             </div>
-            <div class="form-group">
-              <label>LUN</label>
-              <select class="form-control" id="provWizLun" onchange="provWizLunChange()">
-                <option value="__new__">— create new —</option>
-              </select>
-            </div>
           </div>
-          <div class="form-grid" id="provWizNewLunRow" style="margin-bottom:14px">
-            <div class="form-group">
-              <label>New LUN Name</label>
-              <input class="form-control" id="provWizLunName" placeholder="e.g. proxmox-lun-01">
-            </div>
-            <div class="form-group">
-              <label>Size</label>
-              <div style="display:flex;gap:6px">
-                <input class="form-control" id="provWizLunSize" type="number" min="1" value="100" style="width:90px">
-                <select class="form-control" id="provWizLunSizeUnit" style="width:80px">
-                  <option value="GiB">GiB</option>
-                  <option value="TiB">TiB</option>
-                  <option value="MiB">MiB</option>
+
+          <!-- iSCSI: LUN + iGroup -->
+          <div id="provWizIscsiSection">
+            <div class="form-grid" style="margin-bottom:6px">
+              <div class="form-group">
+                <label>LUN</label>
+                <select class="form-control" id="provWizLun" onchange="provWizLunChange()">
+                  <option value="__new__">— create new —</option>
                 </select>
               </div>
             </div>
-            <div class="form-group">
-              <label>iGroup</label>
-              <select class="form-control" id="provWizIgroup" onchange="provWizIgroupChange()">
-                <option value="__new__">— create new —</option>
-              </select>
-            </div>
-            <div class="form-group" id="provWizNewIgroupRow" style="display:none">
-              <label>New iGroup Name</label>
-              <input class="form-control" id="provWizIgroupName" placeholder="auto-generated if blank">
+            <div class="form-grid" id="provWizNewLunRow" style="margin-bottom:14px">
+              <div class="form-group">
+                <label>New LUN Name</label>
+                <input class="form-control" id="provWizLunName" placeholder="e.g. proxmox-lun-01">
+              </div>
+              <div class="form-group">
+                <label>Size</label>
+                <div style="display:flex;gap:6px">
+                  <input class="form-control" id="provWizLunSize" type="number" min="1" value="100" style="width:90px">
+                  <select class="form-control" id="provWizLunSizeUnit" style="width:80px">
+                    <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>iGroup</label>
+                <select class="form-control" id="provWizIgroup" onchange="provWizIgroupChange()">
+                  <option value="__new__">— create new —</option>
+                </select>
+              </div>
+              <div class="form-group" id="provWizNewIgroupRow" style="display:none">
+                <label>New iGroup Name</label>
+                <input class="form-control" id="provWizIgroupName" placeholder="auto-generated if blank">
+              </div>
             </div>
           </div>
+
+          <!-- NVMe: Namespace + Subsystem -->
+          <div id="provWizNvmeSection" style="display:none">
+            <div class="form-grid" style="margin-bottom:6px">
+              <div class="form-group">
+                <label>Namespace</label>
+                <select class="form-control" id="provWizNs" onchange="provWizNsChange()">
+                  <option value="__new__">— create new —</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-grid" id="provWizNewNsRow" style="margin-bottom:14px">
+              <div class="form-group">
+                <label>New Namespace Name</label>
+                <input class="form-control" id="provWizNsName" placeholder="e.g. proxmox-ns-01">
+              </div>
+              <div class="form-group">
+                <label>Size</label>
+                <div style="display:flex;gap:6px">
+                  <input class="form-control" id="provWizNsSize" type="number" min="1" value="100" style="width:90px">
+                  <select class="form-control" id="provWizNsSizeUnit" style="width:80px">
+                    <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>NVMe Subsystem</label>
+                <select class="form-control" id="provWizSubsystem" onchange="provWizSubsystemChange()">
+                  <option value="__new__">— create new —</option>
+                </select>
+              </div>
+              <div class="form-group" id="provWizNewSubsystemRow" style="display:none">
+                <label>New Subsystem Name</label>
+                <input class="form-control" id="provWizSubsystemName" placeholder="auto-generated if blank">
+              </div>
+            </div>
+          </div>
+
+          <!-- NFS: LIF + Junction Path + Volume Size -->
+          <div id="provWizNfsSection" style="display:none">
+            <div class="form-grid" style="margin-bottom:14px">
+              <div class="form-group">
+                <label>NFS LIF <span style="font-weight:400;color:var(--muted)">(storage network interface)</span></label>
+                <select class="form-control" id="provWizNfsLif" onchange="provWizNfsLifChange()">
+                  <option value="">— loading… —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Junction Path</label>
+                <input class="form-control" id="provWizNfsJunction" placeholder="e.g. /nfs-prod">
+              </div>
+              <div class="form-group" id="provWizNfsSizeRow">
+                <label>Volume Size <span style="font-weight:400;color:var(--muted)">(for new volume)</span></label>
+                <div style="display:flex;gap:6px">
+                  <input class="form-control" id="provWizNfsSize" type="number" min="1" value="500" style="width:90px">
+                  <select class="form-control" id="provWizNfsSizeUnit" style="width:80px">
+                    <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost" onclick="provWizShowStep(1)">← Back</button>
             <button class="btn btn-primary" onclick="provWizNext2()">Next →</button>
@@ -1735,7 +1806,7 @@ function applyI18n() {
           </div>
         </div>
 
-        <!-- Step 3: Hosts + Names + LVM type -->
+        <!-- Step 3: Hosts + Names + LVM type (LVM hidden for NFS) -->
         <div id="provWizStep3" style="display:none">
           <div class="form-grid" style="margin-bottom:14px">
             <div class="form-group" style="grid-column:1/-1">
@@ -1743,14 +1814,14 @@ function applyI18n() {
               <div id="provWizHostList" style="margin-top:4px"></div>
             </div>
             <div class="form-group">
-              <label>LVM VG Name</label>
-              <input class="form-control" id="provWizVgName" placeholder="e.g. vgsanprod">
-            </div>
-            <div class="form-group">
               <label>PVE Storage ID</label>
               <input class="form-control" id="provWizStorageId" placeholder="e.g. san-prod">
             </div>
-            <div class="form-group">
+            <div class="form-group prov-san-only">
+              <label>LVM VG Name</label>
+              <input class="form-control" id="provWizVgName" placeholder="e.g. vgsanprod">
+            </div>
+            <div class="form-group prov-san-only">
               <label>LVM Type</label>
               <select class="form-control" id="provWizLvmType">
                 <option value="linear">Linear (thick)</option>
@@ -1898,6 +1969,10 @@ function applyI18n() {
               <option value="1" data-i18n="opt_ssl_yes_s">Yes</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>NFS Storage IP <span style="font-weight:400;color:var(--muted)">(optional — for export rules)</span></label>
+            <input id="pve_nfs_ip" placeholder="10.230.77.x — leave blank to use Host/IP above">
+          </div>
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" onclick="addPveHost()" data-i18n="btn_save">Save</button>
@@ -1908,10 +1983,10 @@ function applyI18n() {
       <div class="card">
         <table>
           <thead><tr>
-            <th data-i18n="th_name">Name</th><th data-i18n="th_host">Host</th><th data-i18n="lbl_port">Port</th><th data-i18n="th_user">User</th><th data-i18n="th_ssl_verified">SSL verified</th><th data-i18n="th_actions">Actions</th>
+            <th data-i18n="th_name">Name</th><th data-i18n="th_host">Host</th><th data-i18n="lbl_port">Port</th><th data-i18n="th_user">User</th><th>NFS IP</th><th data-i18n="th_ssl_verified">SSL verified</th><th data-i18n="th_actions">Actions</th>
           </tr></thead>
           <tbody id="pveHostsBody">
-            <tr><td colspan="6" class="empty"><span class="spinner"></span></td></tr>
+            <tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
       </div>
@@ -1980,6 +2055,26 @@ function applyI18n() {
         </div>
       </div>
 
+      <!-- ═══════════════ DATA BACKUP / RESTORE ═══════════════ -->
+      <div class="sub-header" style="margin-top:16px">
+        <span class="sub-header-title">Data Backup / Restore</span>
+      </div>
+      <div class="card">
+        <p class="hint" style="margin-bottom:12px">
+          Export plugin configuration (endpoints, PVE hosts, volume mappings, schedules, provisioned datastores, SMTP config) as a JSON file.
+          Use the exported file to restore the plugin on a new or rebuilt server. Passwords are exported in encrypted form — they will only work if the encryption key is the same on the target server.
+          Snapshot history and SnapMirror relationship cache are not included — both are repopulated automatically.
+        </p>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <a id="exportDataLink" href="#" onclick="triggerExport(event)" class="btn btn-primary">Export Plugin Data</a>
+          <label class="btn btn-ghost" style="cursor:pointer;margin:0">
+            Import from File
+            <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importPluginData(this)">
+          </label>
+          <span id="importStatus" style="font-size:13px;color:var(--muted)"></span>
+        </div>
+      </div>
+
     </div>
 
   </div><!-- /.content -->
@@ -1988,7 +2083,7 @@ function applyI18n() {
 <div id="toast" class="toast" style="display:none"></div>
 
 <script>
-const API = '/api/plugins/netapp_ontap/api';
+const API = '/api/plugins/netapp_storage/api';
 let _mappingsCache = [];
 let _allSnapshots  = [];   // cached snapshot list (for pagination + restore)
 let _snapPage      = 0;
@@ -2165,7 +2260,7 @@ async function deleteEndpoint(id, name) {
 // ═══════════════════════════ PVE-HOSTS ════════════════════════════════════
 
 function showAddPveHostForm() {
-  ['pve_name','pve_host','pve_pass'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['pve_name','pve_host','pve_pass','pve_nfs_ip'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('pve_port').value = '8006';
   document.getElementById('pve_user').value = 'root@pam';
   document.getElementById('pve_ssl').value  = '0';
@@ -2186,6 +2281,7 @@ async function loadPveHosts() {
         '<td>'+esc(h.host)+'</td>' +
         '<td>'+esc(h.port)+'</td>' +
         '<td>'+esc(h.username)+'</td>' +
+        '<td>'+(h.nfs_ip ? esc(h.nfs_ip) : '<span style="color:var(--muted)">—</span>')+'</td>' +
         '<td>'+(h.ssl_verify ? '<span class="badge badge-green">'+t('opt_ssl_yes_s')+'</span>' : '<span class="badge badge-orange">'+t('opt_ssl_no')+'</span>')+'</td>' +
         '<td><div class="row-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="testPveHost(\''+h.id+'\',\''+esc(h.name)+'\')">'+t('btn_test')+'</button>' +
@@ -2202,9 +2298,10 @@ async function addPveHost() {
   var username   = document.getElementById('pve_user').value.trim();
   var password   = document.getElementById('pve_pass').value;
   var ssl_verify = document.getElementById('pve_ssl').value === '1';
+  var nfs_ip     = document.getElementById('pve_nfs_ip').value.trim();
   if (!name||!host||!username||!password) { toast(t('msg_all_fields'),'error'); return; }
   try {
-    await apiPost('pve-hosts/add', {name,host,port,username,password,ssl_verify});
+    await apiPost('pve-hosts/add', {name,host,port,username,password,ssl_verify,nfs_ip});
     toast(t('msg_pve_saved'),'success');
     hideForm('addPveHostForm');
     loadPveHosts();
@@ -3812,12 +3909,15 @@ async function loadProvDatastores() {
     }
     empty.style.display = 'none';
     tbody.innerHTML = rows.map(function(ds) {
-      var pc = {iscsi:'badge-blue', nvme:'badge-blue', nfs:'badge-gray'}[ds.protocol]||'badge-gray';
+      var _protoBg = {nfs:'#0ea5e9', iscsi:'#f97316', nvme:'#a855f7'}[ds.protocol];
+      var _protoBadge = _protoBg
+        ? '<span class="badge" style="background:'+_protoBg+';color:#fff">'+esc((ds.protocol||'').toUpperCase())+'</span>'
+        : '<span class="badge badge-gray">'+esc((ds.protocol||'').toUpperCase())+'</span>';
       var sc = {active:'badge-green', provisioning:'badge-orange', error:'badge-red', removing:'badge-orange'}[ds.status]||'badge-gray';
       var hosts = (ds.pve_host_ids||[]).length;
       return '<tr>' +
         '<td><strong>'+esc(ds.name)+'</strong></td>' +
-        '<td><span class="badge '+pc+'">'+esc((ds.protocol||'').toUpperCase())+'</span></td>' +
+        '<td>'+_protoBadge+'</td>' +
         '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.volume_name||(ds.volume_uuid||'').slice(0,8))+'</td>' +
         '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.vg_name||ds.nfs_junction_path||'–')+'</td>' +
         '<td>'+hosts+' host'+(hosts===1?'':'s')+'</td>' +
@@ -3826,7 +3926,8 @@ async function loadProvDatastores() {
           (ds.error_message?'<br><span style="color:var(--error);font-size:10px">'+esc(ds.error_message.slice(0,60))+'</span>':'')+
         '</td>' +
         '<td><div class="row-actions">' +
-          '<button class="btn btn-secondary btn-sm" onclick="showAddHostDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+JSON.stringify(ds.pve_host_ids||[])+')">+ Host</button> ' +
+          '<button class="btn btn-success btn-sm" onclick="showAddHostDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+JSON.stringify(ds.pve_host_ids||[]).replace(/"/g,'&quot;')+')">+ Host</button> ' +
+          '<button class="btn btn-success btn-sm" onclick="showResizeDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+ds.size_bytes+',\''+esc(ds.protocol||'')+'\')">Resize</button> ' +
           '<button class="btn btn-danger btn-sm" onclick="confirmRemoveDatastore(\''+ds.id+'\',\''+esc(ds.name)+'\')">Remove</button>' +
         '</div></td></tr>';
     }).join('');
@@ -3835,13 +3936,30 @@ async function loadProvDatastores() {
 
 function showProvWizard() {
   provWizShowStep(1);
-  ['provWizName','provWizSvm','provWizVolName','provWizLunName','provWizVgName','provWizStorageId'].forEach(function(id){
+  ['provWizName','provWizSvm','provWizVolName','provWizLunName','provWizVgName','provWizStorageId',
+   'provWizNsName','provWizSubsystemName','provWizNfsJunction'].forEach(function(id){
     var el=document.getElementById(id); if(el) el.value='';
   });
-  var sz=document.getElementById('provWizLunSize'); if(sz) sz.value='100';
+  var lsz=document.getElementById('provWizLunSize'); if(lsz) lsz.value='100';
+  var nsz=document.getElementById('provWizNsSize');  if(nsz) nsz.value='100';
+  var fsz=document.getElementById('provWizNfsSize');  if(fsz) fsz.value='500';
   document.getElementById('provOntapLoadErr').textContent='';
+  var r=document.querySelector('input[name="provProto"][value="iscsi"]');
+  if(r) r.checked=true;
+  provProtoChange();
   document.getElementById('provWizCard').style.display='block';
   loadProvEndpoints();
+}
+
+function provProtoChange() {
+  var proto=(document.querySelector('input[name="provProto"]:checked')||{}).value||'iscsi';
+  var isSan=proto==='iscsi'||proto==='nvme';
+  document.getElementById('provWizIscsiSection').style.display=proto==='iscsi'?'block':'none';
+  document.getElementById('provWizNvmeSection').style.display=proto==='nvme'?'block':'none';
+  document.getElementById('provWizNfsSection').style.display=proto==='nfs'?'block':'none';
+  document.querySelectorAll('.prov-san-only').forEach(function(el){
+    el.style.display=isSan?'':'none';
+  });
 }
 
 function hideProvWizard() {
@@ -3852,53 +3970,53 @@ function provWizShowStep(n) {
   [1,2,3].forEach(function(i){
     var s=document.getElementById('provWizStep'+i);
     var tb=document.getElementById('provWizStepTab'+i);
-    if(s) s.style.display = i===n?'block':'none';
+    if(s) s.style.display=i===n?'block':'none';
     if(tb) {
-      tb.style.color = i===n?'var(--primary)':(i<n?'var(--success)':'var(--muted)');
-      tb.style.fontWeight = i===n?'600':'400';
+      tb.style.color=i===n?'var(--primary)':(i<n?'var(--success)':'var(--muted)');
+      tb.style.fontWeight=i===n?'600':'400';
     }
   });
 }
 
 async function loadProvEndpoints() {
   try {
-    var eps = await apiFetch('endpoints');
-    var sel = document.getElementById('provWizEndpoint');
-    sel.innerHTML = '<option value="">— select endpoint —</option>' +
+    var eps=await apiFetch('endpoints');
+    var sel=document.getElementById('provWizEndpoint');
+    sel.innerHTML='<option value="">— select endpoint —</option>'+
       eps.map(function(ep){ return '<option value="'+esc(ep.id)+'">'+esc(ep.name)+' ('+esc(ep.host)+')</option>'; }).join('');
   } catch(e) { toast(e.message,'error'); }
 }
 
 async function loadProvSvms() {
-  var epId = document.getElementById('provWizEndpoint').value;
-  var sel  = document.getElementById('provWizSvm');
+  var epId=document.getElementById('provWizEndpoint').value;
+  var sel=document.getElementById('provWizSvm');
   if(!epId) { sel.innerHTML='<option value="">— select endpoint first —</option>'; return; }
   sel.innerHTML='<option value="">— loading… —</option>';
   try {
-    var data = await apiFetch('provisioning/svms?endpoint_id='+encodeURIComponent(epId));
-    sel.innerHTML = '<option value="">— select SVM —</option>' +
+    var data=await apiFetch('provisioning/svms?endpoint_id='+encodeURIComponent(epId));
+    sel.innerHTML='<option value="">— select SVM —</option>'+
       (data.svms||[]).map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
   } catch(e) { sel.innerHTML='<option value="">— error loading SVMs —</option>'; toast(e.message,'error'); }
 }
 
 async function provWizNext1() {
-  var proto = document.querySelector('input[name="provProto"]:checked');
+  var proto=document.querySelector('input[name="provProto"]:checked');
   if(!proto) return toast('Select a protocol','error');
-  var epId = document.getElementById('provWizEndpoint').value;
+  var epId=document.getElementById('provWizEndpoint').value;
   if(!epId) return toast('Select an ONTAP endpoint','error');
-  var svm = document.getElementById('provWizSvm').value.trim();
+  var svm=document.getElementById('provWizSvm').value.trim();
   if(!svm) return toast('Select an SVM','error');
-  var name = document.getElementById('provWizName').value.trim();
+  var name=document.getElementById('provWizName').value.trim();
   if(!name) return toast('Enter datastore name','error');
-  var vg = document.getElementById('provWizVgName');
+  var vg=document.getElementById('provWizVgName');
   if(vg&&!vg.value) vg.value='vg'+name.replace(/[^a-z0-9]/gi,'').toLowerCase();
-  var sid = document.getElementById('provWizStorageId');
+  var sid=document.getElementById('provWizStorageId');
   if(sid&&!sid.value) sid.value=name.replace(/[^a-z0-9]/gi,'-').toLowerCase();
-  var spin = document.getElementById('provOntapLoading');
-  var err  = document.getElementById('provOntapLoadErr');
+  var spin=document.getElementById('provOntapLoading');
+  var err=document.getElementById('provOntapLoadErr');
   spin.style.display='inline-block'; err.textContent='';
   try {
-    _provOntapRes = await apiFetch('provisioning/ontap-resources?endpoint_id='+encodeURIComponent(epId)+'&svm_name='+encodeURIComponent(svm));
+    _provOntapRes=await apiFetch('provisioning/ontap-resources?endpoint_id='+encodeURIComponent(epId)+'&svm_name='+encodeURIComponent(svm));
     renderProvOntapRes();
     provWizShowStep(2);
   } catch(e) { err.textContent=e.message; }
@@ -3906,66 +4024,125 @@ async function provWizNext1() {
 }
 
 function renderProvOntapRes() {
-  var volSel = document.getElementById('provWizVolume');
-  volSel.innerHTML = '<option value="__new__">— create new volume —</option>' +
+  var proto=(document.querySelector('input[name="provProto"]:checked')||{}).value||'iscsi';
+  var volSel=document.getElementById('provWizVolume');
+  volSel.innerHTML='<option value="__new__">— create new volume —</option>'+
     (_provOntapRes.volumes||[]).map(function(v){
       return '<option value="'+esc(v.uuid)+'">'+esc(v.name)+'</option>';
     }).join('');
-  var agSel = document.getElementById('provWizAggregate');
-  var aggs = _provOntapRes.aggregates||[];
+  var agSel=document.getElementById('provWizAggregate');
+  var aggs=_provOntapRes.aggregates||[];
   if(aggs.length) {
-    agSel.innerHTML = aggs.map(function(a){
-      var free = a.available_bytes ? ' — '+fmtBytes(a.available_bytes)+' free' : '';
+    agSel.innerHTML=aggs.map(function(a){
+      var free=a.available_bytes?' — '+fmtBytes(a.available_bytes)+' free':'';
       return '<option value="'+esc(a.name)+'">'+esc(a.name)+(a.node?' ('+esc(a.node)+')':'')+free+'</option>';
     }).join('');
   } else {
-    agSel.innerHTML = '<option value="">— no aggregates found —</option>';
+    agSel.innerHTML='<option value="">— no aggregates found —</option>';
   }
-  var igSel = document.getElementById('provWizIgroup');
-  igSel.innerHTML = '<option value="__new__">— create new igroup —</option>' +
-    (_provOntapRes.igroups||[]).map(function(ig){
-      return '<option value="'+esc(ig.uuid)+'">'+esc(ig.name)+' ('+ig.initiators.length+' init.)</option>';
-    }).join('');
+  if(proto==='iscsi') {
+    var igSel=document.getElementById('provWizIgroup');
+    igSel.innerHTML='<option value="__new__">— create new igroup —</option>'+
+      (_provOntapRes.igroups||[]).map(function(ig){
+        return '<option value="'+esc(ig.uuid)+'">'+esc(ig.name)+' ('+ig.initiators.length+' init.)</option>';
+      }).join('');
+  } else if(proto==='nvme') {
+    var subSel=document.getElementById('provWizSubsystem');
+    subSel.innerHTML='<option value="__new__">— create new subsystem —</option>'+
+      (_provOntapRes.nvme_subsystems||[]).map(function(s){
+        return '<option value="'+esc(s.uuid)+'">'+esc(s.name)+' ('+s.hosts.length+' hosts)</option>';
+      }).join('');
+    provWizSubsystemChange();
+  } else if(proto==='nfs') {
+    var lifSel=document.getElementById('provWizNfsLif');
+    var lifs=_provOntapRes.nfs_lifs||[];
+    if(lifs.length) {
+      lifSel.innerHTML=lifs.map(function(l){
+        return '<option value="'+esc(l.ip)+'">'+esc(l.name)+' — '+esc(l.ip)+'</option>';
+      }).join('');
+    } else {
+      lifSel.innerHTML='<option value="">— no NFS LIFs found —</option>';
+    }
+  }
   provWizVolumeChange();
 }
 
+function provWizNfsLifChange() {
+  // reserved for future use (e.g. show subnet hint)
+}
+
 function provWizVolumeChange() {
-  var volId = document.getElementById('provWizVolume').value;
-  var isNew = volId==='__new__';
-  document.getElementById('provWizNewVolRow').style.display = isNew?'':'none';
-  document.getElementById('provWizAggRow').style.display    = isNew?'':'none';
-  var lunSel = document.getElementById('provWizLun');
-  lunSel.innerHTML = '<option value="__new__">— create new LUN —</option>' +
-    (isNew?[]:(_provOntapRes.luns||[]).filter(function(l){ return l.volume_uuid===volId; }))
-    .map(function(l){ return '<option value="'+esc(l.uuid)+'">'+esc(l.name)+' ('+fmtBytes(l.size_bytes)+')</option>'; }).join('');
-  provWizLunChange();
+  var proto=(document.querySelector('input[name="provProto"]:checked')||{}).value||'iscsi';
+  var volId=document.getElementById('provWizVolume').value;
+  var isNew=volId==='__new__';
+  document.getElementById('provWizNewVolRow').style.display=isNew?'':'none';
+  document.getElementById('provWizAggRow').style.display=isNew?'':'none';
+  if(proto==='iscsi') {
+    var lunSel=document.getElementById('provWizLun');
+    lunSel.innerHTML='<option value="__new__">— create new LUN —</option>'+
+      (isNew?[]:(_provOntapRes.luns||[]).filter(function(l){ return l.volume_uuid===volId; }))
+      .map(function(l){ return '<option value="'+esc(l.uuid)+'">'+esc(l.name)+' ('+fmtBytes(l.size_bytes)+')</option>'; }).join('');
+    provWizLunChange();
+  } else if(proto==='nvme') {
+    var nsSel=document.getElementById('provWizNs');
+    nsSel.innerHTML='<option value="__new__">— create new namespace —</option>'+
+      (isNew?[]:(_provOntapRes.nvme_namespaces||[]).filter(function(n){ return n.volume_uuid===volId; }))
+      .map(function(n){ return '<option value="'+esc(n.uuid)+'">'+esc(n.name)+' ('+fmtBytes(n.size_bytes)+')</option>'; }).join('');
+    provWizNsChange();
+  } else if(proto==='nfs') {
+    document.getElementById('provWizNfsSizeRow').style.display=isNew?'':'none';
+  }
 }
 
 function provWizLunChange() {
-  var isNew = document.getElementById('provWizLun').value==='__new__';
-  document.getElementById('provWizNewLunRow').style.display = isNew?'grid':'none';
+  var isNew=document.getElementById('provWizLun').value==='__new__';
+  document.getElementById('provWizNewLunRow').style.display=isNew?'grid':'none';
   provWizIgroupChange();
 }
 
 function provWizIgroupChange() {
-  var isNew = document.getElementById('provWizIgroup').value==='__new__';
-  document.getElementById('provWizNewIgroupRow').style.display = isNew?'':'none';
+  var isNew=document.getElementById('provWizIgroup').value==='__new__';
+  document.getElementById('provWizNewIgroupRow').style.display=isNew?'':'none';
+}
+
+function provWizNsChange() {
+  var isNew=document.getElementById('provWizNs').value==='__new__';
+  document.getElementById('provWizNewNsRow').style.display=isNew?'grid':'none';
+}
+
+function provWizSubsystemChange() {
+  var isNew=document.getElementById('provWizSubsystem').value==='__new__';
+  document.getElementById('provWizNewSubsystemRow').style.display=isNew?'':'none';
 }
 
 async function provWizNext2() {
-  var volId = document.getElementById('provWizVolume').value;
+  var proto=(document.querySelector('input[name="provProto"]:checked')||{}).value||'iscsi';
+  var volId=document.getElementById('provWizVolume').value;
   if(volId==='__new__') {
     if(!document.getElementById('provWizVolName').value.trim()) return toast('Enter new volume name','error');
-    // aggregate is optional — ONTAP auto-places if omitted
   }
-  var lunId = document.getElementById('provWizLun').value;
-  if(lunId==='__new__') {
-    if(!document.getElementById('provWizLunName').value.trim()) return toast('Enter new LUN name','error');
-    if(!parseInt(document.getElementById('provWizLunSize').value)) return toast('Enter a valid LUN size','error');
+  if(proto==='iscsi') {
+    var lunId=document.getElementById('provWizLun').value;
+    if(lunId==='__new__') {
+      if(!document.getElementById('provWizLunName').value.trim()) return toast('Enter new LUN name','error');
+      if(!parseInt(document.getElementById('provWizLunSize').value)) return toast('Enter a valid LUN size','error');
+    }
+  } else if(proto==='nvme') {
+    var nsId=document.getElementById('provWizNs').value;
+    if(nsId==='__new__') {
+      if(!document.getElementById('provWizNsName').value.trim()) return toast('Enter new namespace name','error');
+      if(!parseInt(document.getElementById('provWizNsSize').value)) return toast('Enter a valid namespace size','error');
+    }
+  } else if(proto==='nfs') {
+    if(!document.getElementById('provWizNfsLif').value) return toast('Select an NFS LIF','error');
+    if(!document.getElementById('provWizNfsJunction').value.trim()) return toast('Enter a junction path','error');
+    if(volId==='__new__') {
+      if(!parseInt(document.getElementById('provWizNfsSize').value)) return toast('Enter a valid volume size','error');
+    }
   }
   try {
-    _provPveHosts = (await apiFetch('provisioning/pve-hosts')).hosts||[];
-    var c = document.getElementById('provWizHostList');
+    _provPveHosts=(await apiFetch('provisioning/pve-hosts')).hosts||[];
+    var c=document.getElementById('provWizHostList');
     if(!_provPveHosts.length) {
       c.innerHTML='<span style="color:var(--muted)">No PVE hosts configured in Settings.</span>';
     } else {
@@ -3980,39 +4157,70 @@ async function provWizNext2() {
 }
 
 async function submitProvWizard() {
-  var proto = (document.querySelector('input[name="provProto"]:checked')||{}).value;
-  var epId  = document.getElementById('provWizEndpoint').value;
-  var svm   = document.getElementById('provWizSvm').value.trim();
-  var name  = document.getElementById('provWizName').value.trim();
-  var volId = document.getElementById('provWizVolume').value;
-  var lunId = document.getElementById('provWizLun').value;
-  var igId  = document.getElementById('provWizIgroup').value;
-  var vgName   = document.getElementById('provWizVgName').value.trim();
-  var storageId = document.getElementById('provWizStorageId').value.trim();
-  var lvmType  = document.getElementById('provWizLvmType').value;
-  if(!vgName)    return toast('Enter VG name','error');
+  var proto=(document.querySelector('input[name="provProto"]:checked')||{}).value;
+  var epId=document.getElementById('provWizEndpoint').value;
+  var svm=document.getElementById('provWizSvm').value.trim();
+  var name=document.getElementById('provWizName').value.trim();
+  var volId=document.getElementById('provWizVolume').value;
+  var storageId=document.getElementById('provWizStorageId').value.trim();
   if(!storageId) return toast('Enter storage ID','error');
   var hostIds=[];
   document.querySelectorAll('#provWizHostList input[type=checkbox]:checked').forEach(function(cb){ hostIds.push(cb.value); });
   if(!hostIds.length) return toast('Select at least one host','error');
-  var sizeBytes=0;
-  if(lunId==='__new__') {
-    var sz=parseInt(document.getElementById('provWizLunSize').value)||0;
-    var unit=document.getElementById('provWizLunSizeUnit').value;
-    sizeBytes=sz*({'GiB':1073741824,'TiB':1099511627776,'MiB':1048576}[unit]||0);
-  }
+  var UNITS={'GiB':1073741824,'TiB':1099511627776,'MiB':1048576};
   var body={
     name:name, endpoint_id:epId, svm_name:svm, protocol:proto,
-    volume_uuid: volId!=='__new__'?volId:'',
-    volume_name: volId==='__new__'?document.getElementById('provWizVolName').value.trim():'',
-    aggregate_name: volId==='__new__'?(document.getElementById('provWizAggregate').value||''):'',
-    lun_uuid: lunId!=='__new__'?lunId:'',
-    lun_name: lunId==='__new__'?document.getElementById('provWizLunName').value.trim():'',
-    igroup_uuid: igId!=='__new__'?igId:'',
-    igroup_name: igId==='__new__'?(document.getElementById('provWizIgroupName').value.trim()||('igr-'+name.replace(/[^a-z0-9]/gi,'').toLowerCase())):'',
-    vg_name:vgName, pve_storage_id:storageId, lvm_type:lvmType,
-    size_bytes:sizeBytes, pve_host_ids:hostIds
+    volume_uuid:volId!=='__new__'?volId:'',
+    volume_name:volId==='__new__'?document.getElementById('provWizVolName').value.trim():'',
+    aggregate_name:volId==='__new__'?(document.getElementById('provWizAggregate').value||''):'',
+    pve_storage_id:storageId, pve_host_ids:hostIds
   };
+  if(proto==='iscsi') {
+    var lunId=document.getElementById('provWizLun').value;
+    var igId=document.getElementById('provWizIgroup').value;
+    var vgName=document.getElementById('provWizVgName').value.trim();
+    var lvmType=document.getElementById('provWizLvmType').value;
+    if(!vgName) return toast('Enter VG name','error');
+    var sizeBytes=0;
+    if(lunId==='__new__') {
+      var sz=parseInt(document.getElementById('provWizLunSize').value)||0;
+      sizeBytes=sz*(UNITS[document.getElementById('provWizLunSizeUnit').value]||0);
+    }
+    Object.assign(body,{
+      lun_uuid:lunId!=='__new__'?lunId:'',
+      lun_name:lunId==='__new__'?document.getElementById('provWizLunName').value.trim():'',
+      igroup_uuid:igId!=='__new__'?igId:'',
+      igroup_name:igId==='__new__'?(document.getElementById('provWizIgroupName').value.trim()||('igr-'+name.replace(/[^a-z0-9]/gi,'').toLowerCase())):'',
+      vg_name:vgName, lvm_type:lvmType, size_bytes:sizeBytes
+    });
+  } else if(proto==='nvme') {
+    var nsId=document.getElementById('provWizNs').value;
+    var subId=document.getElementById('provWizSubsystem').value;
+    var vgName=document.getElementById('provWizVgName').value.trim();
+    var lvmType=document.getElementById('provWizLvmType').value;
+    if(!vgName) return toast('Enter VG name','error');
+    var sizeBytes=0;
+    if(nsId==='__new__') {
+      var sz=parseInt(document.getElementById('provWizNsSize').value)||0;
+      sizeBytes=sz*(UNITS[document.getElementById('provWizNsSizeUnit').value]||0);
+    }
+    Object.assign(body,{
+      ns_uuid:nsId!=='__new__'?nsId:'',
+      ns_name:nsId==='__new__'?document.getElementById('provWizNsName').value.trim():'',
+      subsystem_uuid:subId!=='__new__'?subId:'',
+      subsystem_name:subId==='__new__'?(document.getElementById('provWizSubsystemName').value.trim()||('sub-'+name.replace(/[^a-z0-9]/gi,'').toLowerCase())):'',
+      vg_name:vgName, lvm_type:lvmType, size_bytes:sizeBytes
+    });
+  } else if(proto==='nfs') {
+    var junction=document.getElementById('provWizNfsJunction').value.trim();
+    var nfsLifIp=document.getElementById('provWizNfsLif').value;
+    var sizeBytes=0;
+    if(volId==='__new__') {
+      var sz=parseInt(document.getElementById('provWizNfsSize').value)||0;
+      sizeBytes=sz*(UNITS[document.getElementById('provWizNfsSizeUnit').value]||0);
+    }
+    Object.assign(body,{ nfs_junction_path:junction, nfs_lif_ip:nfsLifIp, size_bytes:sizeBytes });
+  }
   var btn=document.getElementById('provSubmitBtn');
   btn.disabled=true; btn.textContent='Creating…';
   try {
@@ -4026,6 +4234,59 @@ async function submitProvWizard() {
     btn.disabled=false; btn.textContent='Create Datastore';
   }
 }
+
+function showResizeDialog(dsId, dsName, currentBytes, protocol) {
+  var overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:420px';
+  var unitOpts='<option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>';
+  var shrinkNote=protocol==='nfs'?'<p style="font-size:11px;color:var(--muted);margin-top:4px">Shrink is only supported for NFS volumes.</p>':'';
+  box.innerHTML=
+    '<div style="font-weight:600;margin-bottom:12px">Resize "'+esc(dsName)+'"</div>'+
+    '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Current size: '+fmtBytes(currentBytes)+'</p>'+
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'+
+      '<input type="number" id="resizeDlgSize" min="1" value="'+(Math.ceil(currentBytes/1073741824))+'" style="width:90px;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">'+
+      '<select id="resizeDlgUnit" style="padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">'+unitOpts+'</select>'+
+    '</div>'+
+    shrinkNote+
+    '<div style="display:flex;gap:8px;margin-top:16px">'+
+      '<button class="btn btn-primary" id="resizeDlgOk">Resize</button>'+
+      '<button class="btn btn-ghost" id="resizeDlgCancel">Cancel</button>'+
+      '<span id="resizeDlgErr" style="color:var(--error);font-size:12px;align-self:center"></span>'+
+    '</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  document.getElementById('resizeDlgCancel').onclick=function(){ document.body.removeChild(overlay); };
+  document.getElementById('resizeDlgOk').onclick=async function(){
+    var sz=parseInt(document.getElementById('resizeDlgSize').value)||0;
+    var UNITS={'GiB':1073741824,'TiB':1099511627776,'MiB':1048576};
+    var sizeBytes=sz*(UNITS[document.getElementById('resizeDlgUnit').value]||0);
+    var errEl=document.getElementById('resizeDlgErr');
+    if(!sizeBytes){ errEl.textContent='Enter a valid size'; return; }
+    if(sizeBytes < currentBytes) {
+      if(protocol!=='nfs') {
+        errEl.textContent='Shrink is not supported for '+protocol.toUpperCase()+' datastores.';
+        return;
+      }
+      if(!confirm('The new size ('+fmtBytes(sizeBytes)+') is smaller than the current size ('+fmtBytes(currentBytes)+').\n\nPlease verify that the VMs on this datastore have enough free space before continuing.\n\nProceed with shrink?'))
+        return;
+    }
+    var btn=document.getElementById('resizeDlgOk');
+    btn.disabled=true; btn.textContent='Resizing…';
+    try {
+      await apiPost('provisioning/datastores/resize',{id:dsId,size_bytes:sizeBytes});
+      document.body.removeChild(overlay);
+      toast('Resize job started','success');
+      loadProvDatastores();
+      setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); },800);
+    } catch(e) {
+      errEl.textContent=e.message;
+      btn.disabled=false; btn.textContent='Resize';
+    }
+  };
+}
+
 
 async function showAddHostDialog(dsId, dsName, existingHostIds) {
   var allHosts;
@@ -4081,6 +4342,55 @@ async function confirmRemoveDatastore(id, name) {
     } else {
       toast(e.message || String(e), 'error');
     }
+  }
+}
+
+// ═══════════════════════════ DATA BACKUP / RESTORE ════════════════════════
+
+async function triggerExport(ev) {
+  ev.preventDefault();
+  // Fetch as blob so the browser can trigger a download while staying authenticated
+  try {
+    var r = await fetch(API + '/settings/export', {credentials: 'include'});
+    if (!r.ok) { var e = await r.json().catch(function(){ return {}; }); throw new Error(e.error || 'HTTP ' + r.status); }
+    var blob = await r.blob();
+    var cd = r.headers.get('Content-Disposition') || '';
+    var m = cd.match(/filename="([^"]+)"/);
+    var fname = m ? m[1] : 'netapp_storage_backup.json';
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('Export downloaded: ' + fname, 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function importPluginData(input) {
+  var file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  var status = document.getElementById('importStatus');
+  status.textContent = 'Importing…';
+  status.style.color = 'var(--muted)';
+  try {
+    var fd = new FormData();
+    fd.append('file', file);
+    var r = await fetch(API + '/settings/import', {
+      method: 'POST', credentials: 'include', body: fd
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
+    status.textContent = 'Imported ' + data.rows_imported + ' rows.';
+    status.style.color = 'var(--success, green)';
+    toast('Import complete — ' + data.rows_imported + ' rows restored', 'success');
+    // reload settings data so the UI reflects the restored state
+    loadEndpoints(); loadPveHosts(); loadMappings(); loadSmtp();
+  } catch(e) {
+    status.textContent = 'Import failed: ' + e.message;
+    status.style.color = 'var(--error, red)';
+    toast(e.message, 'error');
   }
 }
 

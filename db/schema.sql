@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS netapp_pve_hosts (
     username        TEXT NOT NULL DEFAULT 'root@pam',
     password_encrypted TEXT NOT NULL,
     ssl_verify      INTEGER NOT NULL DEFAULT 0,
+    nfs_ip          TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL
 );
 
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS netapp_volume_mapping (
     lvm_pool_name        TEXT NOT NULL DEFAULT '',
     snapinfo_initialized INTEGER NOT NULL DEFAULT 0,
     snapinfo_lv_name     TEXT NOT NULL DEFAULT 'netapp_snapmanifest',
+    created_at           TEXT NOT NULL DEFAULT '',
     UNIQUE(pve_cluster_id, pve_storage_id)
 );
 

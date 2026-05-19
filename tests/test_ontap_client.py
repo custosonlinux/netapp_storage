@@ -49,7 +49,7 @@ for _m in ['pegaprox', 'pegaprox.core', 'pegaprox.core.db',
 sys.modules['pegaprox.core.db'].get_db = MagicMock()
 sys.modules['pegaprox.constants'].PEGAPROX_VERSION = 'test'
 
-from plugins.netapp_ontap.core.ontap_client import OntapClient, OntapError
+from plugins.netapp_storage.core.ontap_client import OntapClient, OntapError
 
 
 def _mock_response(status_code, body):

@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 _PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Derived from the actual directory name so the plugin works regardless of how
-# the repo was cloned (e.g. `git clone ... netapp_ontap` vs the default name).
+# the repo was cloned (e.g. `git clone ... netapp_storage` vs the default name).
 PLUGIN_ID = os.path.basename(_PLUGIN_DIR)
 
 
@@ -90,8 +90,9 @@ class PluginPveSession:
     """
 
     def __init__(self, pve_host):
-        self.host = pve_host["host"]
-        self.port = int(pve_host.get("port", 8006))
+        self.host   = pve_host["host"]
+        self.nfs_ip = pve_host.get("nfs_ip", "").strip()
+        self.port   = int(pve_host.get("port", 8006))
         self._base = f"https://{self.host}:{self.port}/api2/json"
         ssl_verify = bool(pve_host.get("ssl_verify", 0))
 
@@ -236,7 +237,7 @@ def ssh_run(host, user, password, cmd, capture=False, stdin_data=None, timeout=6
                     subprocess.run(["sshpass", "--version"], capture_output=True, check=True)
                     final_cmd = ["sshpass", "-p", password] + ssh_cmd
                 except (FileNotFoundError, subprocess.CalledProcessError):
-                    log.warning("[netapp_ontap] sshpass not found")
+                    log.warning("[netapp_storage] sshpass not found")
                     final_cmd = ssh_cmd
         else:
             ssh_cmd = base_ssh + [f"{user}@{host}", cmd]
@@ -278,7 +279,7 @@ class JobLogger:
         self.db = db
 
     def log(self, msg):
-        log.info(f"[netapp_ontap job={self.job_id}] {msg}")
+        log.info(f"[netapp_storage job={self.job_id}] {msg}")
         try:
             row = self.db.query_one("SELECT log_json FROM netapp_jobs WHERE id=?", (self.job_id,))
             existing = json.loads(row["log_json"] or "[]") if row else []
@@ -289,4 +290,4 @@ class JobLogger:
                 (json.dumps(existing), self.job_id),
             )
         except Exception as e:
-            log.warning(f"[netapp_ontap] JobLogger write failed: {e}")
+            log.warning(f"[netapp_storage] JobLogger write failed: {e}")

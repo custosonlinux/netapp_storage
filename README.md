@@ -3,9 +3,101 @@
 A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that adds VM-consistent NetApp® ONTAP® snapshot management directly to the PegaProx UI — for **NFS**, **iSCSI**, and **NVMe-oF** (NVMe/TCP, NVMe/FC) datastores.
 
 > **Maturity levels:**
-> - 🟡 **NFS** — Beta. Core workflows (snapshot, restore, clone, SnapMirror) are functional. Not yet production-hardened.
-> - 🟡 **SAN — iSCSI** — Beta. Snapshot, single-VM restore, volume revert, and VM clone are fully implemented and end-to-end tested.
-> - 🟡 **SAN — NVMe-oF** — Beta. Snapshot, single-VM restore, volume revert, and VM clone are fully implemented and end-to-end tested on NetApp ASA with NVMe/TCP. Not yet production-hardened.
+> - 🟢 **NFS** — Stable. All core workflows (snapshot, restore, clone, SnapMirror DR) are production-ready.
+> - 🟡 **SAN — iSCSI** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested.
+> - 🟡 **SAN — NVMe-oF** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested on NetApp ASA with NVMe/TCP. Not yet production-hardened.
+
+---
+
+## Installation
+
+### 1. Prerequisites on the PegaProx host
+
+Install required OS packages:
+
+```bash
+# Required for password-based SSH (not needed with SSH key auth)
+apt install sshpass           # Debian / Ubuntu
+# dnf install sshpass         # RHEL / Rocky
+
+# Required for NFS restore/clone operations
+mkdir -p /mnt/pegaprox-clone
+```
+
+### 2. Create a home directory for the pegaprox user
+
+The PegaProx service runs as the `pegaprox` system user. By default its home is `/usr/lib/pegaprox` (the application directory), which is not suitable for SSH keys. Create a proper home directory:
+
+```bash
+# Create home directory
+mkdir -p /home/pegaprox
+chown pegaprox:pegaprox /home/pegaprox
+chmod 750 /home/pegaprox
+
+# Update the user's home path
+usermod -d /home/pegaprox pegaprox
+```
+
+### 3. Set up SSH authentication for PVE nodes
+
+The plugin connects to each Proxmox VE node via SSH to run LVM, iSCSI, NVMe, and pvesm commands. Choose one of:
+
+**Option A — SSH key (recommended):**
+```bash
+# Generate a key for the pegaprox user
+sudo -u pegaprox ssh-keygen -t ed25519 -N '' -f /home/pegaprox/.ssh/id_ed25519
+
+# Display the public key
+cat /home/pegaprox/.ssh/id_ed25519.pub
+
+# Add it to root's authorized_keys on every PVE node:
+ssh-copy-id -i /home/pegaprox/.ssh/id_ed25519.pub root@<pve-node>
+# Repeat for each node
+```
+
+The plugin automatically picks up `~/.ssh/id_ed25519` (or `id_ecdsa` / `id_rsa`) when no explicit key is stored in the host settings.
+
+**Option B — Password auth:**  
+Enter the root password in Settings → Proxmox Hosts → Add. `sshpass` must be installed (step 1).
+
+### 4. Install the plugin
+
+The plugin directory must be placed inside the `plugins/` subdirectory of your PegaProx installation:
+
+| Install method | PegaProx base directory | Plugin destination |
+|---|---|---|
+| Source (default) | `/opt/PegaProx` | `/opt/PegaProx/plugins/netapp_storage` |
+| APT package | `/var/lib/pegaprox` | `/var/lib/pegaprox/plugins/netapp_storage` |
+
+**From GitHub (recommended):**
+```bash
+# Adjust the path to match your PegaProx installation
+git clone https://github.com/custosonlinux/netapp_storage \
+    /opt/PegaProx/plugins/netapp_storage
+
+# Fix ownership (only needed for package/service installs running as pegaprox)
+chown -R pegaprox:pegaprox /opt/PegaProx/plugins/netapp_storage
+```
+
+**Update an existing installation:**
+```bash
+cd /opt/PegaProx/plugins/netapp_storage
+git pull
+```
+
+> **Note:** The GitHub repository root *is* the plugin directory — it contains `manifest.json`, `__init__.py`, `api/`, `core/`, etc. directly.
+
+### 5. Restart PegaProx
+
+```bash
+systemctl restart pegaprox
+```
+
+### 6. Enable the plugin
+
+In the PegaProx UI: **Settings → Plugins → NetApp Storage → Enable**.
+
+The plugin initializes its own SQLite database on first load (`/var/lib/pegaprox/plugins/netapp_storage/db/netapp_storage.db`).
 
 ---
 
@@ -13,23 +105,23 @@ A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that
 
 | Feature | NFS | iSCSI | NVMe-oF |
 |---|:---:|:---:|:---:|
-| Auto-Discovery | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| VM-consistent Snapshots (crash / app / suspend) | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| Scheduled Snapshots | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| Email notifications per schedule | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| snapmanifest (manifest rides inside ONTAP snapshot) | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| Restore — SFSR (Single-File, NFS only) | 🟡 Beta | ❌ n/a | ❌ n/a |
+| Auto-Discovery | ✅ | 🟡 Beta | 🟡 Beta |
+| VM-consistent Snapshots (crash / app / suspend) | ✅ | 🟡 Beta | 🟡 Beta |
+| Scheduled Snapshots | ✅ | 🟡 Beta | 🟡 Beta |
+| Email notifications per schedule | ✅ | 🟡 Beta | 🟡 Beta |
+| Manifest rides inside ONTAP snapshot | ✅ | 🟡 Beta | 🟡 Beta |
+| Restore — SFSR (Single-File, NFS only) | ✅ | ❌ n/a | ❌ n/a |
 | Restore — Single VM (LV-copy via temp clone) | ❌ n/a | 🟡 Beta | 🟡 Beta¹ |
 | Restore — Volume Revert (all VMs) | ❌ n/a | 🟡 Beta | 🟡 Beta |
-| VM Clone from snapshot | 🟡 Beta | 🟡 Beta | 🟡 Beta¹ |
-| Clone from ONTAP-native snapshots | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| Multi-VM snapshot | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| ONTAP-native snapshot visibility | 🟡 Beta | 🟡 Beta | 🟡 Beta |
-| SnapMirror® visibility & DR restore/clone | 🟡 Beta | 🔄 Planned | 🔄 Planned |
-| Storage Provisioning (auto-setup) | ❌ n/a | 🟡 Beta | 🔄 Planned |
-| Job cancellation | 🟡 Beta | 🟡 Beta | 🟡 Beta |
+| VM Clone from snapshot | ✅ | 🟡 Beta | 🟡 Beta¹ |
+| Clone from ONTAP-native snapshots | ✅ | 🟡 Beta | 🟡 Beta |
+| Multi-VM snapshot | ✅ | 🟡 Beta | 🟡 Beta |
+| ONTAP-native snapshot visibility | ✅ | 🟡 Beta | 🟡 Beta |
+| SnapMirror® visibility & DR restore/clone | ✅ | 🔄 Planned | 🔄 Planned |
+| Storage Provisioning (auto-setup) | ❌ n/a | 🟡 Beta | 🟡 Beta |
+| Job cancellation | ✅ | 🟡 Beta | 🟡 Beta |
 
-Legend: 🟡 Beta · 🔄 Planned · ❌ Not applicable
+Legend: ✅ Stable · 🟡 Beta · 🔄 Planned · ❌ Not applicable
 
 ¹ NVMe Single VM Restore and Clone on ASA use a full volume clone via the ONTAP CLI bridge (`private/cli/volume/clone`). Direct namespace clone APIs are not available on ASA, but the volume clone approach achieves identical results (see platform table below).
 
@@ -69,7 +161,7 @@ All features are included in **ONTAP One** (ONTAP 9.10.1+) at no extra cost:
 | FlexClone | FlexClone® | ✓ |
 | NVMe-oF / iSCSI | SAN | ✓ |
 
-**Tested platforms:** ONTAP 9.13+ (NFS), NetApp ASA (All-SAN Array) with NVMe/TCP — including single-VM restore and VM clone end-to-end (snapshot → clone → vgimportclone → dd → VM start).
+**Tested platforms:** ONTAP 9.13+ (NFS/iSCSI), NetApp ASA (All-SAN Array) with NVMe/TCP on ONTAP 9.18.1 — including end-to-end provisioning, single-VM restore, and VM clone.
 
 ### Proxmox packages (PVE nodes)
 
@@ -77,21 +169,15 @@ All features are included in **ONTAP One** (ONTAP 9.10.1+) at no extra cost:
 
 **For iSCSI:**
 ```bash
-apt install open-iscsi lvm2
+apt install open-iscsi multipath-tools lvm2
 ```
 
 **For NVMe-oF:**
 ```bash
 apt install nvme-cli lvm2
-# NVMe/TCP kernel module
+# Load NVMe/TCP kernel module and persist across reboots
 modprobe nvme-tcp
-```
-
-### PegaProx host packages
-`sshpass` (only needed for password-based SSH; not required with SSH key auth):
-```bash
-apt install sshpass    # Debian / Ubuntu
-dnf install sshpass    # RHEL / Rocky
+echo nvme-tcp >> /etc/modules-load.d/nvme-tcp.conf
 ```
 
 ### Network access from the PegaProx host
@@ -104,32 +190,30 @@ PegaProx  →  SMTP server         TCP 25/465/587  (optional, for email notifica
 
 ---
 
-## Installation
-
-1. Copy the `netapp_ontap/` directory into your PegaProx `plugins/` folder.
-2. Copy `config.example.json` to `config.json` and adjust if needed (defaults work out of the box).
-3. In PegaProx: **Settings → Plugins → NetApp ONTAP Snapshots → Enable**.
-4. Restart PegaProx or reload the plugin from the UI.
-
----
-
 ## Setup
 
 ### 1. ONTAP user
 
-Create a dedicated ONTAP user with minimum required permissions:
+Create a dedicated ONTAP user. The required role depends on which features you use:
 
+**Snapshots and restore only (NFS)** — a role limited to snapshot and file-clone commands is sufficient:
 ```bash
-# Create role
-security login role create -role pegaprox-snap -cmddirname "volume snapshot"          -access all
-security login role create -role pegaprox-snap -cmddirname "volume snapshot restore"   -access all
+security login role create -role pegaprox-snap -cmddirname "volume snapshot"             -access all
+security login role create -role pegaprox-snap -cmddirname "volume snapshot restore"      -access all
 security login role create -role pegaprox-snap -cmddirname "volume snapshot restore-file" -access all
-security login role create -role pegaprox-snap -cmddirname "storage/file/clone"        -access all
+security login role create -role pegaprox-snap -cmddirname "storage/file/clone"           -access all
 
-# Create user (HTTP + SSH password auth)
 security login create -user-or-group-name pegaprox \
   -application http -authmethod password -role pegaprox-snap
 ```
+
+**Full feature set (SAN provisioning, iSCSI/NVMe, SnapMirror)** — requires cluster-admin scope:
+```bash
+security login create -user-or-group-name pegaprox \
+  -application http -authmethod password -role admin
+```
+
+> The `admin` role is needed for provisioning operations: creating volumes, LUNs, NVMe subsystems/namespaces, iGroups, and SnapMirror management.
 
 ### 2. Add ONTAP endpoint
 
@@ -208,51 +292,46 @@ Reverts the entire ONTAP volume to the snapshot state — affects **all VMs** on
 
 ---
 
-## Storage Provisioning (iSCSI)
+## Storage Provisioning (iSCSI / NVMe-oF)
 
-The **Provisioning** tab automates the complete setup of a new iSCSI datastore — from ONTAP object creation to PVE storage registration — across all cluster nodes in a single operation.
+The **Provisioning** tab automates the complete setup of a new SAN datastore — from ONTAP object creation to PVE storage registration — across all cluster nodes in a single operation.
 
 ### What is automated
 
+**iSCSI:**
 1. **ONTAP side** — create (or reuse) a thin-provisioned SAN volume, a LUN, and an iGroup; add all selected host IQNs; map the LUN to the iGroup.
 2. **Per PVE host** — iSCSI discovery (`iscsiadm -m discovery`), target login, multipath device detection (waits until `/dev/mapper/<WWID>` appears).
 3. **First host** — `pvcreate`, `vgcreate` (linear or thin-provisioned LVM).
 4. **All hosts** — `pvscan --cache -aay` to populate the LVM event cache so the VG activates on every node.
 5. **PVE cluster** — `pvesm add lvm / lvmthin` (cluster-wide, run once).
 
+**NVMe-oF:**
+1. **ONTAP side** — create (or reuse) a namespace and NVMe subsystem; add all selected host NQNs; map the namespace. Supports both standard AFF/FAS platforms and ASA (All-Flash SAN Array) with automatic API fallback.
+2. **Per PVE host** — `nvme connect-all` (with automatic timeout handling for non-DDC LIFs), namespace rescan, wait for block device.
+3. **First host** — `pvcreate`, `vgcreate`, snapmanifest LV initialization.
+4. **All hosts** — `pvscan --cache -aay` VG activation.
+5. **PVE cluster** — `pvesm add lvm / lvmthin` (cluster-wide, run once).
+
 ### Remove datastore
 
-The Provisioning tab also handles teardown: `pvesm remove`, VG deactivation and removal, iSCSI logout — and optionally deletes the ONTAP LUN and volume.
+The Provisioning tab also handles teardown: `pvesm remove`, VG deactivation and removal, iSCSI logout / NVMe disconnect — and optionally deletes the ONTAP LUN/namespace and volume.
 
 ### Requirements
 
-- `open-iscsi`, `multipath-tools`, `lvm2` installed on all PVE nodes (see package table below).
-- A valid `/etc/multipath.conf` with NetApp settings (see template below).
+- **iSCSI:** `open-iscsi`, `multipath-tools`, `lvm2` on all PVE nodes.
+- **NVMe-oF:** `nvme-cli`, `lvm2`, kernel module `nvme-tcp` on all PVE nodes.
+- A valid `/etc/multipath.conf` with NetApp settings on all PVE nodes (see template below).
 - SSH access from PegaProx to all PVE nodes (configured under Settings → Proxmox Hosts).
-
-> **NVMe-oF provisioning** is not yet automated. Use the manual steps below.
 
 ---
 
 ## SAN datastore — multi-host manual setup (NVMe-oF)
 
-The steps below apply to **NVMe-oF** datastores. iSCSI datastores are set up automatically by the Provisioning tab (see above).
-
-### Required packages (per PVE node)
-
-| Protocol | Packages |
-|---|---|
-| iSCSI | `open-iscsi`, `multipath-tools`, `lvm2` |
-| NVMe-oF | `nvme-cli`, `lvm2`; kernel module `nvme-tcp` |
-
-Persist the NVMe/TCP kernel module across reboots:
-```bash
-echo nvme-tcp >> /etc/modules-load.d/nvme-tcp.conf
-```
+If you prefer to configure NVMe-oF connectivity manually before using the Provisioning tab, follow these steps.
 
 ### multipath.conf — NetApp recommended settings
 
-Required on every PVE node for both iSCSI and NVMe-oF. Add to `/etc/multipath.conf`:
+Required on every PVE node for iSCSI. Add to `/etc/multipath.conf`:
 
 ```
 defaults {
@@ -278,8 +357,6 @@ devices {
 
 After writing: `systemctl restart multipathd`.
 
-> **iSCSI**: the Provisioning tab handles `iscsiadm` discovery/login, `pvcreate`/`vgcreate`, `pvscan --cache -aay` activation on all nodes, and `pvesm` registration automatically. Manual steps are not needed for iSCSI.
-
 ### NVMe-oF — discovery.conf
 
 NVMe/TCP connections are configured in `/etc/nvme/discovery.conf`, one entry per target/interface pair:
@@ -289,6 +366,8 @@ NVMe/TCP connections are configured in `/etc/nvme/discovery.conf`, one entry per
 ```
 
 After editing, reconnect with `nvme connect-all`. The same LVM VG activation step (`pvscan --cache -aay`) applies for NVMe-backed LVM VGs on secondary hosts.
+
+> **Note:** Some ONTAP ASA deployments only expose a Discovery Domain Controller (DDC, port 8009) on a subset of LIFs. `nvme connect-all` may hang indefinitely trying to discover on non-DDC LIFs. The plugin's provisioning flow handles this automatically via a `timeout` wrapper. If you run `nvme connect-all` manually, use `timeout 30 nvme connect-all` to prevent hangs.
 
 ---
 
@@ -524,7 +603,7 @@ Additionally, the manifest is always stored in the plugin database as a fallback
 
 ## API reference
 
-All routes are relative to `/api/plugins/netapp_ontap/api/`.
+All routes are relative to `/api/plugins/netapp_storage/api/`.
 
 | Method | Path | Description |
 |---|---|---|
