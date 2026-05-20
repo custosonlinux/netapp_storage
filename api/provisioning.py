@@ -812,6 +812,10 @@ def _run_resize(job_id, ds_id, new_size_bytes, username):
         client   = build_ontap_client(endpoint)
         vol_uuid = ds.get("volume_uuid", "")
 
+        # SAN volumes need a small overhead so ONTAP can fit the LUN/namespace
+        # inside the volume.  64 MiB is enough for thin-provisioned flexvols.
+        _SAN_VOL_SIZE = new_size_bytes + 64 * 1024 * 1024
+
         if protocol == "nfs":
             # NFS: only ONTAP resize needed (PVE mounts adjust automatically)
             jlog.log("Resizing ONTAP volume …")
@@ -824,7 +828,7 @@ def _run_resize(job_id, ds_id, new_size_bytes, username):
             pve_host_ids = json.loads(ds.get("pve_host_ids") or "[]")
 
             jlog.log("Resizing ONTAP volume …")
-            client.resize_volume(vol_uuid, new_size_bytes)
+            client.resize_volume(vol_uuid, _SAN_VOL_SIZE)
             jlog.log("Resizing LUN …")
             client.resize_lun(lun_uuid, new_size_bytes)
             jlog.log("ONTAP objects resized.")
@@ -864,7 +868,7 @@ def _run_resize(job_id, ds_id, new_size_bytes, username):
             pve_host_ids = json.loads(ds.get("pve_host_ids") or "[]")
 
             jlog.log("Resizing ONTAP volume …")
-            client.resize_volume(vol_uuid, new_size_bytes)
+            client.resize_volume(vol_uuid, _SAN_VOL_SIZE)
             jlog.log("Resizing NVMe namespace …")
             client.resize_namespace(ns_uuid, new_size_bytes)
             jlog.log("ONTAP objects resized.")

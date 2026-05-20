@@ -1740,30 +1740,7 @@ class OntapClient:
                 log.info(f"[netapp_storage] PATCH protocols/nvme/namespaces → 404, "
                          "trying storage/namespaces")
                 continue
-            body_text = r.text[:400]
-            if r.status_code in (400, 409) and any(
-                    c in body_text for c in ("1638644", "918703", "1245212")):
-                self._resize_namespace_asa(ns_uuid, new_size_bytes)
-                return
-            raise OntapError(f"PATCH {path} → {r.status_code}: {body_text}")
-
-    def _resize_namespace_asa(self, ns_uuid, new_size_bytes):
-        for src in (f"storage/namespaces/{ns_uuid}",
-                    f"protocols/nvme/namespaces/{ns_uuid}"):
-            try:
-                ns = self._get(src, params={"fields": "name,svm.name"})
-                break
-            except OntapError:
-                ns = None
-        if not ns:
-            raise OntapError("ASA namespace resize: cannot look up namespace")
-        ns_path = ns.get("name", "")
-        svm_name = (ns.get("svm") or {}).get("name", "")
-        if not ns_path or not svm_name:
-            raise OntapError("ASA namespace resize: cannot resolve namespace path/SVM")
-        self._patch("private/cli/vserver/nvme/namespace",
-                    body={"size": f"{new_size_bytes}b"},
-                    params={"vserver": svm_name, "path": ns_path})
+            raise OntapError(f"PATCH {path} → {r.status_code}: {r.text[:300]}")
 
     # ── NFS Volume provisioning ───────────────────────────────────────────────
 
