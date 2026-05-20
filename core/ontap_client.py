@@ -1702,13 +1702,17 @@ class OntapClient:
             self.poll_job(job, interval_s=2, timeout_s=120)
 
     def _resize_volume_asa(self, volume_uuid, new_size_bytes):
+        import math
         vol = self._get(f"storage/volumes/{volume_uuid}", params={"fields": "name,svm.name"})
         vol_name = vol.get("name", "")
         svm_name = (vol.get("svm") or {}).get("name", "")
         if not vol_name or not svm_name:
             raise OntapError("ASA volume resize: cannot resolve volume name/SVM")
+        # Round up to next full GiB — byte notation causes WAFL rounding that
+        # can leave the volume smaller than expected.
+        size_gb = math.ceil(new_size_bytes / (1024 ** 3))
         self._patch("private/cli/volume",
-                    body={"size": f"{new_size_bytes}b"},
+                    body={"size": f"{size_gb}g"},
                     params={"vserver": svm_name, "volume": vol_name})
 
     def resize_lun(self, lun_uuid, new_size_bytes):
