@@ -1725,6 +1725,7 @@ class OntapClient:
 
     def resize_namespace(self, ns_uuid, new_size_bytes):
         """Grows an NVMe namespace to new_size_bytes."""
+        last_err = None
         for path in (f"protocols/nvme/namespaces/{ns_uuid}",
                      f"storage/namespaces/{ns_uuid}"):
             url = f"{self.base_url}/{path}"
@@ -1740,7 +1741,34 @@ class OntapClient:
                 log.info(f"[netapp_storage] PATCH protocols/nvme/namespaces → 404, "
                          "trying storage/namespaces")
                 continue
-            raise OntapError(f"PATCH {path} → {r.status_code}: {r.text[:300]}")
+            last_err = OntapError(f"PATCH {path} → {r.status_code}: {r.text[:300]}")
+            break
+        # REST endpoints failed — try CLI bridge (ASA R2 compatibility)
+        try:
+            self._resize_namespace_cli(ns_uuid, new_size_bytes)
+            return
+        except OntapError as cli_err:
+            raise OntapError(
+                f"{last_err or 'namespace resize failed'}; CLI bridge also failed: {cli_err}"
+            ) from None
+
+    def _resize_namespace_cli(self, ns_uuid, new_size_bytes):
+        for src in (f"storage/namespaces/{ns_uuid}",
+                    f"protocols/nvme/namespaces/{ns_uuid}"):
+            try:
+                ns = self._get(src, params={"fields": "name,svm.name"})
+                break
+            except OntapError:
+                ns = None
+        if not ns:
+            raise OntapError("namespace CLI resize: cannot look up namespace")
+        ns_path = ns.get("name", "")
+        svm_name = (ns.get("svm") or {}).get("name", "")
+        if not ns_path or not svm_name:
+            raise OntapError("namespace CLI resize: cannot resolve path/SVM")
+        self._patch("private/cli/vserver/nvme/namespace",
+                    body={"size": f"{new_size_bytes}b"},
+                    params={"vserver": svm_name, "path": ns_path})
 
     # ── NFS Volume provisioning ───────────────────────────────────────────────
 
