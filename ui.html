@@ -1231,6 +1231,10 @@ function applyI18n() {
               <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
             </label>
           </div>
+          <p class="hint" style="margin-top:6px">
+            ⚠️ All disks of a VM must reside on the <strong>same datastore</strong> to be included in a consistent snapshot.
+            VMs with disks spread across multiple datastores are not snapshotted consistently.
+          </p>
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" onclick="createSnapshot()" data-i18n="btn_start_snapshot">Start Snapshot</button>

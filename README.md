@@ -569,6 +569,8 @@ When no name is provided by the user, the plugin generates a default:
 
 LXC containers: only `crash` is supported (no guest agent).
 
+> ⚠️ **One-datastore-per-VM requirement**: The plugin snapshots an entire ONTAP volume at once. A VM whose disks are spread across **multiple datastores** (backed by different ONTAP volumes) will only have the disks on the currently selected datastore included in the snapshot. The other volumes are not snapshotted simultaneously, so the resulting snapshot set is not crash-consistent across volumes. For reliable snapshots and restores, keep all disks of a VM on the same datastore.
+
 ---
 
 ## Manifest
