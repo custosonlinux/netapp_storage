@@ -694,6 +694,7 @@ All routes are relative to `/api/plugins/netapp_storage/api/`.
 | GET | `snapmirror/dr-snap-vms` | List VMs available in a replicated snapshot (reads from DB manifest) |
 | GET | `provisioning/datastores` | List provisioned datastores |
 | POST | `provisioning/datastores` | Create datastore (starts provisioning job) |
+| POST | `provisioning/datastores/import` | Register an existing datastore in the Provisioning tab |
 | POST | `provisioning/datastores/remove` | Remove datastore (starts removal job) |
 | POST | `provisioning/datastores/resize` | Resize datastore |
 | POST | `provisioning/datastores/add-host` | Add a PVE host to an existing datastore |

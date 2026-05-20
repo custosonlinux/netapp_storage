@@ -387,9 +387,136 @@ def _prov_svms():
         return {"error": str(exc)}, 500
 
 
+def _prov_import():
+    """Register an existing (manually created) datastore in the Provisioning tab.
+
+    Reads what it can from the volume mapping, queries ONTAP for missing UUIDs
+    (iGroup for iSCSI, subsystem for NVMe), and inserts an active provisioning
+    record — no job required because no resources need to be created.
+    """
+    err = _require_admin()
+    if err:
+        return err
+    from flask import request
+    body       = request.get_json(force=True) or {}
+    mapping_id = body.get("mapping_id")
+    name       = body.get("name", "")
+    if not mapping_id:
+        return {"error": "mapping_id required"}, 400
+
+    db       = get_db()
+    username = request.session.get("user", "unknown")
+    now      = _now()
+
+    mapping = db.query_one(
+        "SELECT * FROM netapp_volume_mapping WHERE id=?", (mapping_id,))
+    if not mapping:
+        return {"error": "Mapping not found"}, 404
+    mapping = dict(mapping)
+
+    volume_uuid    = mapping.get("volume_uuid", "")
+    pve_storage_id = mapping.get("pve_storage_id", "")
+    protocol       = mapping.get("storage_protocol", "nfs")
+
+    existing = db.query_one(
+        "SELECT id FROM netapp_provisioned_datastores WHERE pve_storage_id=?",
+        (pve_storage_id,))
+    if existing:
+        return {"error": f"'{pve_storage_id}' is already registered in Provisioning"}, 409
+
+    # Collect all PVE host IDs that have this volume mapped
+    all_mappings  = db.query(
+        "SELECT pve_cluster_id FROM netapp_volume_mapping WHERE volume_uuid=?", (volume_uuid,))
+    pve_host_ids  = list({dict(r)["pve_cluster_id"] for r in all_mappings})
+
+    endpoint = get_endpoint(db, mapping["endpoint_id"])
+    client   = build_ontap_client(endpoint)
+    svm_name = mapping.get("svm_name", "")
+
+    # Volume size
+    size_bytes = 0
+    try:
+        vol_info   = client._get(
+            f"storage/volumes/{volume_uuid}",
+            params={"fields": "space.size"})
+        size_bytes = (vol_info.get("space") or {}).get("size", 0)
+    except Exception as exc:
+        log.warning(f"[netapp_storage] import: volume size lookup failed: {exc}")
+
+    lun_uuid       = mapping.get("lun_uuid", "")
+    lun_path       = mapping.get("lun_path", "")
+    igroup_uuid    = ""
+    igroup_name    = ""
+    ns_uuid        = ""
+    subsystem_uuid = ""
+    subsystem_name = ""
+    vg_name        = mapping.get("lvm_vg_name", "")
+    lvm_type       = mapping.get("lvm_type", "linear") or "linear"
+    lvm_pool_name  = mapping.get("lvm_pool_name", "")
+    nfs_jpath      = mapping.get("junction_path", "")
+
+    if protocol == "iscsi":
+        # Resolve iGroup via LUN-map lookup
+        if lun_uuid:
+            try:
+                lun_info   = client.get_lun(lun_uuid)
+                size_bytes = (lun_info.get("space") or {}).get("size", size_bytes)
+            except Exception:
+                pass
+            try:
+                maps = client.list_lun_maps(lun_uuid=lun_uuid)
+                if maps:
+                    ig          = maps[0].get("igroup") or {}
+                    igroup_uuid = ig.get("uuid", "")
+                    igroup_name = ig.get("name", "")
+            except Exception as exc:
+                log.warning(f"[netapp_storage] import: LUN-map lookup failed: {exc}")
+
+    elif protocol == "nvme":
+        # lun_uuid column stores the namespace UUID for NVMe mappings
+        ns_uuid  = lun_uuid
+        lun_uuid = ""
+        lun_path = ""
+        if ns_uuid:
+            try:
+                sub            = client.get_nvme_subsystem_for_namespace(ns_uuid, svm_name)
+                subsystem_uuid = sub.get("uuid", "")
+                subsystem_name = sub.get("name", "")
+            except Exception as exc:
+                log.warning(f"[netapp_storage] import: NVMe subsystem lookup failed: {exc}")
+
+    ds_id   = str(_uuid.uuid4())
+    ds_name = name or pve_storage_id
+
+    db.execute(
+        """INSERT INTO netapp_provisioned_datastores
+           (id, name, endpoint_id, svm_name, volume_uuid, volume_name,
+            protocol, lun_uuid, lun_path, igroup_uuid, igroup_name,
+            ns_uuid, subsystem_uuid, subsystem_name,
+            vg_name, lvm_type, lvm_pool_name, nfs_junction_path,
+            pve_storage_id, pve_host_ids, size_bytes, status, error_message,
+            created_by, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            ds_id, ds_name, mapping["endpoint_id"],
+            svm_name, volume_uuid, mapping.get("volume_name", ""),
+            protocol,
+            lun_uuid, lun_path,
+            igroup_uuid, igroup_name,
+            ns_uuid, subsystem_uuid, subsystem_name,
+            vg_name, lvm_type, lvm_pool_name, nfs_jpath,
+            pve_storage_id, json.dumps(pve_host_ids),
+            int(size_bytes), "active", "",
+            username, now, now,
+        ),
+    )
+    return {"success": True, "id": ds_id, "name": ds_name}
+
+
 def register_routes():
     from pegaprox.api.plugins import register_plugin_route
     register_plugin_route(PLUGIN_ID, "provisioning/datastores",            _prov_datastores)
+    register_plugin_route(PLUGIN_ID, "provisioning/datastores/import",     _prov_import)
     register_plugin_route(PLUGIN_ID, "provisioning/datastores/remove",     _prov_remove)
     register_plugin_route(PLUGIN_ID, "provisioning/datastores/resize",     _prov_resize)
     register_plugin_route(PLUGIN_ID, "provisioning/datastores/add-host",   _prov_add_host)

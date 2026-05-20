@@ -2191,7 +2191,7 @@ function uiConfirm(msg, okLabel, okClass) {
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
     var box = document.createElement('div');
-    box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:280px;max-width:460px;word-break:break-word';
+    box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:280px;max-width:460px;word-break:break-word';
     box.innerHTML = '<div style="margin-bottom:16px;white-space:pre-line">'+esc(msg)+'</div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
       + '<button class="_uc-cancel btn btn-ghost">Cancel</button>'
@@ -2210,7 +2210,7 @@ function uiAlert(msg) {
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
     var box = document.createElement('div');
-    box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:280px;max-width:460px;word-break:break-word';
+    box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:280px;max-width:460px;word-break:break-word';
     box.innerHTML = '<div style="margin-bottom:16px;white-space:pre-line">'+esc(msg)+'</div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
       + '<button class="_ua-ok btn btn-primary">OK</button></div>';
@@ -2399,6 +2399,12 @@ async function loadMappings() {
       tbody.innerHTML = '<tr><td colspan="9" class="empty">'+t('empty_mappings')+'</td></tr>';
       return;
     }
+    // Track which pve_storage_ids are already in the provisioning tab
+    var provIds = {};
+    try {
+      var provData = await apiFetch('provisioning/datastores');
+      (provData.datastores || []).forEach(function(d){ provIds[d.pve_storage_id] = true; });
+    } catch(e) {}
     var volumeMap = {};
     rows.forEach(function(m) {
       var key = m.volume_uuid || m.volume_name;
@@ -2434,6 +2440,11 @@ async function loadMappings() {
       var col6 = isSan ? snapBtn : esc(m.nfs_export_ip||'');
       var delBtn = '<button class="btn btn-sm" style="font-size:11px;padding:2px 6px;background:none;border:1px solid var(--error);color:var(--error);cursor:pointer" '
         + 'onclick="deleteMapping(\''+esc(m.id)+'\',\''+esc(m.pve_storage_id)+'\')" title="Remove mapping from database">✕</button>';
+      var importBtn = '';
+      if (!provIds[m.pve_storage_id]) {
+        importBtn = ' <button class="btn btn-sm" style="font-size:11px;padding:2px 6px;background:none;border:1px solid var(--info);color:var(--info);cursor:pointer" '
+          + 'onclick="importToProvisioning(\''+esc(m.id)+'\',\''+esc(m.pve_storage_id)+'\')" title="Add to Provisioning tab">+ Prov</button>';
+      }
       return '<tr>' +
         '<td>'+hostsHtml+'</td>' +
         '<td><strong>'+esc(m.pve_storage_id)+'</strong></td>' +
@@ -2443,7 +2454,7 @@ async function loadMappings() {
         '<td>'+col6+'</td>' +
         '<td>'+esc(m.endpoint_name||'')+'</td>' +
         '<td style="color:var(--muted)">'+fmtDate(m.discovered_at)+'</td>' +
-        '<td>'+delBtn+'</td></tr>';
+        '<td>'+delBtn+importBtn+'</td></tr>';
     }).join('');
   } catch(e) { toast(e.message,'error'); }
 }
@@ -2483,6 +2494,23 @@ async function deleteMapping(mappingId, storageId) {
       loadMappings();
     } else {
       toast(r.error || 'Delete failed', 'error');
+    }
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function importToProvisioning(mappingId, storageId) {
+  if (!await uiConfirm(
+    'Add "'+storageId+'" to the Provisioning tab?\n\n' +
+    'The plugin will look up the ONTAP objects (iGroup, LUN, subsystem) automatically. ' +
+    'The datastore will appear in Provisioning as "active" and can then be resized or removed.',
+    'Add to Provisioning', 'btn-primary')) return;
+  try {
+    var r = await apiPost('provisioning/datastores/import', {mapping_id: mappingId});
+    if (r.success) {
+      toast('"'+r.name+'" added to Provisioning tab', 'success');
+      loadMappings();
+    } else {
+      toast(r.error || 'Import failed', 'error');
     }
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -4340,7 +4368,7 @@ function showResizeDialog(dsId, dsName, currentBytes, protocol) {
   var overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center';
   var box=document.createElement('div');
-  box.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:420px';
+  box.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:420px';
   var unitOpts='<option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>';
   var shrinkNote=protocol==='nfs'?'<p style="font-size:11px;color:var(--muted);margin-top:4px">Shrink is only supported for NFS volumes.</p>':'';
   box.innerHTML=
@@ -4400,7 +4428,7 @@ async function showAddHostDialog(dsId, dsName, existingHostIds) {
   var overlay = document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center';
   var box = document.createElement('div');
-  box.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:420px';
+  box.style.cssText='background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:320px;max-width:420px';
   var selOpts = available.map(function(h){
     return '<option value="'+esc(h.id)+'">'+esc(h.name)+' ('+esc(h.host)+')</option>';
   }).join('');
