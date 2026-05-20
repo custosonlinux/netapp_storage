@@ -1672,6 +1672,7 @@ def _provision_nvme(ds_id, params, db, jlog):
         else:
             device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
         jlog.log(f"[{sh}] Device ready: {device}")
+        host_meta[hid]["device"] = device
 
         if i == 0:
             vg_q  = shlex.quote(vg_name)
@@ -1707,17 +1708,23 @@ def _provision_nvme(ds_id, params, db, jlog):
                 jlog.log(f"[{sh}] WARNING: snapmanifest init failed: {exc}")
 
     # ── All hosts: pvscan --cache -aay ────────────────────────────────────────
+    # Use the device path directly — pvs --select 'vgname=...' returns empty on
+    # secondary hosts because LVM hasn't cached the VG metadata yet (VG was
+    # created on the first host).  Scanning the block device directly is reliable.
     jlog.log("Activating VG on all hosts via pvscan …")
     for hid in ordered_hosts:
         m  = host_meta[hid]
         sh, su, sp, sk = m["host"], m["user"], m["pass"], m["key"]
+        dev = m.get("device", "")
         try:
-            out = ssh_run(sh, su, sp,
-                          f"pvs --noheadings -o pv_name --select 'vgname={vg_name}' 2>/dev/null",
-                          capture=True, key_material=sk, timeout=15)
-            for pv in (l.strip() for l in out.splitlines() if l.strip()):
+            if dev:
                 ssh_run(sh, su, sp,
-                        f"pvscan --cache -aay {shlex.quote(pv)} 2>/dev/null; true",
+                        f"pvscan --cache -aay {shlex.quote(dev)} 2>/dev/null; true",
+                        key_material=sk, timeout=30)
+            else:
+                # fallback: scan all (slower but safe)
+                ssh_run(sh, su, sp,
+                        f"vgchange -ay {shlex.quote(vg_name)} 2>/dev/null; true",
                         key_material=sk, timeout=30)
             jlog.log(f"[{sh}] pvscan done.")
         except Exception as exc:
