@@ -380,6 +380,19 @@ def _run_snapshot(job_id, params, username):
                 job_row  = db.query_one("SELECT status, log_json FROM netapp_jobs WHERE id=?", (job_id,))
                 fin_status  = job_row["status"] if job_row else "unknown"
                 log_entries = json.loads(job_row["log_json"] or "[]") if job_row else []
+                # Read VM list from snapshot manifest
+                vm_list = []
+                try:
+                    snap_row = db.query_one(
+                        "SELECT manifest_json FROM netapp_snapshots WHERE id=?", (snapshot_id,))
+                    if snap_row and snap_row["manifest_json"]:
+                        mf = json.loads(snap_row["manifest_json"])
+                        vm_list = [
+                            {"vmid": v["vmid"], "name": v.get("name", ""), "vm_type": v.get("vm_type", "qemu")}
+                            for v in mf.get("vms", [])
+                        ]
+                except Exception:
+                    pass
                 from ..api.settings import send_job_notification
                 send_job_notification(
                     schedule_name=params.get("schedule_name", snap_name),
@@ -388,6 +401,7 @@ def _run_snapshot(job_id, params, username):
                     recipients_csv=params["notify_recipients"],
                     notify_on=params.get("notify_on", "all"),
                     log_lines=log_entries,
+                    vm_list=vm_list,
                 )
             except Exception as ne:
                 log.warning(f"[netapp_storage] Notification failed for job {job_id}: {ne}")

@@ -153,7 +153,7 @@ def _log_severity(msg):
 
 
 def _build_notification_email(subject, schedule_name, snap_name, job_status, log_lines=None,
-                               extra_rows=None):
+                               extra_rows=None, vm_list=None):
     """
     Returns (html_body, plain_body).
 
@@ -201,6 +201,18 @@ def _build_notification_email(subject, schedule_name, snap_name, job_status, log
         ("Snapshot",  snap_name),
         ("Status",    f'<span style="color:{cfg["dot_color"]};font-weight:700">● {cfg["dot_label"]}</span>'),
     ]
+    if vm_list:
+        def _vm_badge(vm):
+            vmid = vm.get("vmid", "?")
+            name = vm.get("name", "")
+            vtype = (vm.get("vm_type") or "qemu").upper()
+            label = f"{vtype} {vmid}" + (f" — {name}" if name else "")
+            bg = "#1d4ed8" if vtype == "QEMU" else "#6d28d9"
+            return (f'<span style="display:inline-block;background:{bg};color:#fff;'
+                    f'border-radius:4px;padding:1px 6px;font-size:11px;margin:1px 2px 1px 0">'
+                    f'{label}</span>')
+        vm_html = "".join(_vm_badge(v) for v in vm_list)
+        summary_rows.append(("VMs", vm_html))
     if extra_rows:
         summary_rows.extend(extra_rows)
 
@@ -281,8 +293,15 @@ def _build_notification_email(subject, schedule_name, snap_name, job_status, log
         f"Schedule : {schedule_name}",
         f"Snapshot : {snap_name}",
         f"Status   : {status_label}",
-        "",
     ]
+    if vm_list:
+        vm_labels = [
+            f"{(v.get('vm_type') or 'qemu').upper()} {v.get('vmid','?')}"
+            + (f" ({v['name']})" if v.get('name') else "")
+            for v in vm_list
+        ]
+        plain_lines.append(f"VMs      : {', '.join(vm_labels)}")
+    plain_lines.append("")
     if entries:
         plain_lines.append("--- Log ---")
         for ts, sev, msg in entries:
@@ -292,7 +311,7 @@ def _build_notification_email(subject, schedule_name, snap_name, job_status, log
 
 
 def send_job_notification(schedule_name, job_status, snap_name,
-                          recipients_csv, notify_on, log_lines=None):
+                          recipients_csv, notify_on, log_lines=None, vm_list=None):
     """Send a snapshot job result notification email.
 
     Called from the snapshot engine after a scheduled job finishes.
@@ -325,7 +344,7 @@ def send_job_notification(schedule_name, job_status, snap_name,
         subject    = f"[PegaProx] Snapshot {status_str}: {schedule_name} — {snap_name}"
 
         html_body, plain_body = _build_notification_email(
-            subject, schedule_name, snap_name, job_status, log_lines)
+            subject, schedule_name, snap_name, job_status, log_lines, vm_list=vm_list)
 
         recipients = [r.strip() for r in recipients_csv.split(',') if r.strip()]
         msg = email.mime.multipart.MIMEMultipart('alternative')
@@ -396,9 +415,14 @@ def _notify_test():
         {"ts": now_str, "msg": "SMTP connection test initiated"},
         {"ts": now_str, "msg": "If you received this email, notifications are configured correctly."},
     ]
+    fake_vms = [
+        {"vmid": 100, "name": "web-prod-01",  "vm_type": "qemu"},
+        {"vmid": 101, "name": "db-prod-01",   "vm_type": "qemu"},
+        {"vmid": 200, "name": "alpine-proxy", "vm_type": "lxc"},
+    ]
     html_body, plain_body = _build_notification_email(
         subject, "— test —", "— test —", "done", fake_log,
-        extra_rows=[("Sent", now_str)]
+        extra_rows=[("Sent", now_str)], vm_list=fake_vms,
     )
     msg = email.mime.multipart.MIMEMultipart('alternative')
     msg['From']    = from_addr
