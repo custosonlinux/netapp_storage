@@ -282,15 +282,23 @@ def _list_snapshots():
         "FROM netapp_volume_mapping vm "
         "JOIN netapp_endpoints ep ON ep.id = vm.endpoint_id"
     )
+    seen_native_keys = set()   # (volume_uuid, snap_name) — prevents duplicates across mappings
+    seen_volume_uuids = set()  # skip re-fetching the same volume from ONTAP
     for m in (mappings or []):
         m = dict(m)
+        vol_uuid = m.get("volume_uuid", "")
+        if not vol_uuid or vol_uuid in seen_volume_uuids:
+            continue
+        seen_volume_uuids.add(vol_uuid)
         try:
             ep = get_endpoint(db, m["endpoint_id"])
             client = build_ontap_client(ep)
             ontap_snaps = client.list_snapshots(m["volume_uuid"])
             for s in ontap_snaps:
-                if (m["volume_uuid"], s["name"]) in db_keys:
+                key = (m["volume_uuid"], s["name"])
+                if key in db_keys or key in seen_native_keys:
                     continue
+                seen_native_keys.add(key)
                 result.append({
                     "id": s["uuid"],
                     "mapping_id": m["id"],
