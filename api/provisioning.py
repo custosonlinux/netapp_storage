@@ -869,6 +869,13 @@ def _run_resize(job_id, ds_id, new_size_bytes, username):
 
             jlog.log("Resizing ONTAP volume …")
             client.resize_volume(vol_uuid, _SAN_VOL_SIZE)
+            try:
+                vol_info = client.get_volume(vol_uuid)
+                actual_vol = (vol_info.get("space") or {}).get("size", 0)
+                jlog.log(f"Volume actual size after resize: {actual_vol} bytes "
+                         f"(target was {_SAN_VOL_SIZE})")
+            except Exception as _ve:
+                jlog.log(f"NOTE: could not verify volume size: {_ve}")
             jlog.log("Resizing NVMe namespace …")
             client.resize_namespace(ns_uuid, new_size_bytes)
             jlog.log("ONTAP objects resized.")
