@@ -3,6 +3,14 @@
 A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that adds VM-consistent NetApp® ONTAP® snapshot management directly to the PegaProx UI — for **NFS**, **iSCSI**, and **NVMe-oF** (NVMe/TCP, NVMe/FC) datastores.
 
 > **Maturity levels:**
+> - ✅ **Stable** — Tested in a lab environment and found to be reliable and stable under test conditions.
+> - 🟡 **Beta** — Implemented and partially tested. Occasional errors may still occur that require investigation. Use with caution.
+> - 🟠 **Alpha** — Implemented, but errors still occur regularly and may require manual intervention (e.g. a clone volume not cleaned up automatically). Not suitable for routine use.
+> - 🔵 **In Development** — Feature is implemented in code but has not been tested yet.
+> - 🔄 **Planned** — Not yet implemented.
+> - ❌ **N/A** — Not applicable for this protocol.
+>
+> **Protocol status:**
 > - 🟢 **NFS** — Stable. All core workflows (snapshot, restore, clone, SnapMirror DR) are fully implemented and tested.
 > - 🟡 **SAN — iSCSI** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested.
 > - 🟡 **SAN — NVMe-oF** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested on NetApp ASA with NVMe/TCP.
@@ -121,7 +129,7 @@ The plugin adds its tables to the central PegaProx database on first load (`/opt
 | Storage Provisioning (auto-setup) | ✅ | 🟡 Beta | 🟡 Beta |
 | Job cancellation | ✅ | 🟡 Beta | 🟡 Beta |
 
-Legend: ✅ Stable · 🟡 Beta · 🔄 Planned · ❌ Not applicable
+Legend: ✅ Stable · 🟡 Beta · 🟠 Alpha · 🔵 In Development · 🔄 Planned · ❌ N/A
 
 ¹ NVMe Single VM Restore and Clone on ASA use a full volume clone via the ONTAP CLI bridge (`private/cli/volume/clone`). Direct namespace clone APIs are not available on ASA, but the volume clone approach achieves identical results (see platform table below).
 
