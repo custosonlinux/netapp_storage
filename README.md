@@ -3,9 +3,9 @@
 A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that adds VM-consistent NetApp® ONTAP® snapshot management directly to the PegaProx UI — for **NFS**, **iSCSI**, and **NVMe-oF** (NVMe/TCP, NVMe/FC) datastores.
 
 > **Maturity levels:**
-> - 🟢 **NFS** — Stable. All core workflows (snapshot, restore, clone, SnapMirror DR) are production-ready.
+> - 🟢 **NFS** — Stable. All core workflows (snapshot, restore, clone, SnapMirror DR) are fully implemented and tested.
 > - 🟡 **SAN — iSCSI** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested.
-> - 🟡 **SAN — NVMe-oF** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested on NetApp ASA with NVMe/TCP. Not yet production-hardened.
+> - 🟡 **SAN — NVMe-oF** — Beta. Snapshot, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested on NetApp ASA with NVMe/TCP.
 
 ---
 
