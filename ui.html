@@ -1409,14 +1409,20 @@ function applyI18n() {
         </p>
 
         <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_vms_include">Include VMs</div>
-        <select id="sched_vmids_select" multiple size="6" style="width:100%;min-height:120px;margin-bottom:4px">
-          <option disabled data-i18n="hint_select_mapping">← Select mapping first</option>
-        </select>
-        <div style="display:flex;gap:6px;margin-bottom:4px">
-          <button class="btn btn-ghost btn-sm" onclick="schedSelectAll()" data-i18n="btn_all">All</button>
-          <button class="btn btn-ghost btn-sm" onclick="schedSelectNone()" data-i18n="btn_none">None</button>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="sched_sync_vmids" onchange="toggleSchedSyncVmids()">
+          <span>Alle VMs im Datastore automatisch sichern</span>
+        </label>
+        <div id="sched_vmids_manual">
+          <select id="sched_vmids_select" multiple size="6" style="width:100%;min-height:120px;margin-bottom:4px">
+            <option disabled data-i18n="hint_select_mapping">← Select mapping first</option>
+          </select>
+          <div style="display:flex;gap:6px;margin-bottom:4px">
+            <button class="btn btn-ghost btn-sm" onclick="schedSelectAll()" data-i18n="btn_all">All</button>
+            <button class="btn btn-ghost btn-sm" onclick="schedSelectNone()" data-i18n="btn_none">None</button>
+          </div>
+          <p class="hint" data-i18n="hint_no_select">No selection = all VMs of the datastore are included.</p>
         </div>
-        <p class="hint" data-i18n="hint_no_select">No selection = all VMs of the datastore are included.</p>
 
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
           <input type="checkbox" id="sched_sm_update">
@@ -3133,6 +3139,10 @@ async function showAddScheduleForm() {
   document.getElementById('sched_pre_script').value = '';
   document.getElementById('sched_post_script').value = '';
   if (document.getElementById('sched_sm_update')) document.getElementById('sched_sm_update').checked = false;
+  if (document.getElementById('sched_sync_vmids')) {
+    document.getElementById('sched_sync_vmids').checked = false;
+    document.getElementById('sched_vmids_manual').style.display = 'block';
+  }
   if (document.getElementById('sched_notify_enabled')) {
     document.getElementById('sched_notify_enabled').checked = false;
     document.getElementById('sched_notify_on').value = 'all';
@@ -3168,6 +3178,10 @@ async function showEditScheduleForm(s) {
   document.getElementById('sched_pre_script').value  = s.pre_script  || '';
   document.getElementById('sched_post_script').value = s.post_script || '';
   if (document.getElementById('sched_sm_update')) document.getElementById('sched_sm_update').checked = !!s.snapmirror_update;
+  if (document.getElementById('sched_sync_vmids')) {
+    document.getElementById('sched_sync_vmids').checked = !!s.sync_vmids;
+    document.getElementById('sched_vmids_manual').style.display = s.sync_vmids ? 'none' : 'block';
+  }
   if (document.getElementById('sched_notify_enabled')) {
     var notifyOn = !!s.notify_enabled;
     document.getElementById('sched_notify_enabled').checked    = notifyOn;
@@ -3231,6 +3245,11 @@ function toggleNotifyFields() {
   document.getElementById('sched_notify_fields').style.display = on ? 'block' : 'none';
 }
 
+function toggleSchedSyncVmids() {
+  var on = document.getElementById('sched_sync_vmids').checked;
+  document.getElementById('sched_vmids_manual').style.display = on ? 'none' : 'block';
+}
+
 async function testScheduleNotification() {
   var recipients = document.getElementById('sched_notify_recipients').value.trim();
   if (!recipients) { toast(t('msg_notify_no_recipients'), 'error'); return; }
@@ -3250,11 +3269,12 @@ async function updateSchedule(id) {
   var pre_script      = document.getElementById('sched_pre_script').value;
   var post_script     = document.getElementById('sched_post_script').value;
   var snapmirror_update = !!(document.getElementById('sched_sm_update') && document.getElementById('sched_sm_update').checked);
+  var sync_vmids = !!(document.getElementById('sched_sync_vmids') && document.getElementById('sched_sync_vmids').checked);
   var sel = document.getElementById('sched_vmids_select');
-  var vmids = Array.from(sel.selectedOptions).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
+  var vmids = sync_vmids ? [] : Array.from(sel.selectedOptions).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
   if (!name||!mapping_id||!cron_expr) { toast(t('msg_fill_required'),'error'); return; }
   try {
-    await apiPost('schedules/update', Object.assign({id,name,mapping_id,vmids,cron_expr,retention_count,consistency,label,pre_script,post_script,snapmirror_update}, _schedNotifyPayload()));
+    await apiPost('schedules/update', Object.assign({id,name,mapping_id,vmids,cron_expr,retention_count,consistency,label,pre_script,post_script,snapmirror_update,sync_vmids}, _schedNotifyPayload()));
     toast(t('msg_sched_updated'),'success');
     hideForm('addScheduleForm');
     window.scrollTo({top:0, behavior:'smooth'});
@@ -3272,11 +3292,12 @@ async function addSchedule() {
   var pre_script      = document.getElementById('sched_pre_script').value;
   var post_script     = document.getElementById('sched_post_script').value;
   var snapmirror_update = !!(document.getElementById('sched_sm_update') && document.getElementById('sched_sm_update').checked);
+  var sync_vmids = !!(document.getElementById('sched_sync_vmids') && document.getElementById('sched_sync_vmids').checked);
   var sel = document.getElementById('sched_vmids_select');
-  var vmids = Array.from(sel.selectedOptions).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
+  var vmids = sync_vmids ? [] : Array.from(sel.selectedOptions).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
   if (!name||!mapping_id||!cron_expr) { toast(t('msg_fill_required'),'error'); return; }
   try {
-    await apiPost('schedules/add', Object.assign({name,mapping_id,vmids,cron_expr,retention_count,consistency,label,pre_script,post_script,snapmirror_update}, _schedNotifyPayload()));
+    await apiPost('schedules/add', Object.assign({name,mapping_id,vmids,cron_expr,retention_count,consistency,label,pre_script,post_script,snapmirror_update,sync_vmids}, _schedNotifyPayload()));
     toast(t('msg_sched_saved'),'success');
     hideForm('addScheduleForm');
     window.scrollTo({top:0, behavior:'smooth'});

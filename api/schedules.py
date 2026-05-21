@@ -100,6 +100,43 @@ def _cron_is_due(cron_expr, last_run_at):
         return False
 
 
+# ── VM sync helper ─────────────────────────────────────────────────────────────
+
+def _sync_vmids_for_schedule(db, mapping_row):
+    """Query PVE storage content API and return current vmid list for this datastore."""
+    from ..core._helpers import build_pve_client
+    storage_id = mapping_row["pve_storage_id"]
+    volume_uuid = mapping_row["volume_uuid"]
+    is_san = mapping_row.get("storage_protocol", "nfs") in ("iscsi", "nvme")
+
+    host_rows = db.query(
+        "SELECT DISTINCT pve_cluster_id FROM netapp_volume_mapping WHERE volume_uuid=?",
+        (volume_uuid,),
+    )
+    host_ids = [r["pve_cluster_id"] for r in host_rows]
+    if mapping_row["pve_cluster_id"] not in host_ids:
+        host_ids.insert(0, mapping_row["pve_cluster_id"])
+
+    storage_vmids = set()
+    for hid in host_ids:
+        try:
+            pve = build_pve_client(db, hid)
+            for node_name in list(pve.get_node_status().keys()):
+                rc = pve._api_get(
+                    f"{pve._base}/nodes/{node_name}/storage/{storage_id}/content"
+                )
+                if rc.ok:
+                    for item in rc.json().get("data", []):
+                        vmid = item.get("vmid")
+                        if vmid:
+                            storage_vmids.add(int(vmid))
+                    if not is_san:
+                        break  # NFS is cluster-shared — one node is enough
+        except Exception as exc:
+            log.warning(f"[netapp_storage] sync_vmids {storage_id} host {hid}: {exc}")
+    return sorted(storage_vmids)
+
+
 # ── Schedule execution ──────────────────────────────────────────────────────────
 
 def _execute_schedule(schedule):
@@ -117,6 +154,23 @@ def _execute_schedule(schedule):
     )
 
     vmids = json.loads(schedule.get("vmids_json") or "[]")
+
+    # Auto-sync: replace vmids with current datastore content before running
+    mapping_row_early = db.query_one(
+        "SELECT * FROM netapp_volume_mapping WHERE id=?", (schedule["mapping_id"],)
+    )
+    if schedule.get("sync_vmids") and mapping_row_early:
+        try:
+            synced = _sync_vmids_for_schedule(db, dict(mapping_row_early))
+            if synced is not None:
+                vmids = synced
+                db.execute(
+                    "UPDATE netapp_snapshot_schedules SET vmids_json=? WHERE id=?",
+                    (json.dumps(vmids), schedule["id"]),
+                )
+                log.info(f"[netapp_storage] Schedule '{schedule['name']}' synced vmids: {vmids}")
+        except Exception as exc:
+            log.warning(f"[netapp_storage] Schedule '{schedule['name']}' vmid sync failed: {exc}")
 
     # Derive node from mapping (via plugin-managed PVE client)
     mapping_row = db.query_one(
@@ -284,8 +338,8 @@ def _add_schedule():
         "INSERT INTO netapp_snapshot_schedules "
         "(id, name, mapping_id, vmids_json, cron_expr, retention_count, "
         "consistency, label, pre_script, post_script, snapmirror_update, "
-        "notify_enabled, notify_on, notify_recipients, enabled, created_by, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "notify_enabled, notify_on, notify_recipients, sync_vmids, enabled, created_by, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (sid, data["name"], data["mapping_id"], json.dumps(vmids),
          data["cron_expr"], int(data.get("retention_count", 7)),
          data.get("consistency", "crash"), data.get("label", ""),
@@ -294,6 +348,7 @@ def _add_schedule():
          1 if data.get("notify_enabled") else 0,
          data.get("notify_on", "all"),
          data.get("notify_recipients", ""),
+         1 if data.get("sync_vmids") else 0,
          1, username, now),
     )
     return {"success": True, "id": sid}
@@ -323,6 +378,7 @@ def _update_schedule():
         ("notify_enabled",    1 if data.get("notify_enabled") else (0 if "notify_enabled" in data else None)),
         ("notify_on",         data.get("notify_on")),
         ("notify_recipients", data.get("notify_recipients")),
+        ("sync_vmids",        1 if data.get("sync_vmids") else (0 if "sync_vmids" in data else None)),
         ("enabled", data.get("enabled")),
         ("vmids_json", json.dumps(data["vmids"]) if "vmids" in data else None),
         ("mapping_id", data.get("mapping_id")),

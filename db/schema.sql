@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS netapp_snapshot_schedules (
     notify_enabled  INTEGER NOT NULL DEFAULT 0,
     notify_on       TEXT NOT NULL DEFAULT 'all',
     notify_recipients TEXT NOT NULL DEFAULT '',
+    sync_vmids      INTEGER NOT NULL DEFAULT 0,
     created_by      TEXT NOT NULL,
     created_at      TEXT NOT NULL
 );

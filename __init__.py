@@ -52,6 +52,7 @@ def _init_db():
         _add_column_if_missing(db, "netapp_snapshot_schedules", "notify_recipients",    "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(db, "netapp_snapshot_schedules", "pre_script",  "TEXT DEFAULT ''")
         _add_column_if_missing(db, "netapp_snapshot_schedules", "post_script", "TEXT DEFAULT ''")
+        _add_column_if_missing(db, "netapp_snapshot_schedules", "sync_vmids",  "INTEGER NOT NULL DEFAULT 0")
 
         _add_column_if_missing(db, "netapp_pve_hosts",  "nfs_ip",        "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(db, "netapp_endpoints", "skip_nfs",      "INTEGER NOT NULL DEFAULT 0")
