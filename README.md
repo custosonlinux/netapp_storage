@@ -27,7 +27,7 @@ All operations run as background jobs with live log streaming. Every snapshot em
 | VM-consistent Snapshots (crash / app / suspend) | ✅ | ✅ | ✅ |
 | Scheduled Snapshots | ✅ | ✅ | ✅ |
 | Email notifications per schedule | ✅ | ✅ | ✅ |
-| Manifest rides inside ONTAP snapshot | ✅ | ✅ | ✅ |
+| Manifest (VM inventory, disk layout, configs) rides inside ONTAP snapshot | ✅ | ✅ | ✅ |
 | Restore — SFSR (Single-File, NFS only) | ✅ | ❌ n/a | ❌ n/a |
 | Restore — Single VM (LV-copy via temp clone) | ❌ n/a | 🟡 Beta | 🟡 Beta¹ |
 | Restore — Volume Revert (all VMs) | ✅ | 🟡 Beta | 🟡 Beta |
@@ -338,11 +338,16 @@ Reverts the entire ONTAP volume to the snapshot state — affects **all VMs** on
 
 ---
 
-## Storage Provisioning (iSCSI / NVMe-oF)
+## Storage Provisioning (NFS / iSCSI / NVMe-oF)
 
-The **Provisioning** tab automates the complete setup of a new SAN datastore — from ONTAP object creation to PVE storage registration — across all cluster nodes in a single operation.
+The **Provisioning** tab automates the complete setup of a new datastore — from ONTAP object creation to PVE storage registration — across all cluster nodes in a single operation.
 
 ### What is automated
+
+**NFS:**
+1. **ONTAP side** — create (or reuse) a volume, create a dedicated export policy, and add per-host export rules (the host's IP that routes to the NFS LIF is detected automatically).
+2. **PVE cluster** — `pvesm add nfs` (cluster-wide, run once via pmxcfs).
+3. **Snapmanifest directory** — `.netapp-snapmanifest/` is created inside the mount point so snapshot manifests work immediately.
 
 **iSCSI:**
 1. **ONTAP side** — create (or reuse) a thin-provisioned SAN volume, a LUN, and an iGroup; add all selected host IQNs; map the LUN to the iGroup.
@@ -364,9 +369,10 @@ The Provisioning tab also handles teardown: `pvesm remove`, VG deactivation and 
 
 ### Requirements
 
+- **NFS:** No additional packages required on PVE nodes.
 - **iSCSI:** `open-iscsi`, `multipath-tools`, `lvm2` on all PVE nodes.
 - **NVMe-oF:** `nvme-cli`, `lvm2`, kernel module `nvme-tcp` on all PVE nodes.
-- A valid `/etc/multipath.conf` with NetApp settings on all PVE nodes (see template below).
+- A valid `/etc/multipath.conf` with NetApp settings on all PVE nodes (see template below; required for iSCSI).
 - SSH access from PegaProx to all PVE nodes (configured under Settings → Proxmox Hosts).
 
 ---
@@ -431,11 +437,12 @@ Each schedule can send email notifications on snapshot job completion. Configure
 Notifications are sent as HTML emails with a plain-text fallback. The email format includes:
 
 - **Status banner** (full-width, colour-coded): green for success, amber for success-with-warnings, red for failure.
-- **Summary table** — schedule name, snapshot name, status, and timestamp.
-- **Dark terminal log block** — last 30 job log lines with per-line severity tags:
+- **Summary table** — schedule name, snapshot name, datastore, status dot, and the list of snapshotted VMs. Each VM is shown as a colour-coded badge including VMID, display name, and type (QEMU / LXC).
+- **Dark terminal log block** — last 50 job log lines with per-line severity tags:
   - `[INFO]` — informational
   - `[WARN]` — warnings (amber)
   - `[ERR]` — errors (red)
+- **Plain-text fallback** — included as a `text/plain` MIME part for clients that don't render HTML.
 
 The banner colour is determined by the overall outcome: `done` with no warnings → green; `done` with at least one warning → amber; `failed` or any error → red.
 
