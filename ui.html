@@ -3037,11 +3037,18 @@ async function loadSchedules() {
     }));
     tbody.innerHTML = rows.map(function(s) {
       var lastRun = s.last_run_at ? fmtDate(s.last_run_at)+' '+statusBadge(s.last_run_status) : '–';
-      var vmDisplay = '<div class="vm-bubble-box">' +
-        (s.vmids||[]).map(function(id){
-          var n = vmNameMap[id];
-          return vmBadge(id, n);
-        }).join('') + '</div>';
+      var vmDisplay = '<div class="vm-bubble-box">';
+      if (s.sync_vmids) {
+        vmDisplay += '<span class="badge" style="background:var(--primary);color:#fff;margin-right:4px" title="VMs werden vor jedem Run automatisch aus dem Datastore gelesen">Auto</span>';
+      }
+      vmDisplay += (s.vmids||[]).map(function(id){
+        var n = vmNameMap[id];
+        return vmBadge(id, n);
+      }).join('');
+      if (s.sync_vmids && !(s.vmids||[]).length) {
+        vmDisplay += '<span style="color:var(--muted);font-size:11px">wird beim ersten Run befüllt</span>';
+      }
+      vmDisplay += '</div>';
       return '<tr>' +
         '<td><strong>'+esc(s.name)+'</strong></td>' +
         '<td>'+esc(s.pve_storage_id||'')+' → '+esc(s.volume_name||'')+'</td>' +
