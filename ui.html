@@ -3198,7 +3198,8 @@ async function showEditScheduleForm(s) {
   }
   parseCronToForm(s.cron_expr);
   document.getElementById('addScheduleForm').style.display = 'block';
-  document.getElementById('addScheduleForm').scrollIntoView({behavior:'smooth', block:'start'});
+  var _c = document.querySelector('.content');
+  if (_c) { var _f = document.getElementById('addScheduleForm'); _c.scrollTop = _f ? Math.max(0, _f.offsetTop - _c.offsetTop - 12) : 0; }
   await populateMappingSelect('sched_mapping');
   document.getElementById('sched_mapping').value = s.mapping_id;
   if (s.mapping_id) await loadVmsForSchedule(s.mapping_id, s.vmids || []);
@@ -3284,7 +3285,7 @@ async function updateSchedule(id) {
     await apiPost('schedules/update', Object.assign({id,name,mapping_id,vmids,cron_expr,retention_count,consistency,label,pre_script,post_script,snapmirror_update,sync_vmids}, _schedNotifyPayload()));
     toast(t('msg_sched_updated'),'success');
     hideForm('addScheduleForm');
-    window.scrollTo({top:0, behavior:'smooth'});
+    var _c = document.querySelector('.content'); if (_c) _c.scrollTop = 0;
     loadSchedules();
   } catch(e) { toast(e.message,'error'); }
 }
@@ -3307,7 +3308,7 @@ async function addSchedule() {
     await apiPost('schedules/add', Object.assign({name,mapping_id,vmids,cron_expr,retention_count,consistency,label,pre_script,post_script,snapmirror_update,sync_vmids}, _schedNotifyPayload()));
     toast(t('msg_sched_saved'),'success');
     hideForm('addScheduleForm');
-    window.scrollTo({top:0, behavior:'smooth'});
+    var _c = document.querySelector('.content'); if (_c) _c.scrollTop = 0;
     loadSchedules();
   } catch(e) { toast(e.message,'error'); }
 }
