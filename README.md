@@ -35,7 +35,7 @@ All operations run as background jobs with live log streaming. Every snapshot em
 | Clone from ONTAP-native snapshots | ✅ | 🟡 Beta | 🟡 Beta |
 | Multi-VM snapshot | ✅ | 🟡 Beta | 🟡 Beta |
 | ONTAP-native snapshot visibility | ✅ | 🟡 Beta | 🟡 Beta |
-| SnapMirror® visibility & DR restore/clone | ✅ | 🟡 Beta | 🔵 In Development |
+| SnapMirror® visibility & DR restore/clone | ✅ | 🟡 Beta | 🟡 Beta |
 | Storage Provisioning (auto-setup) | ✅ | 🟡 Beta | 🟡 Beta |
 | Storage Resize | ✅ grow & shrink | 🟡 Beta grow only | 🟡 Beta grow only |
 | Job cancellation | ✅ | 🟡 Beta | 🟡 Beta |
@@ -57,7 +57,7 @@ Legend: ✅ Stable · 🟡 Beta · 🟠 Alpha · 🔵 In Development · 🔄 Pla
 > **Protocol status:**
 > - 🟢 **NFS** — Stable. All core workflows (snapshot, restore, clone, SnapMirror DR) are fully implemented and tested.
 > - 🟡 **SAN — iSCSI** — Beta. Auto-discovery, snapshots, schedules, single-VM restore, volume revert, VM clone, end-to-end provisioning, and SnapMirror DR restore/clone are fully implemented and tested.
-> - 🟡 **SAN — NVMe-oF** — Beta. Auto-discovery, snapshots, schedules, single-VM restore, volume revert, VM clone, and end-to-end provisioning are fully implemented and tested on NetApp ASA with NVMe/TCP. SnapMirror DR restore/clone is implemented but requires a secondary NVMe system for validation.
+> - 🟡 **SAN — NVMe-oF** — Beta. Auto-discovery, snapshots, schedules, single-VM restore, volume revert, VM clone, end-to-end provisioning, and SnapMirror DR restore/clone are fully implemented and tested on NetApp ASA (NVMe/TCP, ONTAP 9.18.1) and AFF (NVMe/TCP, ONTAP 9.16.1).
 
 ---
 
@@ -95,7 +95,7 @@ All features are included in **ONTAP One** (ONTAP 9.10.1+) at no extra cost:
 | FlexClone | FlexClone® | ✓ |
 | NVMe-oF / iSCSI | SAN | ✓ |
 
-**Tested platforms:** ONTAP 9.13+ (NFS/iSCSI), NetApp ASA (All-SAN Array) with NVMe/TCP on ONTAP 9.18.1 — including end-to-end provisioning, single-VM restore, and VM clone.
+**Tested platforms:** ONTAP 9.13+ (NFS/iSCSI), NetApp ASA (All-SAN Array) with NVMe/TCP on ONTAP 9.18.1, NetApp AFF with NVMe/TCP on ONTAP 9.16.1 — including end-to-end provisioning, snapshot, restore, clone, and SnapMirror DR restore/clone.
 
 ### Proxmox packages (PVE nodes)
 
