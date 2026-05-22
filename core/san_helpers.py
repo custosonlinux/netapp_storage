@@ -529,17 +529,32 @@ def lv_copy(ssh_host, ssh_user, ssh_pass, ssh_key,
     """
     src_q = shlex.quote(f"/dev/{src_vg}/{src_lv}")
     dst_q = shlex.quote(f"/dev/{dst_vg}/{dst_lv}")
+    tmp   = f"/tmp/.dd_{_uuid.uuid4().hex[:8]}"
+    tmp_q = shlex.quote(tmp)
 
-    msg = f"LV copy: {src_vg}/{src_lv} → {dst_vg}/{dst_lv}"
+    size_bytes = get_lv_size_bytes(ssh_host, ssh_user, ssh_pass, ssh_key, src_vg, src_lv)
+    size_str = f" ({size_bytes / 1073741824:.1f} GiB)" if size_bytes else ""
+
+    msg = f"LV copy: {src_vg}/{src_lv} → {dst_vg}/{dst_lv}{size_str}"
     log.info(f"[netapp_storage] {msg}")
     if jlog:
         jlog.log(msg)
 
-    ssh_run(ssh_host, ssh_user, ssh_pass,
-            f"dd if={src_q} of={dst_q} bs=512M iflag=direct oflag=direct conv=fsync status=none",
-            key_material=ssh_key, timeout=14400)
+    # dd stderr (progress lines \r-terminated, final stats \n-terminated) → temp file.
+    # After copy: convert \r to \n, drop empty lines, take the last line = final stats.
+    out = ssh_run(
+        ssh_host, ssh_user, ssh_pass,
+        f"dd if={src_q} of={dst_q} bs=512M iflag=direct oflag=direct conv=fsync "
+        f"status=progress 2>{tmp_q}; "
+        f"tr '\\r' '\\n' <{tmp_q} 2>/dev/null | grep -v '^$' | tail -1; "
+        f"rm -f {tmp_q}",
+        capture=True, key_material=ssh_key, timeout=14400,
+    )
+    stats = out.strip()
 
     done = f"LV copy completed: {src_vg}/{src_lv}"
+    if stats:
+        done += f" — {stats}"
     log.info(f"[netapp_storage] {done}")
     if jlog:
         jlog.log(done)
