@@ -837,7 +837,13 @@ class OntapClient:
             if exc.status_code != 404:
                 raise
 
-        log.info("[netapp_storage] protocols/nvme/namespaces → 404, trying CLI fallback")
+        log.info("[netapp_storage] protocols/nvme/namespaces → 404, trying storage/namespaces")
+        try:
+            return self._list_nvme_namespaces_storage(svm_name)
+        except OntapError:
+            pass
+
+        log.info("[netapp_storage] storage/namespaces → 404, trying CLI fallback")
         try:
             return self._list_nvme_namespaces_cli(svm_name)
         except OntapError:
@@ -845,6 +851,48 @@ class OntapClient:
 
         log.info("[netapp_storage] NVMe CLI fallback → 404, trying subsystem-maps fallback")
         return self._list_nvme_namespaces_via_subsystem_maps(svm_name)
+
+    def _list_nvme_namespaces_storage(self, svm_name=None):
+        """Fallback for ONTAP 9.16.1+ AFF: list namespaces via storage/namespaces.
+
+        Normalises the response to the same dict format as list_nvme_namespaces()
+        so callers can use location.volume.name/uuid interchangeably.
+        The name field in storage/namespaces is the full path /vol/volname/nsname.
+        Volume UUID is requested directly; parsed from path as fallback.
+        """
+        params = {
+            "fields": "uuid,name,svm.name,space.size,status.state,"
+                      "location.volume.uuid,location.volume.name",
+            "max_records": 500,
+        }
+        if svm_name:
+            params["svm.name"] = svm_name
+        records = self._get_all_records("storage/namespaces", params=params)
+        result = []
+        for r in records:
+            ns_path = r.get("name", "")          # /vol/volname/nsname
+            parts   = [p for p in ns_path.split("/") if p]
+            path_vol_name = parts[1] if len(parts) >= 3 else ""
+            ns_name       = parts[2] if len(parts) >= 3 else (parts[-1] if parts else "")
+
+            # Prefer API-supplied location fields; fall back to path parsing
+            loc     = r.get("location") or {}
+            loc_vol = loc.get("volume") or {}
+            vol_uuid = loc_vol.get("uuid", "")
+            vol_name = loc_vol.get("name", "") or path_vol_name
+
+            result.append({
+                "uuid":     r.get("uuid", ""),
+                "name":     ns_name,
+                "svm":      {"name": (r.get("svm") or {}).get("name", "")},
+                "location": {
+                    "volume":    {"name": vol_name, "uuid": vol_uuid},
+                    "namespace": ns_name,
+                },
+                "space":  r.get("space", {}),
+                "status": r.get("status", {}),
+            })
+        return result
 
     def _list_nvme_namespaces_cli(self, svm_name=None):
         """Fallback: NVMe namespaces via private/cli REST bridge.
@@ -1468,10 +1516,10 @@ class OntapClient:
                          aggregate_name=None):
         """Creates an NVMe namespace inside an existing volume. Returns ns_uuid.
 
-        Fallback chain for ASA R2 (protocols/nvme/namespaces POST → 404):
-          1. POST protocols/nvme/namespaces  (standard ONTAP 9.6+)
-          2. POST storage/storage-units       (ASA R2 unified API, 9.16.1+)
-          3. POST private/cli/nvme/namespace  (CLI bridge last resort)
+        Fallback chain (protocols/nvme/namespaces POST → 404 on 9.16.1+):
+          1. POST protocols/nvme/namespaces  (ONTAP 9.6–9.15, older AFF/ASA)
+          2. POST storage/namespaces         (ONTAP 9.16.1+, AFF and ASA R2)
+          3. POST private/cli/nvme/namespace (CLI bridge last resort)
         """
         body = {
             "name": f"/vol/{volume_name}/{ns_name}",
@@ -1506,33 +1554,42 @@ class OntapClient:
 
     def _create_namespace_asa(self, svm_name, volume_name, ns_name, size_bytes,
                                os_type="linux", aggregate_name=None):
-        """ASA R2 fallback for NVMe namespace creation.
+        """Fallback for NVMe namespace creation when protocols/nvme/namespaces POST → 404.
 
-        Stage 1: POST storage/namespaces  (ASA R2, ONTAP 9.16.1+)
-          — Replaces protocols/nvme/namespaces on ASA R2; size via space.size.
+        This is triggered on ONTAP 9.16.1+ (AFF and ASA R2) where storage/namespaces
+        is the primary endpoint, and on ASA classic where protocols/nvme/namespaces
+        is not supported.
+
+        Stage 1: POST storage/namespaces  (ONTAP 9.16.1+, AFF and ASA R2)
+          — Requires full path /vol/volname/nsname when volume already exists (AFF).
+          — ASA R2 auto-provisions the volume from the path when it doesn't exist yet.
         Stage 2: POST private/cli/nvme/namespace  (CLI bridge last resort)
-          — On ASA R2 the CLI auto-provisions the volume when given a full /vol/ path.
 
         Returns ns_uuid after looking it up via the CLI bridge or subsystem-maps.
         """
         size_gb = max(1, -(-size_bytes // (1024 ** 3)))  # ceiling division
 
-        # Stage 1: POST storage/namespaces (ASA R2 replacement for protocols/nvme/namespaces)
+        # Stage 1: POST storage/namespaces
+        # AFF requires a full path (/vol/volname/nsname); ASA R2 accepts just the name.
+        # Send full path when volume_name is known — ASA R2 also accepts full paths.
+        ns_name_or_path = f"/vol/{volume_name}/{ns_name}" if volume_name else ns_name
         try:
             body = {
-                "name":    ns_name,
+                "name":    ns_name_or_path,
                 "svm":     {"name": svm_name},
                 "space":   {"size": size_bytes},
                 "os_type": os_type,
             }
             resp = self._post("storage/namespaces", body=body,
-                              params={"return_timeout": 30})
-            ns_uuid  = resp.get("uuid", "")
+                              params={"return_timeout": 30, "return_records": "true"})
+            # UUID may be top-level (ASA R2) or nested under "record" (AFF 9.16.1+)
+            ns_uuid  = (resp.get("uuid", "")
+                        or (resp.get("record") or {}).get("uuid", ""))
             job_uuid = (resp.get("job") or {}).get("uuid", "")
             if job_uuid:
                 self.poll_job(job_uuid, interval_s=2, timeout_s=120)
             if ns_uuid:
-                log.info(f"[netapp_storage] ASA storage/namespaces: {ns_name} → {ns_uuid}")
+                log.info(f"[netapp_storage] storage/namespaces: {ns_name_or_path} → {ns_uuid}")
                 return ns_uuid
             # UUID missing from response — look it up
             ns_uuid = self._find_namespace_uuid_after_asa_create(svm_name, volume_name, ns_name)
@@ -1540,7 +1597,7 @@ class OntapClient:
                 return ns_uuid
             raise OntapError(f"Namespace '{ns_name}' not found after storage/namespaces POST")
         except OntapError as exc:
-            if exc.status_code not in (404, 405):
+            if exc.status_code not in (400, 404, 405):
                 raise
             log.info(f"[netapp_storage] storage/namespaces → {exc.status_code}; "
                      "trying private/cli/nvme/namespace")
@@ -1566,18 +1623,25 @@ class OntapClient:
         return ns_uuid
 
     def _find_namespace_uuid_after_asa_create(self, svm_name, volume_name, ns_name):
-        """Multi-strategy UUID lookup for a namespace just created on ASA R2."""
-        # Strategy 0: storage/namespaces by name (ASA R2 endpoint, namespace name lookup)
-        try:
-            records = self._get_all_records(
-                "storage/namespaces",
-                params={"name": ns_name, "svm.name": svm_name,
-                        "fields": "uuid,name", "max_records": 10},
-            )
-            if records:
-                return records[0].get("uuid", "")
-        except OntapError:
-            pass
+        """Multi-strategy UUID lookup for a namespace just created via storage/namespaces."""
+        # Strategy 0: storage/namespaces by name.
+        # On ONTAP 9.16.1+ AFF the name field is the full path; on ASA R2 it's the short name.
+        for name_filter in (
+            f"/vol/{volume_name}/{ns_name}" if volume_name else None,
+            ns_name,
+        ):
+            if not name_filter:
+                continue
+            try:
+                records = self._get_all_records(
+                    "storage/namespaces",
+                    params={"name": name_filter, "svm.name": svm_name,
+                            "fields": "uuid,name", "max_records": 10},
+                )
+                if records:
+                    return records[0].get("uuid", "")
+            except OntapError:
+                pass
 
         # Strategy 1: protocols/nvme/namespaces by volume name
         try:

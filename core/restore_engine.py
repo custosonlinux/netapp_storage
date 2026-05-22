@@ -589,6 +589,13 @@ def _run_restore_san_single(job_id, params, username):
                  if (ns.get("location") or {}).get("volume", {}).get("uuid") == vol_uuid),
                 None,
             )
+            # Fallback: match by volume name when UUID is not returned by the API
+            if not main_ns:
+                main_ns = next(
+                    (ns for ns in namespaces
+                     if (ns.get("location") or {}).get("volume", {}).get("name") == vol_name),
+                    None,
+                )
             if not main_ns:
                 raise RuntimeError(
                     f"Cannot find NVMe namespace for volume {vol_uuid} — re-run discovery")

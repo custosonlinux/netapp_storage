@@ -361,6 +361,12 @@ def _run_clone_san(job_id, params, username):
                 None,
             )
             if not main_ns:
+                main_ns = next(
+                    (ns for ns in namespaces
+                     if (ns.get("location") or {}).get("volume", {}).get("name") == vol_name),
+                    None,
+                )
+            if not main_ns:
                 raise RuntimeError(
                     f"Cannot find NVMe namespace for volume {vol_uuid}. "
                     "Re-run discovery or check SVM."
