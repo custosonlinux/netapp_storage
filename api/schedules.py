@@ -209,6 +209,7 @@ def _execute_schedule(schedule):
         "schedule_id":       schedule["id"],
         "schedule_name":     schedule.get("name", ""),
         "snap_name_suffix":  sched_name_safe,
+        "retention_count":   int(schedule.get("retention_count") or 7),
         "snapmirror_update": bool(schedule.get("snapmirror_update", 0)),
         "notify_enabled":    bool(schedule.get("notify_enabled", 0)),
         "notify_on":         schedule.get("notify_on", "all") or "all",
@@ -225,43 +226,10 @@ def _execute_schedule(schedule):
         "UPDATE netapp_snapshot_schedules SET last_run_at=?, last_run_status=? WHERE id=?",
         (datetime.now(timezone.utc).isoformat(), status, schedule["id"]),
     )
-
-    # Retention: delete oldest snapshots of this schedule
-    try:
-        retention = int(schedule.get("retention_count") or 7)
-        snaps = db.query(
-            "SELECT id, ontap_snap_uuid, mapping_id FROM netapp_snapshots "
-            "WHERE schedule_id=? AND status='done' ORDER BY created_at DESC",
-            (schedule["id"],),
-        )
-        if len(snaps) > retention:
-            for old_snap in list(snaps)[retention:]:
-                try:
-                    from ..core._helpers import get_endpoint, build_ontap_client
-                    mapping = db.query_one(
-                        "SELECT * FROM netapp_volume_mapping WHERE id=?",
-                        (old_snap["mapping_id"],),
-                    )
-                    if mapping:
-                        ep_row = db.query_one(
-                            "SELECT * FROM netapp_endpoints WHERE id=?",
-                            (mapping["endpoint_id"],),
-                        )
-                        if ep_row:
-                            ep = dict(ep_row)
-                            ep["password"] = db._decrypt(ep.pop("password_encrypted", ""))
-                            client = build_ontap_client(ep)
-                            if old_snap["ontap_snap_uuid"]:
-                                del_job = client.delete_snapshot(
-                                    mapping["volume_uuid"], old_snap["ontap_snap_uuid"]
-                                )
-                                if del_job:
-                                    client.poll_job(del_job, timeout_s=60)
-                except Exception as exc:
-                    log.warning(f"[netapp_storage] Retention delete failed: {exc}")
-                db.execute("DELETE FROM netapp_snapshots WHERE id=?", (old_snap["id"],))
-    except Exception as exc:
-        log.warning(f"[netapp_storage] Retention failed: {exc}")
+    # Retention is now handled inside snapshot_engine._run_snapshot, directly after
+    # the snapshot status is set to 'done'.  This avoids the race condition where the
+    # retention count ran while the new snapshot was still status='running' and therefore
+    # not included in the count, causing a permanent off-by-one (retention+1 snapshots).
 
 
 def _scheduler_loop():

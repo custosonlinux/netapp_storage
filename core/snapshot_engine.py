@@ -362,6 +362,26 @@ def _run_snapshot(job_id, params, username):
             except Exception as sm_exc:
                 jlog.log(f"SnapMirror® update: {sm_exc} (non-critical)")
 
+        # Retention: prune oldest snapshots for this schedule.
+        # ONTAP is the source of truth — we query the volume directly so the
+        # count is always accurate regardless of DB state.
+        if schedule_id:
+            try:
+                retention_count  = int(params.get("retention_count") or 7)
+                sched_name_safe  = params.get("snap_name_suffix", "")
+                _cfg             = load_plugin_config()
+                snap_prefix_cfg  = _cfg.get("snapshot_prefix", "NPP_")
+                deleted = _apply_schedule_retention(
+                    db, schedule_id, retention_count,
+                    client, mapping["volume_uuid"],
+                    snap_prefix_cfg, sched_name_safe,
+                )
+                if deleted:
+                    jlog.log(f"Retention: removed {deleted} old snapshot(s) "
+                             f"(keeping {retention_count}).")
+            except Exception as exc:
+                log.warning(f"[netapp_storage] Retention failed for schedule {schedule_id}: {exc}")
+
     except JobCancelledError:
         jlog.log("Job cancelled by user")
         now = datetime.now(timezone.utc).isoformat()
@@ -415,6 +435,111 @@ def _run_snapshot(job_id, params, username):
                 )
             except Exception as ne:
                 log.warning(f"[netapp_storage] Notification failed for job {job_id}: {ne}")
+
+
+# ── Schedule retention ──────────────────────────────────────────────────────
+
+def _apply_schedule_retention(db, schedule_id, retention_count,
+                               client, volume_uuid, snap_prefix, sched_name_safe):
+    """Enforce retention for a schedule using ONTAP as the source of truth.
+
+    Queries the ONTAP volume directly, filters snapshots that belong to this
+    schedule by name pattern, and deletes the oldest ones beyond retention_count.
+    The local DB is kept in sync afterwards.
+
+    Returns the number of ONTAP snapshots actually deleted.
+
+    Snapshot name pattern: {snap_prefix}{YYYYMMDD}_{HHMM}_{sched_name_safe}
+    e.g.  NPP_20260527_0200_nightly-backup
+
+    Why ONTAP as source of truth:
+    - DB entries can become stale (past bugs, manual ONTAP ops, DB loss).
+    - ONTAP is always authoritative for what actually exists on storage.
+    - The DB is a UI cache only — it must not determine what gets deleted.
+    """
+    if not sched_name_safe:
+        log.warning("[netapp_storage] Retention: empty schedule name suffix, skipping.")
+        return 0
+
+    suffix = f"_{sched_name_safe}"
+
+    # ── 1. Fetch current snapshot list from ONTAP ────────────────────────────
+    try:
+        all_snaps = client.list_snapshots(volume_uuid)
+    except Exception as exc:
+        raise RuntimeError(f"Cannot list ONTAP snapshots for retention: {exc}")
+
+    # ── 2. Filter: snapshots that belong to this schedule ────────────────────
+    sched_snaps = [
+        s for s in all_snaps
+        if s.get("name", "").startswith(snap_prefix)
+        and s.get("name", "").endswith(suffix)
+    ]
+
+    # ── 3. Sort newest-first by ONTAP create_time (ISO-8601 is lex-sortable) ─
+    sched_snaps.sort(key=lambda s: s.get("create_time", ""), reverse=True)
+
+    ontap_names = {s.get("name") for s in sched_snaps}
+
+    # ── 4. Delete oldest snapshots beyond retention_count ────────────────────
+    to_delete = sched_snaps[retention_count:]
+    deleted   = 0
+    for snap in to_delete:
+        snap_uuid = snap.get("uuid", "")
+        snap_nm   = snap.get("name", "")
+        try:
+            if snap_uuid:
+                del_job = client.delete_snapshot(volume_uuid, snap_uuid, snap_name=snap_nm)
+                if del_job:
+                    client.poll_job(del_job, timeout_s=60)
+                log.info(f"[netapp_storage] Retention: deleted ONTAP snapshot '{snap_nm}'")
+                ontap_names.discard(snap_nm)   # no longer exists on ONTAP
+                deleted += 1
+            else:
+                log.warning(
+                    f"[netapp_storage] Retention: snapshot '{snap_nm}' has no UUID "
+                    "— skipping ONTAP delete."
+                )
+                continue
+        except Exception as exc:
+            log.warning(
+                f"[netapp_storage] Retention: ONTAP delete '{snap_nm}' failed: {exc} "
+                "— keeping DB entry."
+            )
+            continue   # don't touch DB if ONTAP delete failed
+        # Remove DB entry for the deleted snapshot
+        try:
+            db.execute(
+                "DELETE FROM netapp_snapshots "
+                "WHERE snap_name=? AND mapping_id IN "
+                "(SELECT id FROM netapp_volume_mapping WHERE volume_uuid=?)",
+                (snap_nm, volume_uuid),
+            )
+        except Exception as db_exc:
+            log.warning(
+                f"[netapp_storage] Retention DB cleanup for '{snap_nm}': {db_exc}"
+            )
+
+    # ── 5. DB sync: remove entries for snapshots gone from ONTAP ────────────
+    # Covers snapshots deleted manually on ONTAP or lost due to past bugs.
+    try:
+        db_rows = db.query(
+            "SELECT id, snap_name FROM netapp_snapshots WHERE schedule_id=?",
+            (schedule_id,),
+        )
+        for row in db_rows:
+            nm = row["snap_name"] or ""
+            if (nm.startswith(snap_prefix) and nm.endswith(suffix)
+                    and nm not in ontap_names):
+                db.execute("DELETE FROM netapp_snapshots WHERE id=?", (row["id"],))
+                log.info(
+                    f"[netapp_storage] DB sync: removed orphaned entry for '{nm}' "
+                    "(no longer on ONTAP)"
+                )
+    except Exception as sync_exc:
+        log.warning(f"[netapp_storage] DB sync failed: {sync_exc}")
+
+    return deleted
 
 
 # ── VM type detection ───────────────────────────────────────────────────────

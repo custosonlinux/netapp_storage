@@ -951,6 +951,10 @@ def _run_restore_dr_iscsi(job_id, params, username, db, jlog, mapping):
                 jlog.log(f"  Creating {vg_name}/{src_lv} ({src_size} B) …")
                 create_lv(pve_host, pve_user, pve_pass, pve_key,
                           vg_name, src_lv, src_size, lvm_type, pool_name)
+            else:
+                # PVE deactivates LVs on VM stop — re-activate before dd
+                activate_lv_for_restore(pve_host, pve_user, pve_pass, pve_key,
+                                        vg_name, src_lv, lvm_type, pool_name)
 
             lv_copy(pve_host, pve_user, pve_pass, pve_key,
                     temp_vg_name, src_lv, vg_name, src_lv, jlog)
@@ -1059,6 +1063,281 @@ def _dr_iscsi_cleanup(secondary_client, temp_igroup_uuid, temp_clone_vol_uuid,
             log.warning(f"[netapp_storage] DR iSCSI cleanup clone volume: {exc}")
 
 
+def _run_restore_dr_nvme(job_id, params, username, db, jlog, mapping):
+    """
+    DR restore for NVMe-oF datastores from SnapMirror® secondary.
+
+    Flow:
+      1. Load manifest from DB, stop VM
+      2. FlexClone from SnapMirror snapshot on secondary
+      3. Create temp NVMe subsystem on secondary, add host NQN, map clone namespace
+      4. NVMe connect from PVE host to secondary portals
+      5. vgimportclone → temp VG, dd LVs to primary VG
+      6. Cleanup: deactivate temp VG, disconnect NVMe, delete temp subsystem + clone volume
+      7. Restore VM config, start VM
+    """
+    from ._helpers import get_endpoint, build_ontap_client, get_ssh_creds
+    from .san_helpers import (nvme_list_devices, find_new_nvme_device,
+                               nvme_connect_to_subsystem, nvme_disconnect_by_subsystem_name,
+                               vg_import_clone, activate_lv_for_restore, lv_copy,
+                               cleanup_restore_vg, get_lv_size_bytes, create_lv,
+                               vg_rescan_and_activate, get_nvme_host_nqn)
+
+    relationship_id = params["relationship_id"]
+    snap_name       = params["snap_name"]
+    vmid            = int(params["vmid"])
+    vm_type         = params.get("vm_type", "qemu")
+
+    vg_name   = mapping["lvm_vg_name"]
+    lvm_type  = mapping.get("lvm_type", "linear")
+    pool_name = mapping.get("lvm_pool_name", "")
+
+    secondary_client    = None
+    temp_ns_uuid        = ""
+    temp_clone_vol_uuid = ""
+    temp_subsystem_uuid = ""
+    temp_subsystem_name = ""
+    temp_vg_name        = ""
+    pve_host = pve_user = pve_pass = pve_key = ""
+
+    try:
+        rel = db.query_one(
+            "SELECT * FROM netapp_snapmirror_relationships WHERE id=?",
+            (relationship_id,)
+        )
+        if not rel:
+            raise RuntimeError(f"SnapMirror relationship '{relationship_id}' not found")
+        rel = dict(rel)
+        if not rel.get("dest_endpoint_id") or not rel.get("dest_volume_uuid"):
+            raise RuntimeError(
+                "Secondary endpoint or volume UUID missing — run SnapMirror scan first.")
+
+        secondary_ep     = get_endpoint(db, rel["dest_endpoint_id"])
+        secondary_client = build_ontap_client(secondary_ep)
+        dest_svm         = rel["dest_svm"]
+        dest_vol_uuid    = rel["dest_volume_uuid"]
+
+        mgr = build_pve_client(db, mapping["pve_cluster_id"])
+        pve_user, pve_pass, pve_key = get_ssh_creds(mgr)
+        node = ""
+        try:
+            node = mgr.find_vm_node(vmid) or ""
+        except Exception:
+            pass
+        pve_host = _resolve_node_host(mgr, node) or mgr.host
+
+        poll_cfg      = load_plugin_config()
+        poll_interval = poll_cfg.get("job_poll_interval_s", 3)
+        poll_timeout  = poll_cfg.get("job_poll_timeout_s", 300)
+
+        # ── 1. Manifest + stop VM ────────────────────────────────────────────
+        snap_row = db.query_one(
+            "SELECT * FROM netapp_snapshots WHERE mapping_id=? AND snap_name=? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (mapping["id"], snap_name),
+        )
+        if snap_row:
+            snap     = dict(snap_row)
+            manifest = _load_manifest(snap, mapping, node, mgr,
+                                      pve_host, pve_user, pve_pass, pve_key)
+            vm_type  = json.loads(snap.get("vm_types_json") or "{}").get(str(vmid), vm_type)
+        else:
+            jlog.log("Snapshot record not found in DB — will restore all LVs found in clone VG.")
+            manifest = {"vms": [{"vmid": vmid, "disks": [], "vm_type": vm_type}]}
+
+        vm_entry = _find_vm_in_manifest(manifest, vmid)
+        disks    = vm_entry.get("disks", [])
+        vm_type  = vm_entry.get("vm_type", vm_type)
+
+        jlog.log(f"Stopping {vm_type.upper()} {vmid} …")
+        _vm_stop(mgr, node, vmid, vm_type)
+        _ensure_vmid_placeholder(pve_host, pve_user, pve_pass, pve_key, vmid, vm_type)
+        _set_progress(db, job_id, 10)
+
+        # ── 2. FlexClone from SnapMirror snapshot on secondary ───────────────
+        temp_clone_name = f"pgxdrclone_{job_id[:8]}"
+        jlog.log(f"Cloning volume from secondary snapshot '{snap_name}' …")
+        temp_ns_uuid, temp_clone_vol_uuid = secondary_client.clone_namespace_from_snapshot(
+            dest_vol_uuid, snap_name, dest_svm, temp_clone_name,
+            poll_interval=poll_interval, poll_timeout=poll_timeout,
+        )
+        jlog.log(f"Secondary clone volume created: {temp_clone_name}")
+        _set_progress(db, job_id, 22)
+
+        # ── 3. Temp NVMe subsystem on secondary, map clone namespace ─────────
+        jlog.log("Getting host NQN …")
+        host_nqn = get_nvme_host_nqn(pve_host, pve_user, pve_pass, pve_key)
+        if not host_nqn:
+            raise RuntimeError(f"Cannot determine NVMe NQN of PVE host {pve_host}")
+
+        temp_subsystem_name = f"pgxdr_{job_id[:8]}"
+        jlog.log(f"Creating temporary NVMe subsystem '{temp_subsystem_name}' on secondary …")
+        temp_subsystem_uuid = secondary_client.create_nvme_subsystem(
+            dest_svm, temp_subsystem_name)
+        secondary_client.add_nvme_host_to_subsystem(temp_subsystem_uuid, host_nqn)
+        secondary_client.add_nvme_namespace_to_subsystem(
+            temp_subsystem_uuid, temp_ns_uuid, svm_name=dest_svm)
+        jlog.log("Clone namespace mapped to temporary subsystem.")
+        _set_progress(db, job_id, 32)
+
+        # ── 4. NVMe connect PVE host → secondary ─────────────────────────────
+        sec_lif_ips = [ip for ip in secondary_client.get_nvme_lifs_for_svm(dest_svm) if ip]
+        if not sec_lif_ips:
+            raise RuntimeError(
+                f"No NVMe/TCP data LIF found on secondary SVM '{dest_svm}'")
+
+        sub_info      = secondary_client.get_nvme_subsystem(temp_subsystem_uuid)
+        subsystem_nqn = sub_info.get("target_nqn", "")
+
+        devices_before = nvme_list_devices(pve_host, pve_user, pve_pass, pve_key)
+
+        if subsystem_nqn:
+            jlog.log(f"Connecting host to secondary NVMe portals {sec_lif_ips} …")
+            nvme_connect_to_subsystem(pve_host, pve_user, pve_pass, pve_key,
+                                      sec_lif_ips, subsystem_nqn)
+        else:
+            jlog.log("WARNING: subsystem NQN unavailable from API — skipping direct connect; "
+                     "waiting for auto-discovery")
+
+        jlog.log("Waiting for clone namespace device …")
+        device = find_new_nvme_device(
+            pve_host, pve_user, pve_pass, pve_key, devices_before, timeout_s=60)
+        jlog.log(f"Clone device: {device}")
+        _set_progress(db, job_id, 42)
+
+        # ── 5. vgimportclone → temp VG, dd LVs ──────────────────────────────
+        jlog.log(f"Importing clone VG from {device} …")
+        temp_vg_name = vg_import_clone(pve_host, pve_user, pve_pass, pve_key,
+                                       device, vg_name)
+        jlog.log(f"Clone VG imported as '{temp_vg_name}'")
+        _set_progress(db, job_id, 50)
+
+        total = len(disks)
+        jlog.log(f"Restoring {total} disk(s) for VM {vmid} …")
+        for i, disk in enumerate(disks, 1):
+            check_cancel(job_id)
+            old_file = disk.get("file", "")
+            src_lv   = os.path.basename(old_file.split(":")[-1]) if old_file else ""
+            if not src_lv:
+                jlog.log(f"  [{i}/{total}] skipping disk with no file path")
+                continue
+
+            jlog.log(f"  [{i}/{total}] restoring {src_lv} …")
+            activate_lv_for_restore(pve_host, pve_user, pve_pass, pve_key,
+                                    temp_vg_name, src_lv, lvm_type, pool_name)
+
+            dst_size = get_lv_size_bytes(pve_host, pve_user, pve_pass, pve_key,
+                                         vg_name, src_lv)
+            if not dst_size:
+                src_size = get_lv_size_bytes(pve_host, pve_user, pve_pass, pve_key,
+                                              temp_vg_name, src_lv)
+                if not src_size:
+                    raise RuntimeError(f"Cannot determine size for {temp_vg_name}/{src_lv}")
+                jlog.log(f"  Creating {vg_name}/{src_lv} ({src_size} B) …")
+                create_lv(pve_host, pve_user, pve_pass, pve_key,
+                          vg_name, src_lv, src_size, lvm_type, pool_name)
+            else:
+                # PVE deactivates LVs on VM stop — re-activate before dd
+                activate_lv_for_restore(pve_host, pve_user, pve_pass, pve_key,
+                                        vg_name, src_lv, lvm_type, pool_name)
+
+            lv_copy(pve_host, pve_user, pve_pass, pve_key,
+                    temp_vg_name, src_lv, vg_name, src_lv, jlog)
+            _set_progress(db, job_id, 50 + int(i / max(total, 1) * 30))
+
+        # ── 6. Cleanup ────────────────────────────────────────────────────────
+        jlog.log(f"Cleaning up clone VG '{temp_vg_name}' …")
+        cleanup_restore_vg(pve_host, pve_user, pve_pass, pve_key, temp_vg_name)
+        temp_vg_name = ""
+        _set_progress(db, job_id, 83)
+
+        jlog.log("Disconnecting NVMe session to secondary …")
+        nvme_disconnect_by_subsystem_name(pve_host, pve_user, pve_pass, pve_key,
+                                          temp_subsystem_name)
+
+        jlog.log("Removing temporary NVMe subsystem and clone volume on secondary …")
+        secondary_client.delete_nvme_subsystem(temp_subsystem_uuid)
+        temp_subsystem_uuid = ""
+
+        try:
+            secondary_client.unmount_volume(temp_clone_vol_uuid)
+        except Exception:
+            pass
+        try:
+            del_job = secondary_client.delete_volume(temp_clone_vol_uuid)
+            if del_job:
+                secondary_client.poll_job(del_job, timeout_s=120)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] DR NVMe: delete clone volume: {exc}")
+        temp_clone_vol_uuid = ""
+        _set_progress(db, job_id, 88)
+
+        try:
+            vg_rescan_and_activate(pve_host, pve_user, pve_pass, pve_key, vg_name)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] DR NVMe: vg rescan after cleanup: {exc}")
+
+        # ── 7. Restore config + start VM ─────────────────────────────────────
+        if snap_row:
+            jlog.log("Restoring VM config …")
+            _restore_config(snap, mapping, vmid, vm_type, node, mgr,
+                            pve_host, pve_user, pve_pass, pve_key)
+        _rescan_and_start(mgr, node, vmid, vm_type, pve_host, pve_user, pve_pass, pve_key)
+
+    except JobCancelledError:
+        jlog.log("Job cancelled by user")
+        _cancel_job(db, job_id)
+        _dr_nvme_cleanup(secondary_client, temp_subsystem_uuid, temp_clone_vol_uuid,
+                         pve_host, pve_user, pve_pass, pve_key,
+                         temp_vg_name, temp_subsystem_name)
+        _reg_unregister(job_id)
+        return
+    except Exception as exc:
+        log.error(f"[netapp_storage] DR NVMe restore job {job_id} failed: {exc}")
+        _fail_job(db, job_id)
+        jlog.log(f"ERROR: {exc}")
+        _dr_nvme_cleanup(secondary_client, temp_subsystem_uuid, temp_clone_vol_uuid,
+                         pve_host, pve_user, pve_pass, pve_key,
+                         temp_vg_name, temp_subsystem_name)
+        _reg_unregister(job_id)
+        return
+
+    _reg_unregister(job_id)
+    _finish_job(db, job_id)
+    jlog.log(f"DR NVMe restore for {vm_type.upper()} {vmid} completed.")
+
+
+def _dr_nvme_cleanup(secondary_client, temp_subsystem_uuid, temp_clone_vol_uuid,
+                     pve_host, pve_user, pve_pass, pve_key,
+                     temp_vg_name, temp_subsystem_name):
+    """Best-effort cleanup after DR NVMe restore error or cancel."""
+    from .san_helpers import cleanup_restore_vg, nvme_disconnect_by_subsystem_name
+    if temp_vg_name and pve_host:
+        try:
+            cleanup_restore_vg(pve_host, pve_user, pve_pass, pve_key, temp_vg_name)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] DR NVMe cleanup VG: {exc}")
+    if temp_subsystem_name and pve_host:
+        try:
+            nvme_disconnect_by_subsystem_name(pve_host, pve_user, pve_pass, pve_key,
+                                              temp_subsystem_name)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] DR NVMe cleanup disconnect: {exc}")
+    if secondary_client and temp_subsystem_uuid:
+        secondary_client.delete_nvme_subsystem(temp_subsystem_uuid)
+    if secondary_client and temp_clone_vol_uuid:
+        try:
+            secondary_client.unmount_volume(temp_clone_vol_uuid)
+        except Exception:
+            pass
+        try:
+            del_job = secondary_client.delete_volume(temp_clone_vol_uuid)
+            if del_job:
+                secondary_client.poll_job(del_job, timeout_s=60)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] DR NVMe cleanup clone volume: {exc}")
+
+
 # ── DR restore (mount secondary volume directly) ───────────────────────────────
 
 def _run_restore_dr(job_id, params, username):
@@ -1077,6 +1356,10 @@ def _run_restore_dr(job_id, params, username):
 
     if protocol == "iscsi":
         _run_restore_dr_iscsi(job_id, params, username, db, jlog, mapping)
+        return
+
+    if protocol == "nvme":
+        _run_restore_dr_nvme(job_id, params, username, db, jlog, mapping)
         return
 
     relationship_id = params["relationship_id"]

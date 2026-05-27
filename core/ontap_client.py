@@ -591,6 +591,46 @@ class OntapClient:
             raise OntapError(f"No LUN found inside FlexClone volume {clone_vol_name!r}")
         return lun_uuid, clone_vol_uuid
 
+    def clone_namespace_from_snapshot(self, source_vol_uuid, snap_name, svm_name,
+                                       clone_vol_name, poll_interval=3, poll_timeout=300):
+        """FlexClone of source volume from snapshot; returns (ns_uuid, clone_vol_uuid).
+
+        Equivalent to clone_lun_from_snapshot but for NVMe namespaces.
+        Used by DR NVMe restore to create a temporary clone on the secondary.
+        """
+        body = {
+            "name": clone_vol_name,
+            "svm":  {"name": svm_name},
+            "clone": {
+                "is_flexclone":    True,
+                "parent_volume":   {"uuid": source_vol_uuid},
+                "parent_snapshot": {"name": snap_name},
+            },
+        }
+        resp = self._post("storage/volumes", body=body, params={"return_timeout": 0})
+        clone_vol_uuid = resp.get("uuid", "")
+        job_uuid = (resp.get("job") or {}).get("uuid", "")
+        if job_uuid:
+            self.poll_job(job_uuid, interval_s=poll_interval, timeout_s=poll_timeout)
+        if not clone_vol_uuid:
+            for v in self.get_volumes():
+                if v.get("name") == clone_vol_name:
+                    clone_vol_uuid = v.get("uuid", "")
+                    break
+        if not clone_vol_uuid:
+            raise OntapError(f"FlexClone volume {clone_vol_name!r} not found after creation")
+
+        ns_uuid = ""
+        for ns in self.list_nvme_namespaces(svm_name=svm_name):
+            loc_vol = (ns.get("location") or {}).get("volume", {})
+            if loc_vol.get("uuid") == clone_vol_uuid or loc_vol.get("name") == clone_vol_name:
+                ns_uuid = ns["uuid"]
+                break
+        if not ns_uuid:
+            raise OntapError(
+                f"No NVMe namespace found inside FlexClone volume {clone_vol_name!r}")
+        return ns_uuid, clone_vol_uuid
+
     def delete_lun(self, lun_uuid):
         """Deletes a LUN. Returns job UUID."""
         resp = self._delete(f"storage/luns/{lun_uuid}", params={"return_timeout": 0})
