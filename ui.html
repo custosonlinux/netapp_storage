@@ -2008,12 +2008,8 @@ function applyI18n() {
           </div>
           <div class="form-grid" style="margin-bottom:14px">
             <div class="form-group">
-              <label>Datastore Name <span style="color:var(--muted);font-weight:400">(label)</span></label>
-              <input class="form-control" id="rcvDsName" placeholder="e.g. prod-san-01">
-            </div>
-            <div class="form-group">
-              <label>PVE Storage ID <span style="color:var(--muted);font-weight:400">(pvesm name)</span></label>
-              <input class="form-control" id="rcvStorageId" placeholder="e.g. san-prod">
+              <label>Storage Name <span style="color:var(--muted);font-weight:400">(PVE storage ID, e.g. netapp-prod)</span></label>
+              <input class="form-control" id="rcvStorageId" placeholder="e.g. netapp-prod">
             </div>
             <div class="form-group" id="rcvVgRow">
               <label>VG Name <span style="color:var(--muted);font-weight:400">(existing LVM volume group)</span></label>
@@ -4769,7 +4765,7 @@ var rcvState = {
   volume_uuid:'', volume_name:'', volume_type:'rw',
   sm_rel_uuid:'', has_sm:false,
   vg_name:'', lvm_type:'linear', pool_name:'data',
-  storage_id:'', ds_name:'', junction_override:'',
+  storage_id:'', junction_override:'',
   pve_host_ids:[]
 };
 
@@ -4914,9 +4910,8 @@ function rcvLvmTypeChange() {
 }
 
 function rcvNext2() {
-  var dsName = document.getElementById('rcvDsName').value.trim();
   var sid    = document.getElementById('rcvStorageId').value.trim();
-  if (!dsName || !sid) { alert('Please fill in Datastore Name and PVE Storage ID.'); return; }
+  if (!sid) { alert('Please enter a Storage Name.'); return; }
   var hosts  = Array.from(document.querySelectorAll('.rcvHostCb:checked')).map(function(c){return c.value;});
   if (!hosts.length) { alert('Select at least one PVE host.'); return; }
   var isSan  = rcvState.protocol==='iscsi'||rcvState.protocol==='nvme';
@@ -4927,7 +4922,7 @@ function rcvNext2() {
     rcvState.lvm_type  = document.getElementById('rcvLvmType').value;
     rcvState.pool_name = document.getElementById('rcvPoolName').value.trim() || 'data';
   }
-  rcvState.ds_name         = dsName;
+  rcvState.ds_name         = sid;  // use storage ID as name
   rcvState.storage_id      = sid;
   rcvState.junction_override = (document.getElementById('rcvJunctionPath')||{}).value||'';
   rcvState.pve_host_ids    = hosts;
@@ -4936,8 +4931,7 @@ function rcvNext2() {
   var smBreak = rcvState.has_sm && document.getElementById('rcvSmBreak').checked;
   var lines = [
     '📦 Volume: <strong>'+esc(rcvState.volume_name)+'</strong> ('+esc(rcvState.protocol.toUpperCase())+')',
-    '🏷️  Datastore name: <strong>'+esc(rcvState.ds_name)+'</strong>',
-    '💾 PVE Storage ID: <strong>'+esc(rcvState.storage_id)+'</strong>',
+    '💾 Storage Name: <strong>'+esc(rcvState.storage_id)+'</strong>',
   ];
   if (isSan) {
     lines.push('🗄️  VG: <strong>'+esc(rcvState.vg_name)+'</strong> ('+esc(rcvState.lvm_type)+')');
