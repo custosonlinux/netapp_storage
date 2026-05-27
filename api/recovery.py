@@ -116,6 +116,19 @@ def _recovery_manifests():
     vg_name        = ds.get("vg_name", "")
     pve_host_ids   = json.loads(ds.get("pve_host_ids") or "[]")
 
+    # Fallback: read VG name from volume_mapping if DS table is empty (e.g. auto-detected bind)
+    if not vg_name and protocol in ("iscsi", "nvme"):
+        vm_row  = db.query_one(
+            "SELECT lvm_vg_name FROM netapp_volume_mapping WHERE pve_storage_id=? LIMIT 1",
+            (pve_storage_id,),
+        )
+        vg_name = dict(vm_row or {}).get("lvm_vg_name", "")
+        if vg_name:
+            db.execute(
+                "UPDATE netapp_provisioned_datastores SET vg_name=? WHERE id=?",
+                (vg_name, ds_id),
+            )
+
     if not pve_host_ids:
         return {"error": "No PVE hosts associated with this datastore"}, 400
 
@@ -323,6 +336,20 @@ def _recovery_restore_vms():
     pve_storage_id = ds.get("pve_storage_id", "")
     vg_name        = ds.get("vg_name", "")
     pve_host_ids   = json.loads(ds.get("pve_host_ids") or "[]")
+
+    # Fallback: read VG name from volume_mapping if DS table is empty
+    if not vg_name and protocol in ("iscsi", "nvme"):
+        vm_row  = db.query_one(
+            "SELECT lvm_vg_name FROM netapp_volume_mapping WHERE pve_storage_id=? LIMIT 1",
+            (pve_storage_id,),
+        )
+        vg_name = dict(vm_row or {}).get("lvm_vg_name", "")
+        if vg_name:
+            db.execute(
+                "UPDATE netapp_provisioned_datastores SET vg_name=? WHERE id=?",
+                (vg_name, ds_id),
+            )
+
     snap_name      = body.get("snap_name", "")
     vmids_raw      = body.get("vmids")
     vmids_to_restore = set(int(v) for v in vmids_raw) if vmids_raw else None

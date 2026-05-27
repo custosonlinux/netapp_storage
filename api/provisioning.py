@@ -72,10 +72,28 @@ def _prov_datastores():
         err = _require_admin()
         if err:
             return err
-        db = get_db()
+        db   = get_db()
         rows = db.query(
             "SELECT * FROM netapp_provisioned_datastores ORDER BY created_at DESC")
-        return {"datastores": [_ds_to_dict(r) for r in rows]}
+        result = []
+        for r in rows:
+            d = _ds_to_dict(r)
+            # Backfill vg_name from volume_mapping for auto-detected binds
+            if not d.get("vg_name") and d.get("protocol") in ("iscsi", "nvme"):
+                vm_row = db.query_one(
+                    "SELECT lvm_vg_name FROM netapp_volume_mapping "
+                    "WHERE pve_storage_id=? LIMIT 1",
+                    (d.get("pve_storage_id", ""),),
+                )
+                vg = dict(vm_row or {}).get("lvm_vg_name", "")
+                if vg:
+                    d["vg_name"] = vg
+                    db.execute(
+                        "UPDATE netapp_provisioned_datastores SET vg_name=? WHERE id=?",
+                        (vg, d["id"]),
+                    )
+            result.append(d)
+        return {"datastores": result}
 
     # POST — create
     err = _require_admin()

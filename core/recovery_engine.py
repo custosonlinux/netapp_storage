@@ -735,6 +735,10 @@ def _bind_iscsi(ds_id, params, db, jlog):
                 if detected:
                     vg_name = detected
                     jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
+                    db.execute(
+                        "UPDATE netapp_provisioned_datastores SET vg_name=?, updated_at=? WHERE id=?",
+                        (vg_name, _now(), ds_id),
+                    )
                 else:
                     raise RuntimeError(
                         f"No LVM VG found on device {device}. "
@@ -949,6 +953,10 @@ def _bind_nvme(ds_id, params, db, jlog):
                 if detected:
                     vg_name = detected
                     jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
+                    db.execute(
+                        "UPDATE netapp_provisioned_datastores SET vg_name=?, updated_at=? WHERE id=?",
+                        (vg_name, _now(), ds_id),
+                    )
                 else:
                     raise RuntimeError(
                         f"No LVM VG found on device {device}. "
