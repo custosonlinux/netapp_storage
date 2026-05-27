@@ -296,6 +296,9 @@ def _recovery_restore_vms():
     vmids_to_restore = set(int(v) for v in vmids_raw) if vmids_raw else None
     vmid_offset    = int(body.get("vmid_offset", 0))
     storage_id_old = body.get("storage_id_old", "")
+    # vmid_map: {orig_vmid_str: new_vmid} — takes precedence over offset
+    vmid_map_raw   = body.get("vmid_map", {})
+    vmid_map       = {int(k): int(v) for k, v in vmid_map_raw.items()} if vmid_map_raw else {}
 
     # Resolve manifest
     manifest = None
@@ -348,10 +351,39 @@ def _recovery_restore_vms():
             storage_id_old, pve_storage_id,
             db,
             _FakeJlog(),
+            vmid_map=vmid_map,
         )
         return {"restored": restored, "message": f"{restored} VM config(s) written."}
     except Exception as exc:
         log.error(f"[netapp_storage] restore-vms: {exc}")
+        return {"error": str(exc)}, 500
+
+
+def _recovery_used_vmids():
+    """Returns sorted list of VMIDs currently in use on the PVE hosts of a datastore.
+
+    Query params: ds_id
+    Returns: {vmids: [100, 101, ...]}
+    """
+    err = _require_admin()
+    if err:
+        return err
+    from flask import request
+    ds_id = request.args.get("ds_id")
+    if not ds_id:
+        return {"error": "ds_id required"}, 400
+
+    db  = get_db()
+    row = db.query_one("SELECT pve_host_ids FROM netapp_provisioned_datastores WHERE id=?", (ds_id,))
+    if not row:
+        return {"error": "Datastore not found"}, 404
+
+    pve_host_ids = json.loads(dict(row).get("pve_host_ids") or "[]")
+    from ..core.recovery_engine import get_used_vmids
+    try:
+        vmids = get_used_vmids(pve_host_ids, db)
+        return {"vmids": vmids}
+    except Exception as exc:
         return {"error": str(exc)}, 500
 
 
@@ -395,3 +427,4 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, "provisioning/recovery/manifests",    _recovery_manifests)
     register_plugin_route(PLUGIN_ID, "provisioning/recovery/bind",         _recovery_bind)
     register_plugin_route(PLUGIN_ID, "provisioning/recovery/restore-vms",  _recovery_restore_vms)
+    register_plugin_route(PLUGIN_ID, "provisioning/recovery/used-vmids",   _recovery_used_vmids)

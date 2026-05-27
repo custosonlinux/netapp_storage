@@ -177,8 +177,33 @@ def _conf_string(vm_entry):
     return ""
 
 
+def get_used_vmids(pve_host_ids, db):
+    """Returns a sorted list of VMIDs currently in use on any of the given PVE hosts."""
+    for hid in pve_host_ids:
+        try:
+            pve        = build_pve_client(db, hid)
+            su, sp, sk = get_ssh_creds(pve)
+            out = ssh_run(
+                pve.host, su, sp,
+                "{ ls /etc/pve/qemu-server/*.conf 2>/dev/null; "
+                "  ls /etc/pve/lxc/*.conf 2>/dev/null; } "
+                "| xargs -I{} basename {} .conf 2>/dev/null || true",
+                capture=True, key_material=sk, timeout=10,
+            )
+            vmids = []
+            for line in out.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    vmids.append(int(line))
+            return sorted(set(vmids))
+        except Exception:
+            continue
+    return []
+
+
 def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
-                       vmids_to_restore, storage_id_old, storage_id_new, db, jlog):
+                       vmids_to_restore, storage_id_old, storage_id_new, db, jlog,
+                       vmid_map=None):
     """Writes VM .conf files from a manifest dict to PVE hosts.
 
     manifest           : dict with 'vms' list (from manifest.json)
@@ -187,6 +212,7 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
     vmids_to_restore   : set of original VMIDs to restore, or None = all
     storage_id_old     : original pvesm storage ID in the conf (may be '')
     storage_id_new     : new pvesm storage ID after bind (may be '')
+    vmid_map           : dict {orig_vmid(int): new_vmid(int)} — overrides offset
     Returns number of VM configs successfully written.
     """
     vms = manifest.get("vms", [])
@@ -194,6 +220,7 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
         jlog.log("WARNING: manifest contains no VMs — nothing to restore.")
         return 0
 
+    vmid_map = vmid_map or {}
     restored = 0
     for vm in vms:
         try:
@@ -207,7 +234,7 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
 
         vm_type  = (vm.get("vmtype") or "qemu").lower()
         conf_dir = "/etc/pve/lxc" if vm_type == "lxc" else "/etc/pve/qemu-server"
-        vmid_new = vmid_orig + vmid_offset
+        vmid_new = vmid_map.get(vmid_orig, vmid_orig + vmid_offset)
         content  = _conf_string(vm)
         if not content:
             jlog.log(f"  VM {vmid_orig}: no config data in manifest — skipping.")
