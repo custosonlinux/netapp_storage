@@ -947,6 +947,18 @@ def _bind_nvme(ds_id, params, db, jlog):
                 device = None  # not yet connected — proceed normally
 
         if not device:
+            # Disconnect any stale/zombie controllers for this NQN before reconnecting.
+            # Previous failed bind attempts may leave controllers in 'connecting' state,
+            # which causes new nvme connect to fail silently and the device to never appear.
+            if subsystem_nqn:
+                try:
+                    ssh_run(sh, su, sp,
+                            f"nvme disconnect -n {shlex.quote(subsystem_nqn)} 2>/dev/null; true",
+                            key_material=sk, timeout=15)
+                    import time as _t; _t.sleep(1)
+                except Exception:
+                    pass
+
             jlog.log(f"[{sh}] Capturing NVMe device baseline …")
             devices_before = nvme_list_devices(sh, su, sp, sk)
 
