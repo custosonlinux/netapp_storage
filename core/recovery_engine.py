@@ -936,21 +936,33 @@ def _bind_nvme(ds_id, params, db, jlog):
         m  = host_meta[hid]
         sh, su, sp, sk = m["host"], m["user"], m["pass"], m["key"]
 
-        jlog.log(f"[{sh}] Capturing NVMe device baseline …")
-        devices_before = nvme_list_devices(sh, su, sp, sk)
-
-        if subsystem_nqn and lif_ips:
-            jlog.log(f"[{sh}] Connecting NVMe (direct per-LIF) …")
-            nvme_connect_to_subsystem(sh, su, sp, sk, lif_ips, subsystem_nqn)
-        else:
-            jlog.log(f"[{sh}] Connecting NVMe (connect-all fallback) …")
-            nvme_connect_all(sh, su, sp, sk)
-
-        jlog.log(f"[{sh}] Waiting for NVMe namespace device …")
+        # ── Check if already connected (idempotent rebind) ────────────────────
+        device = None
         if subsystem_nqn:
-            device = find_nvme_device_for_subsystem_nqn(sh, su, sp, sk, subsystem_nqn, timeout_s=90)
-        else:
-            device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
+            try:
+                device = find_nvme_device_for_subsystem_nqn(
+                    sh, su, sp, sk, subsystem_nqn, timeout_s=5)
+                jlog.log(f"[{sh}] NVMe device already connected: {device}")
+            except RuntimeError:
+                device = None  # not yet connected — proceed normally
+
+        if not device:
+            jlog.log(f"[{sh}] Capturing NVMe device baseline …")
+            devices_before = nvme_list_devices(sh, su, sp, sk)
+
+            if subsystem_nqn and lif_ips:
+                jlog.log(f"[{sh}] Connecting NVMe (direct per-LIF) …")
+                nvme_connect_to_subsystem(sh, su, sp, sk, lif_ips, subsystem_nqn)
+            else:
+                jlog.log(f"[{sh}] Connecting NVMe (connect-all fallback) …")
+                nvme_connect_all(sh, su, sp, sk)
+
+            jlog.log(f"[{sh}] Waiting for NVMe namespace device …")
+            if subsystem_nqn:
+                device = find_nvme_device_for_subsystem_nqn(sh, su, sp, sk, subsystem_nqn, timeout_s=90)
+            else:
+                device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
+
         jlog.log(f"[{sh}] Device ready: {device}")
         host_meta[hid]["device"] = device
 

@@ -686,37 +686,84 @@ def find_nvme_device_for_subsystem_nqn(ssh_host, ssh_user, ssh_pass, ssh_key,
                                         subsystem_nqn, timeout_s=60):
     """Finds the /dev/nvme*n* device for a specific subsystem NQN.
 
-    Parses nvme list-subsys to find connected controllers, then returns the
-    first namespace device (/dev/nvme<N>n1). Works even if the device was
-    already present before provisioning started — no baseline diff needed.
+    Tries JSON output first (unambiguous), falls back to text parsing.
+    Works even if the device was already present before provisioning started.
     """
     import re as _re
+    import json as _json
+
+    def _try_json(out):
+        """Parse nvme list-subsys -o json → first namespace device path."""
+        try:
+            data = _json.loads(out)
+            # Output is either a list of subsystems or {"Subsystems": [...]}
+            subsystems = data if isinstance(data, list) else data.get("Subsystems", [])
+            for subsys in subsystems:
+                nqn = subsys.get("NQN") or subsys.get("nqn", "")
+                if subsystem_nqn not in nqn:
+                    continue
+                for ctrl in (subsys.get("Controllers") or subsys.get("controllers") or []):
+                    for ns in (ctrl.get("Namespaces") or ctrl.get("namespaces") or []):
+                        ns_name = (ns.get("Name") or ns.get("name")
+                                   or ns.get("NameSpace") or "").strip()
+                        if ns_name:
+                            return ns_name if ns_name.startswith("/dev/") else f"/dev/{ns_name}"
+                    ctrl_name = (ctrl.get("Name") or ctrl.get("name", "")).strip()
+                    if ctrl_name:
+                        return f"_ctrl:{ctrl_name}"  # signal: need ls
+        except Exception:
+            pass
+        return None
+
+    def _try_text(out):
+        """Parse nvme list-subsys plain text → controller names."""
+        controllers = []
+        in_subsys = False
+        for line in out.splitlines():
+            if subsystem_nqn in line:
+                in_subsys = True
+                continue
+            if not in_subsys:
+                continue
+            if line.strip().startswith("nvme-subsys"):
+                break
+            m = _re.search(r'\+- (nvme\d+)', line)
+            if m:
+                controllers.append(m.group(1))
+        return controllers
+
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            out = ssh_run(ssh_host, ssh_user, ssh_pass,
-                          "nvme list-subsys 2>/dev/null",
-                          capture=True, key_material=ssh_key, timeout=15)
-            in_subsys = False
-            controllers = []
-            for line in out.splitlines():
-                if subsystem_nqn in line:
-                    in_subsys = True
-                    continue
-                if not in_subsys:
-                    continue
-                if line.strip().startswith('nvme-subsys'):
-                    break  # next subsystem started
-                m = _re.search(r'\+- (nvme\d+)', line)
-                if m:
-                    controllers.append(m.group(1))
-            for ctrl in controllers:
+            # ── JSON path ────────────────────────────────────────────────────
+            out_json = ssh_run(ssh_host, ssh_user, ssh_pass,
+                               "nvme list-subsys -o json 2>/dev/null",
+                               capture=True, key_material=ssh_key, timeout=15)
+            result = _try_json(out_json)
+            if result and not result.startswith("_ctrl:"):
+                log.info(f"[netapp_storage] NVMe device (JSON): {result}")
+                return result
+            if result and result.startswith("_ctrl:"):
+                ctrl_name = result[6:]
+                dev_out = ssh_run(ssh_host, ssh_user, ssh_pass,
+                                  f"ls /dev/{ctrl_name}n* 2>/dev/null | grep -v p | head -1",
+                                  capture=True, key_material=ssh_key, timeout=10)
+                dev = dev_out.strip()
+                if dev and dev.startswith("/dev/"):
+                    log.info(f"[netapp_storage] NVMe device (JSON+ls): {dev}")
+                    return dev
+
+            # ── Text fallback ─────────────────────────────────────────────────
+            out_txt = ssh_run(ssh_host, ssh_user, ssh_pass,
+                              "nvme list-subsys 2>/dev/null",
+                              capture=True, key_material=ssh_key, timeout=15)
+            for ctrl in _try_text(out_txt):
                 dev_out = ssh_run(ssh_host, ssh_user, ssh_pass,
                                   f"ls /dev/{ctrl}n* 2>/dev/null | grep -v p | head -1",
                                   capture=True, key_material=ssh_key, timeout=10)
                 dev = dev_out.strip()
                 if dev and dev.startswith("/dev/"):
-                    log.info(f"[netapp_storage] NVMe device for subsystem: {dev}")
+                    log.info(f"[netapp_storage] NVMe device (text): {dev}")
                     return dev
         except Exception:
             pass
