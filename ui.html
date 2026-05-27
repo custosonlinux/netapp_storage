@@ -484,7 +484,7 @@ de:{
   sm_no_dest_ep:'Kein Sekundär-Endpoint — erst scannen',
   ct_dr_clone:'DR-Clone von Sekundärsystem',btn_start_dr_clone:'DR-Clone starten',
   sm_source_vol:'Quell-Volume',sm_dest_vol:'Ziel-Volume',sm_state:'Zustand',sm_lag:'Verzug',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
   sect_smtp:'E-Mail-Benachrichtigungen (SMTP)',
   lbl_smtp_host:'SMTP-Server',lbl_smtp_port:'Port',lbl_smtp_user:'Benutzername',
   lbl_smtp_pass:'Passwort',lbl_smtp_from:'Absender (Von)',lbl_smtp_encryption:'Verschlüsselung',
@@ -598,7 +598,7 @@ en:{
   sm_no_dest_ep:'No secondary endpoint configured — scan first',
   ct_dr_clone:'DR Clone from Secondary',btn_start_dr_clone:'Start DR Clone',
   sm_source_vol:'Source Volume',sm_dest_vol:'Destination Volume',sm_state:'State',sm_lag:'Lag',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
   sect_smtp:'Email Notifications (SMTP)',
   lbl_smtp_host:'SMTP Server',lbl_smtp_port:'Port',lbl_smtp_user:'Username',
   lbl_smtp_pass:'Password',lbl_smtp_from:'Sender (From)',lbl_smtp_encryption:'Encryption',
@@ -712,7 +712,7 @@ fr:{
   sm_no_dest_ep:'Aucun endpoint secondaire configuré — scanner d\'abord',
   ct_dr_clone:'DR Clone depuis le secondaire',btn_start_dr_clone:'Démarrer DR Clone',
   sm_source_vol:'Volume Source',sm_dest_vol:'Volume Destination',sm_state:'État',sm_lag:'Décalage',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
   sect_smtp:'Notifications e-mail (SMTP)',
   lbl_smtp_host:'Serveur SMTP',lbl_smtp_port:'Port',lbl_smtp_user:"Nom d'utilisateur",
   lbl_smtp_pass:'Mot de passe',lbl_smtp_from:'Expéditeur (De)',lbl_smtp_encryption:'Chiffrement',
@@ -826,7 +826,7 @@ es:{
   sm_no_dest_ep:'Sin endpoint secundario configurado — escanear primero',
   ct_dr_clone:'DR Clone desde Secundario',btn_start_dr_clone:'Iniciar DR Clone',
   sm_source_vol:'Volumen Origen',sm_dest_vol:'Volumen Destino',sm_state:'Estado',sm_lag:'Retraso',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
   sect_smtp:'Notificaciones por correo (SMTP)',
   lbl_smtp_host:'Servidor SMTP',lbl_smtp_port:'Puerto',lbl_smtp_user:'Usuario',
   lbl_smtp_pass:'Contraseña',lbl_smtp_from:'Remitente (De)',lbl_smtp_encryption:'Cifrado',
@@ -940,7 +940,7 @@ pt:{
   sm_no_dest_ep:'Sem endpoint secundário configurado — escanear primeiro',
   ct_dr_clone:'DR Clone do Secundário',btn_start_dr_clone:'Iniciar DR Clone',
   sm_source_vol:'Volume Origem',sm_dest_vol:'Volume Destino',sm_state:'Estado',sm_lag:'Atraso',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
   sect_smtp:'Notificações por e-mail (SMTP)',
   lbl_smtp_host:'Servidor SMTP',lbl_smtp_port:'Porta',lbl_smtp_user:'Usuário',
   lbl_smtp_pass:'Senha',lbl_smtp_from:'Remetente (De)',lbl_smtp_encryption:'Criptografia',
@@ -1054,7 +1054,7 @@ ko:{
   sm_no_dest_ep:'보조 엔드포인트 미구성 — 먼저 스캔하세요',
   ct_dr_clone:'보조에서 DR 클론',btn_start_dr_clone:'DR 클론 시작',
   sm_source_vol:'소스 볼륨',sm_dest_vol:'대상 볼륨',sm_state:'상태',sm_lag:'지연',
-  tab_restore:'복원',tab_clone:'클론',tab_provision:'프로비전',
+  tab_restore:'복원',tab_clone:'클론',tab_provision:'프로비전',tab_recovery:'복구',
   sect_smtp:'이메일 알림 (SMTP)',
   lbl_smtp_host:'SMTP 서버',lbl_smtp_port:'포트',lbl_smtp_user:'사용자 이름',
   lbl_smtp_pass:'비밀번호',lbl_smtp_from:'보낸 사람 (From)',lbl_smtp_encryption:'암호화',
@@ -1168,7 +1168,7 @@ it:{
   sm_no_dest_ep:'Nessun endpoint secondario configurato — scansionare prima',
   ct_dr_clone:'DR Clone dal Secondario',btn_start_dr_clone:'Avvia DR Clone',
   sm_source_vol:'Volume Sorgente',sm_dest_vol:'Volume Destinazione',sm_state:'Stato',sm_lag:'Ritardo',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
   sect_smtp:'Notifiche e-mail (SMTP)',
   lbl_smtp_host:'Server SMTP',lbl_smtp_port:'Porta',lbl_smtp_user:'Nome utente',
   lbl_smtp_pass:'Password',lbl_smtp_from:'Mittente (Da)',lbl_smtp_encryption:'Cifratura',
@@ -1216,7 +1216,7 @@ function applyI18n() {
     <div class="subtab" data-tab="clone" data-i18n="tab_clone">Clone</div>
     <div class="subtab" data-tab="snapmirror" data-i18n="tab_snapmirror">SnapMirror®</div>
     <div class="subtab" data-tab="provision" data-i18n="tab_provision">Provision</div>
-    <div class="subtab" data-tab="recovery">Recovery</div>
+    <div class="subtab" data-tab="recovery" data-i18n="tab_recovery">Recovery</div>
     <div class="subtab" data-tab="jobs" data-i18n="tab_jobs">Jobs &amp; Logs</div>
     <div class="subtab" data-tab="settings" data-i18n="tab_settings">Settings</div>
   </div>
@@ -1694,14 +1694,14 @@ function applyI18n() {
 
       <div class="section-actions">
         <button class="btn btn-primary" onclick="showProvWizard()">+ Provision New</button>
-        <button class="btn btn-secondary" onclick="showBindWizard()">⇢ Bind Existing Volume</button>
+        <button class="btn btn-secondary" onclick="showBindWizard()">⇢ Mount existing Datastore</button>
         <button class="btn btn-ghost" onclick="loadProvDatastores()">Refresh</button>
       </div>
 
       <!-- ── Bind Wizard (moved from Recovery tab) ─────────────────── -->
       <div id="bindWizCard" class="card" style="display:none;margin-bottom:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div class="card-title" style="margin:0">Bind Existing Volume</div>
+          <div class="card-title" style="margin:0">Mount existing Datastore</div>
           <button class="btn btn-ghost btn-sm" onclick="hideBindWizard()">✕ Close</button>
         </div>
 
@@ -2091,16 +2091,37 @@ function applyI18n() {
             </select>
           </div>
           <div class="form-group" id="impSnapRow" style="display:none">
-            <label>Snapshot Manifest</label>
+            <label>
+              Snapshot Manifest
+              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+                Only VM configuration files (.conf) are read from this snapshot — disk data stays on the NetApp datastore unchanged.
+              </span>
+            </label>
             <select class="form-control" id="impSnap">
               <option value="">— loading… —</option>
             </select>
           </div>
           <div class="form-group" id="impSnapSanRow" style="display:none">
-            <label>Snapshot Manifest</label>
+            <label>
+              Snapshot Manifest
+              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+                Only VM configuration files (.conf) are read from the manifest — disk data stays on the NetApp datastore unchanged.
+              </span>
+            </label>
             <div style="padding:8px 0;font-size:13px;color:var(--muted)">
               SAN: using latest manifest from live VG
             </div>
+          </div>
+          <div class="form-group" id="impHostRow" style="display:none">
+            <label>
+              Target PVE Host
+              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+                Host that receives the VM config files. In a cluster, pmxcfs syncs them automatically.
+              </span>
+            </label>
+            <select class="form-control" id="impHostSel">
+              <option value="">— Auto (first available) —</option>
+            </select>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -2153,10 +2174,17 @@ function applyI18n() {
           </table>
         </div>
 
-        <!-- Storage rewrite -->
-        <div class="form-group" style="margin-bottom:14px;max-width:400px">
-          <label>Storage ID rewrite <span style="font-weight:400;color:var(--muted)">(old pvesm name in conf → new name; leave empty if unchanged)</span></label>
-          <input class="form-control" id="impStorageOld" placeholder="Original storage ID">
+        <!-- Storage ID rewrite -->
+        <div class="form-group" style="margin-bottom:14px;max-width:480px">
+          <label>
+            Storage ID Rewrite
+            <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+              If the VM configs were written with a different pvesm storage ID (e.g. the VMs came from another cluster or the datastore was renamed), select the original ID here. All references in the imported .conf files will be rewritten to match the current datastore name. Leave empty if the storage ID is unchanged.
+            </span>
+          </label>
+          <select class="form-control" id="impStorageOld">
+            <option value="">— no rewrite needed —</option>
+          </select>
         </div>
 
         <div style="display:flex;align-items:center;gap:8px">
@@ -2462,6 +2490,30 @@ function uiConfirm(msg, okLabel, okClass) {
     box.querySelector('._uc-ok').onclick     = function(){ done(true); };
     overlay.addEventListener('keydown', function(ev){ if(ev.key==='Escape') done(false); });
     setTimeout(function(){ box.querySelector('._uc-ok').focus(); }, 50);
+  });
+}
+function uiConfirmDanger(msg, confirmLabel) {
+  /* Like uiConfirm but with Yes/No buttons and a required safety checkbox. */
+  return new Promise(function(resolve) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:300px;max-width:480px;word-break:break-word';
+    var cbId = 'uiCd_' + Math.random().toString(36).slice(2);
+    box.innerHTML = '<div style="margin-bottom:16px;white-space:pre-line">'+esc(msg)+'</div>'
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:18px;color:var(--warning);text-transform:none;letter-spacing:0;font-weight:400">'
+      + '<input type="checkbox" id="'+cbId+'" onchange="document.getElementById(\''+cbId+'ok\').disabled=!this.checked"> '
+      + esc(confirmLabel || 'I understand this action is irreversible')
+      + '</label>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button class="_ucd-no btn btn-ghost">No</button>'
+      + '<button class="_ucd-yes btn btn-danger" id="'+cbId+'ok" disabled>Yes</button></div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    function done(v){ document.body.removeChild(overlay); resolve(v); }
+    box.querySelector('._ucd-no').onclick  = function(){ done(false); };
+    box.querySelector('._ucd-yes').onclick = function(){ done(true); };
+    overlay.addEventListener('keydown', function(ev){ if(ev.key==='Escape') done(false); });
   });
 }
 function uiAlert(msg) {
@@ -4784,7 +4836,11 @@ async function showAddHostDialog(dsId, dsName, existingHostIds) {
 
 async function confirmRemoveDatastore(id, name) {
   if(!await uiConfirm('Remove datastore "'+name+'"?\n\nThis disconnects all hosts and removes the PVE storage entry.')) return;
-  var delOntap = await uiConfirm('Also delete the ONTAP LUN, volume and iGroup on the NetApp?', 'Yes, Delete');
+  var delOntap = await uiConfirmDanger(
+    'Also permanently delete the ONTAP volume, LUNs / namespaces and iGroups on the NetApp?\n\n'
+    + 'This cannot be undone. The volume and all its snapshots will be destroyed.',
+    'I understand this will permanently delete data on the NetApp'
+  );
   try {
     await apiPost('provisioning/datastores/remove', {id:id, delete_ontap_objects:delOntap});
     toast('Removal job started','success');
@@ -5141,7 +5197,7 @@ function hideBindWizard() {
 
 // ── Recovery Tab — VM Import ──────────────────────────────────────────────────
 
-var _impState = { ds: null, snapName: '', vms: [], usedVmids: [] };
+var _impState = { ds: null, snapName: '', vms: [], usedVmids: [], allDs: [] };
 
 async function impLoadDatastores() {
   var sel = document.getElementById('impDs');
@@ -5150,12 +5206,14 @@ async function impLoadDatastores() {
   try {
     var d    = await apiFetch('provisioning/datastores');
     var rows = (d.datastores || []).filter(function(ds){ return ds.status === 'active'; });
+    _impState.allDs = rows; // cache for storage ID dropdown
     sel.innerHTML = '<option value="">— select datastore —</option>';
     rows.forEach(function(ds) {
       var o       = document.createElement('option');
       o.value     = ds.id;
-      o.dataset.proto = ds.protocol || 'nfs';
-      o.dataset.sid   = ds.pve_storage_id || ds.name;
+      o.dataset.proto   = ds.protocol || 'nfs';
+      o.dataset.sid     = ds.pve_storage_id || ds.name;
+      o.dataset.hostids = JSON.stringify(ds.pve_host_ids || []);
       var badge   = ({nfs:'[NFS]',iscsi:'[iSCSI]',nvme:'[NVMe]'})[ds.protocol] || '';
       o.textContent   = ds.name + ' ' + badge;
       sel.appendChild(o);
@@ -5165,19 +5223,21 @@ async function impLoadDatastores() {
     sel.innerHTML = '<option value="">Error: ' + esc(e.message) + '</option>';
   }
   // Reset step 2
-  _impState = { ds: null, snapName: '', vms: [], usedVmids: [] };
-  document.getElementById('impVmsCard').style.display = 'none';
+  _impState.ds = null; _impState.snapName = ''; _impState.vms = []; _impState.usedVmids = [];
+  document.getElementById('impVmsCard').style.display   = 'none';
   document.getElementById('impSnapRow').style.display    = 'none';
   document.getElementById('impSnapSanRow').style.display = 'none';
+  document.getElementById('impHostRow').style.display    = 'none';
 }
 
 async function impOnDsChange() {
-  var sel   = document.getElementById('impDs');
-  var opt   = sel.selectedOptions[0];
-  var dsId  = sel.value;
-  var proto = (opt && opt.dataset.proto) || 'nfs';
+  var sel      = document.getElementById('impDs');
+  var opt      = sel.selectedOptions[0];
+  var dsId     = sel.value;
+  var proto    = (opt && opt.dataset.proto) || 'nfs';
+  var hostIds  = JSON.parse((opt && opt.dataset.hostids) || '[]');
 
-  _impState.ds       = dsId ? { id: dsId, proto: proto, sid: (opt && opt.dataset.sid) || '' } : null;
+  _impState.ds       = dsId ? { id: dsId, proto: proto, sid: (opt && opt.dataset.sid) || '', hostIds: hostIds } : null;
   _impState.vms      = [];
   _impState.snapName = '';
 
@@ -5185,8 +5245,28 @@ async function impOnDsChange() {
   document.getElementById('impLoadErr').textContent      = '';
   document.getElementById('impSnapRow').style.display    = 'none';
   document.getElementById('impSnapSanRow').style.display = 'none';
+  document.getElementById('impHostRow').style.display    = 'none';
 
   if (!dsId) return;
+
+  // Load available PVE hosts for this datastore
+  _impLoadHosts(hostIds);
+
+  // Populate storage ID rewrite dropdown with all known IDs (excluding the current one)
+  var storageSel = document.getElementById('impStorageOld');
+  var currentSid = (opt && opt.dataset.sid) || '';
+  storageSel.innerHTML = '<option value="">— no rewrite needed —</option>';
+  (_impState.allDs || []).forEach(function(ds) {
+    var sid = ds.pve_storage_id || ds.name;
+    if (sid && sid !== currentSid) {
+      var o = document.createElement('option');
+      o.value = sid;
+      o.textContent = sid + (ds.name !== sid ? ' (' + ds.name + ')' : '');
+      storageSel.appendChild(o);
+    }
+  });
+  // Also allow a free-text fallback via an "Other…" option that shows an input
+  // (kept simple: user can pick from known IDs, which covers the main use case)
 
   if (proto === 'nfs') {
     document.getElementById('impSnapRow').style.display = '';
@@ -5205,6 +5285,25 @@ async function impOnDsChange() {
     // SAN: no snapshot chooser — just show info row
     document.getElementById('impSnapSanRow').style.display = '';
   }
+}
+
+async function _impLoadHosts(hostIds) {
+  var hostSel = document.getElementById('impHostSel');
+  var row     = document.getElementById('impHostRow');
+  hostSel.innerHTML = '<option value="">— Auto (first available) —</option>';
+  if (!hostIds || !hostIds.length) return;
+  try {
+    var r = await apiFetch('provisioning/pve-hosts');
+    var allHosts = r.hosts || [];
+    var relevant = allHosts.filter(function(h){ return hostIds.indexOf(h.id) >= 0; });
+    relevant.forEach(function(h) {
+      var o = document.createElement('option');
+      o.value = h.id;
+      o.textContent = h.name + ' (' + h.host + ')';
+      hostSel.appendChild(o);
+    });
+    if (relevant.length > 0) row.style.display = '';
+  } catch(e) { /* silently ignore — Auto fallback works */ }
 }
 
 async function impLoadVms() {
@@ -5340,8 +5439,9 @@ async function impDoImport() {
     vmid_map[origId] = newId;
   });
 
-  var storageOld = (document.getElementById('impStorageOld') || {}).value || '';
-  var btn        = document.getElementById('impImportBtn');
+  var storageOld   = (document.getElementById('impStorageOld') || {}).value || '';
+  var targetHostId = (document.getElementById('impHostSel') || {}).value || '';
+  var btn          = document.getElementById('impImportBtn');
   var spinner    = document.getElementById('impImportSpinner');
   var errEl      = document.getElementById('impImportErr');
   var okEl       = document.getElementById('impImportOk');
@@ -5353,12 +5453,13 @@ async function impDoImport() {
 
   try {
     var r = await apiPost('provisioning/recovery/restore-vms', {
-      ds_id:          _impState.ds.id,
-      snap_name:      _impState.snapName,
-      vmids:          Object.keys(vmid_map).map(Number),
-      vmid_offset:    0,
-      storage_id_old: storageOld,
-      vmid_map:       vmid_map,
+      ds_id:           _impState.ds.id,
+      snap_name:       _impState.snapName,
+      vmids:           Object.keys(vmid_map).map(Number),
+      vmid_offset:     0,
+      storage_id_old:  storageOld,
+      vmid_map:        vmid_map,
+      target_host_id:  targetHostId || null,
     });
     spinner.style.display = 'none';
     if (btn) { btn.disabled = false; }

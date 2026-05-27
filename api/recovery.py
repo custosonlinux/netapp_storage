@@ -299,6 +299,12 @@ def _recovery_restore_vms():
     # vmid_map: {orig_vmid_str: new_vmid} — takes precedence over offset
     vmid_map_raw   = body.get("vmid_map", {})
     vmid_map       = {int(k): int(v) for k, v in vmid_map_raw.items()} if vmid_map_raw else {}
+    # target_host_id: restrict writing to a single specific host (optional)
+    target_host_id = body.get("target_host_id") or None
+    if target_host_id and target_host_id in pve_host_ids:
+        pve_host_ids = [target_host_id]
+    elif target_host_id:
+        log.warning(f"[netapp_storage] target_host_id {target_host_id} not in ds.pve_host_ids — ignoring")
 
     # Resolve manifest
     manifest = None
