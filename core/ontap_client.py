@@ -1986,3 +1986,85 @@ class OntapClient:
             self._delete(f"protocols/nfs/export-policies/{export_policy_id}")
         except OntapError as exc:
             log.warning(f"[netapp_storage] delete export policy {export_policy_id}: {exc}")
+
+    # ── Recovery / DR bind helpers ─────────────────────────────────────────────
+
+    def get_volumes_recovery(self, svm_name=None):
+        """All volumes with type (rw/dp), size, and NAS path — for recovery scanning."""
+        params = {
+            "fields": "uuid,name,svm,type,nas.path,space.size",
+            "max_records": 500,
+        }
+        if svm_name:
+            params["svm.name"] = svm_name
+        return self._get_all_records("storage/volumes", params=params)
+
+    def get_snapmirror_dest_relationship(self, dest_svm, dest_volume_name):
+        """Finds the SnapMirror relationship where dest_svm:dest_volume_name is the destination.
+
+        Returns the first matching relationship dict, or None if not found.
+        """
+        try:
+            records = self._get_all_records(
+                "snapmirror/relationships",
+                params={
+                    "destination.svm.name":    dest_svm,
+                    "destination.volume.name": dest_volume_name,
+                    "fields": "uuid,state,healthy,lag_time,source.path,destination.path",
+                    "max_records": 10,
+                },
+            )
+            return records[0] if records else None
+        except OntapError:
+            # Some ONTAP versions don't support the volume.name filter — fall back
+            try:
+                all_rels = self._get_all_records(
+                    "snapmirror/relationships",
+                    params={
+                        "fields": "uuid,state,healthy,lag_time,source.path,destination.path",
+                        "max_records": 500,
+                    },
+                )
+                target = f"{dest_svm}:{dest_volume_name}"
+                for r in all_rels:
+                    if (r.get("destination") or {}).get("path", "") == target:
+                        return r
+                return None
+            except Exception:
+                return None
+
+    def snapmirror_break(self, relationship_uuid):
+        """Breaks a SnapMirror relationship (transitions DP volume to RW).
+
+        After break the volume is writable and can be mounted.
+        Polls ONTAP until the state is 'broken_off' or times out.
+        """
+        self._patch(
+            f"snapmirror/relationships/{relationship_uuid}",
+            body={"state": "broken_off"},
+            params={"return_timeout": 60},
+        )
+        # Poll until broken (ONTAP may return 200 before state actually changes)
+        for _ in range(20):
+            time.sleep(3)
+            try:
+                rel = self._get(
+                    f"snapmirror/relationships/{relationship_uuid}",
+                    params={"fields": "state"},
+                )
+                if rel.get("state", "") in ("broken_off", ""):
+                    return
+            except OntapError:
+                return  # relationship may be gone after break — that's fine
+        log.warning(f"[netapp_storage] SM break {relationship_uuid}: state did not confirm broken_off")
+
+    def mount_volume(self, volume_uuid, junction_path):
+        """Mounts a volume by setting its NAS junction path.
+
+        Used after SnapMirror break when the DP volume had no mount point.
+        """
+        self._patch(
+            f"storage/volumes/{volume_uuid}",
+            body={"nas": {"path": junction_path}},
+            params={"return_timeout": 30},
+        )

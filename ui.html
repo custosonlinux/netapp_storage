@@ -1216,6 +1216,7 @@ function applyI18n() {
     <div class="subtab" data-tab="clone" data-i18n="tab_clone">Clone</div>
     <div class="subtab" data-tab="snapmirror" data-i18n="tab_snapmirror">SnapMirror®</div>
     <div class="subtab" data-tab="provision" data-i18n="tab_provision">Provision</div>
+    <div class="subtab" data-tab="recovery">Recovery</div>
     <div class="subtab" data-tab="jobs" data-i18n="tab_jobs">Jobs &amp; Logs</div>
     <div class="subtab" data-tab="settings" data-i18n="tab_settings">Settings</div>
   </div>
@@ -1929,6 +1930,154 @@ function applyI18n() {
 
     </div>
 
+    <!-- ═══════════════════════ RECOVERY ════════════════════════ -->
+    <div id="tab-recovery" class="tab-panel" style="display:none">
+
+      <div class="section-actions">
+        <span style="font-size:13px;color:var(--muted)">
+          Bind existing NetApp volumes to a fresh Proxmox cluster — primary or SnapMirror secondary.
+        </span>
+      </div>
+
+      <!-- ── Recovery Wizard ──────────────────────────────────── -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">Bind Volume Wizard</div>
+
+        <!-- Step indicator -->
+        <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px">
+          <div id="rcvStepTab1" style="flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--primary);padding:4px 0">1 · Select Volume</div>
+          <div id="rcvStepTab2" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">2 · PVE Target</div>
+          <div id="rcvStepTab3" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">3 · Confirm</div>
+        </div>
+
+        <!-- ── Step 1: Endpoint / SVM / Volume scan ── -->
+        <div id="rcvStep1">
+          <div class="form-grid" style="margin-bottom:14px">
+            <div class="form-group">
+              <label>ONTAP Endpoint</label>
+              <select class="form-control" id="rcvEndpoint" onchange="rcvLoadSvms()">
+                <option value="">— select —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>SVM</label>
+              <select class="form-control" id="rcvSvm">
+                <option value="">— select endpoint first —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Protocol</label>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                  <input type="radio" name="rcvProto" value="nfs" checked> NFS
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                  <input type="radio" name="rcvProto" value="iscsi"> iSCSI
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                  <input type="radio" name="rcvProto" value="nvme"> NVMe-oF
+                </label>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn btn-primary" onclick="rcvScanVolumes()">
+              Scan Volumes <span id="rcvScanSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <span id="rcvScanErr" style="color:var(--error);font-size:12px"></span>
+          </div>
+          <!-- Volume table (hidden until scan) -->
+          <div id="rcvVolumeTableWrap" style="display:none;margin-top:16px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Select the volume to bind:</div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr>
+                  <th>Volume</th><th>Type</th><th>Size</th><th>SnapMirror®</th><th></th>
+                </tr></thead>
+                <tbody id="rcvVolumesTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Step 2: PVE Target ── -->
+        <div id="rcvStep2" style="display:none">
+          <div style="margin-bottom:12px;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:13px">
+            Volume: <strong id="rcvSelVolumeName"></strong>
+            <span id="rcvSelVolumeBadge" style="margin-left:8px"></span>
+          </div>
+          <div class="form-grid" style="margin-bottom:14px">
+            <div class="form-group">
+              <label>Datastore Name <span style="color:var(--muted);font-weight:400">(label)</span></label>
+              <input class="form-control" id="rcvDsName" placeholder="e.g. prod-san-01">
+            </div>
+            <div class="form-group">
+              <label>PVE Storage ID <span style="color:var(--muted);font-weight:400">(pvesm name)</span></label>
+              <input class="form-control" id="rcvStorageId" placeholder="e.g. san-prod">
+            </div>
+            <div class="form-group" id="rcvVgRow">
+              <label>VG Name <span style="color:var(--muted);font-weight:400">(existing LVM volume group)</span></label>
+              <input class="form-control" id="rcvVgName" placeholder="e.g. pve-san-vg">
+            </div>
+            <div class="form-group" id="rcvLvmTypeRow">
+              <label>LVM Type</label>
+              <select class="form-control" id="rcvLvmType" onchange="rcvLvmTypeChange()">
+                <option value="linear">Linear (LVM)</option>
+                <option value="thin">Thin (LVM-Thin)</option>
+              </select>
+            </div>
+            <div class="form-group" id="rcvPoolRow" style="display:none">
+              <label>Thin Pool Name</label>
+              <input class="form-control" id="rcvPoolName" value="data">
+            </div>
+            <div class="form-group" id="rcvJunctionRow" style="display:none">
+              <label>Junction Path Override <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+              <input class="form-control" id="rcvJunctionPath" placeholder="leave empty to use original">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>PVE Hosts</label>
+            <div id="rcvHostCheckboxes" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px"></div>
+          </div>
+          <div id="rcvSmBreakRow" style="display:none;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-left:3px solid var(--warning);border-radius:4px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
+              <input type="checkbox" id="rcvSmBreak" checked>
+              Break SnapMirror® relationship before mounting
+              <span style="color:var(--muted);font-size:11px">(required to make volume writable)</span>
+            </label>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" onclick="rcvShowStep(1)">← Back</button>
+            <button class="btn btn-primary" onclick="rcvNext2()">Next →</button>
+          </div>
+        </div>
+
+        <!-- ── Step 3: Confirm + Bind ── -->
+        <div id="rcvStep3" style="display:none">
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:8px">Summary</div>
+            <div id="rcvSummary" style="font-size:13px;line-height:1.8;background:var(--bg);padding:10px 14px;border-radius:6px"></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" onclick="rcvShowStep(2)">← Back</button>
+            <button class="btn btn-primary" onclick="rcvBind()">
+              Bind Volume <span id="rcvBindSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+          </div>
+          <div id="rcvBindErr" style="color:var(--error);font-size:12px;margin-top:6px"></div>
+        </div>
+
+      </div><!-- /card -->
+
+      <!-- Recovery bound datastores note -->
+      <div class="card" style="padding:12px 16px;font-size:13px;color:var(--muted)">
+        <strong style="color:var(--text)">After binding:</strong>
+        The volume appears in the <strong>Provision</strong> tab as an active datastore.
+        Use the <strong>Restore VMs</strong> button there to write VM configs from a snapshot manifest.
+      </div>
+
+    </div><!-- /tab-recovery -->
+
     <!-- ═══════════════════════ JOBS & LOGS ══════════════════════ -->
     <div id="tab-jobs" class="tab-panel" style="display:none">
       <div class="card table-scroll">
@@ -2251,6 +2400,7 @@ document.querySelectorAll('.subtab').forEach(function(t) {
       restore:   function(){ loadSnapshotsForRestore(); loadDrRelationshipSelector(); },
       clone:     function(){ loadCloneSnapshots(); loadDrCloneRelationshipSelector(); },
       provision: loadProvDatastores,
+      recovery:  function(){ rcvLoadEndpoints(); },
       jobs:      loadAllJobs,
       settings:  function(){ loadEndpoints(); loadPveHosts(); loadMappings(); loadSmtp(); }
     };
@@ -4116,6 +4266,9 @@ async function loadProvDatastores() {
         '<td><div class="row-actions">' +
           '<button class="btn btn-success btn-sm" onclick="showAddHostDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+JSON.stringify(ds.pve_host_ids||[]).replace(/"/g,'&quot;')+')">+ Host</button> ' +
           '<button class="btn btn-success btn-sm" onclick="showResizeDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+ds.size_bytes+',\''+esc(ds.protocol||'')+'\')">Resize</button> ' +
+          (ds.imported_from==='recovery_bind'
+            ? '<button class="btn btn-primary btn-sm" onclick="showRestoreVmsModal(\''+ds.id+'\',\''+esc(ds.name)+'\',\''+esc(ds.protocol||'')+'\',\''+esc(ds.pve_storage_id||'')+'\')">Restore VMs</button> '
+            : '') +
           '<button class="btn btn-danger btn-sm" onclick="confirmRemoveDatastore(\''+ds.id+'\',\''+esc(ds.name)+'\')">Remove</button>' +
         '</div></td></tr>';
     }).join('');
@@ -4604,6 +4757,363 @@ async function importPluginData(input) {
     toast(e.message, 'error');
   }
 }
+
+// ═══════════════════════ RECOVERY WIZARD ════════════════════════════════════
+
+var rcvState = {
+  endpoint_id:'', svm_name:'', protocol:'nfs',
+  volume_uuid:'', volume_name:'', volume_type:'rw',
+  sm_rel_uuid:'', has_sm:false,
+  vg_name:'', lvm_type:'linear', pool_name:'data',
+  storage_id:'', ds_name:'', junction_override:'',
+  pve_host_ids:[]
+};
+
+document.querySelector('[data-tab="recovery"]').addEventListener('click', function() {
+  rcvLoadEndpoints();
+});
+
+async function rcvLoadEndpoints() {
+  var sel = document.getElementById('rcvEndpoint');
+  if (sel.options.length > 1) return; // already loaded
+  try {
+    var r = await api('GET', 'settings/endpoints');
+    (r.endpoints||[]).forEach(function(ep) {
+      var o = document.createElement('option');
+      o.value = ep.id; o.textContent = ep.name;
+      sel.appendChild(o);
+    });
+  } catch(e) {}
+  rcvLoadHosts();
+}
+
+async function rcvLoadSvms() {
+  var epId = document.getElementById('rcvEndpoint').value;
+  var sel  = document.getElementById('rcvSvm');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  if (!epId) { sel.innerHTML = '<option value="">— select endpoint first —</option>'; return; }
+  try {
+    var r = await api('GET', 'provisioning/svms?endpoint_id=' + encodeURIComponent(epId));
+    sel.innerHTML = '<option value="">— select SVM —</option>';
+    (r.svms||[]).forEach(function(s) {
+      var o = document.createElement('option');
+      o.value = s.name; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+  } catch(e) { sel.innerHTML = '<option value="">Error loading SVMs</option>'; }
+}
+
+async function rcvLoadHosts() {
+  var wrap = document.getElementById('rcvHostCheckboxes');
+  if (!wrap) return;
+  try {
+    var r = await api('GET', 'provisioning/pve-hosts');
+    wrap.innerHTML = (r.hosts||[]).map(function(h) {
+      return '<label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer">'
+        + '<input type="checkbox" class="rcvHostCb" value="'+esc(h.id)+'"> '
+        + esc(h.name) + ' <span style="color:var(--muted);font-size:11px">('+esc(h.host)+')</span></label>';
+    }).join('') || '<span style="color:var(--muted);font-size:12px">No PVE hosts configured</span>';
+  } catch(e) {}
+}
+
+async function rcvScanVolumes() {
+  var epId = document.getElementById('rcvEndpoint').value;
+  var svm  = document.getElementById('rcvSvm').value;
+  var errEl= document.getElementById('rcvScanErr');
+  errEl.textContent = '';
+  if (!epId || !svm) { errEl.textContent='Select endpoint and SVM first'; return; }
+  var proto = document.querySelector('input[name="rcvProto"]:checked').value;
+  document.getElementById('rcvScanSpinner').style.display='inline-block';
+  try {
+    var r = await api('GET', 'provisioning/recovery/scan-volumes?endpoint_id='
+      + encodeURIComponent(epId) + '&svm_name=' + encodeURIComponent(svm));
+    var vols = (r.volumes||[]).filter(function(v) {
+      // Filter by protocol hint: NFS=has junction, SAN=no junction
+      if (proto==='nfs')           return v.junction || v.type==='rw' || v.type==='dp';
+      if (proto==='iscsi'||proto==='nvme') return true; // can't filter without LUN scan
+      return true;
+    });
+    rcvRenderVolumes(vols, proto);
+    rcvState.endpoint_id = epId;
+    rcvState.svm_name    = svm;
+    rcvState.protocol    = proto;
+  } catch(e) { errEl.textContent = e.message; }
+  document.getElementById('rcvScanSpinner').style.display='none';
+}
+
+function rcvRenderVolumes(vols, proto) {
+  var wrap  = document.getElementById('rcvVolumeTableWrap');
+  var tbody = document.getElementById('rcvVolumesTbody');
+  if (!vols.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No volumes found</td></tr>';
+    wrap.style.display = 'block';
+    return;
+  }
+  tbody.innerHTML = vols.map(function(v) {
+    var sm = v.snapmirror || {};
+    var typeBadge = v.type==='dp'
+      ? '<span class="badge badge-orange">DP · SnapMirror®</span>'
+      : '<span class="badge badge-green">RW · Primary</span>';
+    var smCell = v.snapmirror
+      ? '<span style="color:'+(sm.healthy?'var(--success)':'var(--error)')+';font-size:12px">'
+        +'⟳ '+esc(sm.source_path||sm.state)+'</span>'
+      : '<span style="color:var(--muted);font-size:11px">–</span>';
+    var smRelUuid = encodeURIComponent(sm.relationship_uuid||'');
+    var hasSmStr  = v.snapmirror ? 'true' : 'false';
+    return '<tr>'
+      + '<td style="font-family:var(--mono);font-size:12px">'+esc(v.name)+'</td>'
+      + '<td>'+typeBadge+'</td>'
+      + '<td>'+fmtBytes(v.size_bytes||0)+'</td>'
+      + '<td>'+smCell+'</td>'
+      + '<td><button class="btn btn-primary btn-sm" onclick="rcvSelectVolume(\''
+        +esc(v.uuid)+'\',\''+esc(v.name)+'\',\''+esc(v.type)+'\',decodeURIComponent(\''+smRelUuid+'\'),'+hasSmStr+')">Select</button></td>'
+      + '</tr>';
+  }).join('');
+  wrap.style.display = 'block';
+}
+
+function rcvSelectVolume(uuid, name, type, smRelUuid, hasSm) {
+  rcvState.volume_uuid  = uuid;
+  rcvState.volume_name  = name;
+  rcvState.volume_type  = type;
+  rcvState.sm_rel_uuid  = smRelUuid || '';
+  rcvState.has_sm       = !!hasSm;
+  rcvShowStep(2);
+  // Update summary display
+  document.getElementById('rcvSelVolumeName').textContent = name;
+  var badge = type==='dp'
+    ? '<span class="badge badge-orange">DP · SnapMirror®</span>'
+    : '<span class="badge badge-green">RW · Primary</span>';
+  document.getElementById('rcvSelVolumeBadge').innerHTML = badge;
+  // Show SM break option for DP volumes
+  document.getElementById('rcvSmBreakRow').style.display = (type==='dp') ? 'block' : 'none';
+  // Show/hide SAN-specific fields
+  var proto = rcvState.protocol;
+  var isSan = proto==='iscsi'||proto==='nvme';
+  document.getElementById('rcvVgRow').style.display      = isSan ? '' : 'none';
+  document.getElementById('rcvLvmTypeRow').style.display = isSan ? '' : 'none';
+  document.getElementById('rcvJunctionRow').style.display= proto==='nfs' ? '' : 'none';
+  rcvLvmTypeChange();
+}
+
+function rcvShowStep(n) {
+  [1,2,3].forEach(function(i) {
+    document.getElementById('rcvStep'+i).style.display = (i===n) ? '' : 'none';
+    var tab = document.getElementById('rcvStepTab'+i);
+    if (tab) {
+      tab.style.color      = (i===n) ? 'var(--primary)' : 'var(--muted)';
+      tab.style.fontWeight = (i===n) ? '600' : '400';
+    }
+  });
+}
+
+function rcvLvmTypeChange() {
+  var t = document.getElementById('rcvLvmType');
+  if (!t) return;
+  document.getElementById('rcvPoolRow').style.display = (t.value==='thin') ? '' : 'none';
+}
+
+function rcvNext2() {
+  var dsName = document.getElementById('rcvDsName').value.trim();
+  var sid    = document.getElementById('rcvStorageId').value.trim();
+  if (!dsName || !sid) { alert('Please fill in Datastore Name and PVE Storage ID.'); return; }
+  var hosts  = Array.from(document.querySelectorAll('.rcvHostCb:checked')).map(function(c){return c.value;});
+  if (!hosts.length) { alert('Select at least one PVE host.'); return; }
+  var isSan  = rcvState.protocol==='iscsi'||rcvState.protocol==='nvme';
+  if (isSan) {
+    var vg = document.getElementById('rcvVgName').value.trim();
+    if (!vg) { alert('VG Name is required for iSCSI/NVMe.'); return; }
+    rcvState.vg_name   = vg;
+    rcvState.lvm_type  = document.getElementById('rcvLvmType').value;
+    rcvState.pool_name = document.getElementById('rcvPoolName').value.trim() || 'data';
+  }
+  rcvState.ds_name         = dsName;
+  rcvState.storage_id      = sid;
+  rcvState.junction_override = (document.getElementById('rcvJunctionPath')||{}).value||'';
+  rcvState.pve_host_ids    = hosts;
+
+  // Build summary
+  var smBreak = rcvState.has_sm && document.getElementById('rcvSmBreak').checked;
+  var lines = [
+    '📦 Volume: <strong>'+esc(rcvState.volume_name)+'</strong> ('+esc(rcvState.protocol.toUpperCase())+')',
+    '🏷️  Datastore name: <strong>'+esc(rcvState.ds_name)+'</strong>',
+    '💾 PVE Storage ID: <strong>'+esc(rcvState.storage_id)+'</strong>',
+  ];
+  if (isSan) {
+    lines.push('🗄️  VG: <strong>'+esc(rcvState.vg_name)+'</strong> ('+esc(rcvState.lvm_type)+')');
+    if (rcvState.lvm_type==='thin') lines.push('📊 Thin pool: <strong>'+esc(rcvState.pool_name)+'</strong>');
+  }
+  if (rcvState.junction_override) {
+    lines.push('🔗 Junction override: <strong>'+esc(rcvState.junction_override)+'</strong>');
+  }
+  lines.push('🖥️  PVE hosts: <strong>'+rcvState.pve_host_ids.length+'</strong> selected');
+  if (smBreak) lines.push('⚡ SnapMirror® will be broken before mounting');
+  document.getElementById('rcvSummary').innerHTML = lines.join('<br>');
+  rcvShowStep(3);
+}
+
+async function rcvBind() {
+  var smBreak = rcvState.has_sm && document.getElementById('rcvSmBreak').checked;
+  var body = {
+    name:                         rcvState.ds_name,
+    endpoint_id:                  rcvState.endpoint_id,
+    svm_name:                     rcvState.svm_name,
+    volume_uuid:                  rcvState.volume_uuid,
+    volume_name:                  rcvState.volume_name,
+    protocol:                     rcvState.protocol,
+    pve_storage_id:               rcvState.storage_id,
+    pve_host_ids:                 rcvState.pve_host_ids,
+    vg_name:                      rcvState.vg_name||'',
+    lvm_type:                     rcvState.lvm_type||'linear',
+    lvm_pool_name:                rcvState.pool_name||'data',
+    junction_path_override:       rcvState.junction_override||'',
+    snapmirror_break:             smBreak,
+    snapmirror_relationship_uuid: rcvState.sm_rel_uuid||'',
+    size_bytes:                   0,
+  };
+  document.getElementById('rcvBindSpinner').style.display='inline-block';
+  document.getElementById('rcvBindErr').textContent='';
+  try {
+    var r = await api('POST', 'provisioning/recovery/bind', body);
+    toast('Bind job started — see Jobs tab for progress', 'success');
+    rcvShowStep(1);
+    document.getElementById('rcvVolumeTableWrap').style.display='none';
+    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); }, 800);
+  } catch(e) {
+    document.getElementById('rcvBindErr').textContent = e.message||String(e);
+  }
+  document.getElementById('rcvBindSpinner').style.display='none';
+}
+
+
+// ── Restore VMs Modal ─────────────────────────────────────────────────────────
+
+var _rvmState   = { ds_id:'', protocol:'', storage_id_new:'' };
+var _rvmOverlay = null;
+
+function showRestoreVmsModal(dsId, dsName, protocol, storageIdNew) {
+  _rvmState = { ds_id:dsId, protocol:protocol, storage_id_new:storageIdNew };
+  if (_rvmOverlay) { document.body.removeChild(_rvmOverlay); }
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center;padding:20px';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:560px;max-width:100%;max-height:85vh;overflow-y:auto';
+  box.innerHTML =
+    '<div style="font-size:15px;font-weight:600;margin-bottom:16px">Restore VMs from Snapshot</div>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Datastore: <strong style="color:var(--text)">'+esc(dsName)+'</strong></div>'
+    + (protocol==='nfs'
+        ? '<div class="form-group" style="margin-bottom:12px">'
+          + '<label>Snapshot (manifest)</label>'
+          + '<select class="form-control" id="rvmSnapSel" onchange="rvmLoadManifest()">'
+          + '<option value="">Loading snapshots…</option></select></div>'
+        : '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">'
+          + 'Reading latest manifest from snapmanifest LV …</div>')
+    + '<div id="rvmVmList" style="margin-bottom:14px"></div>'
+    + '<div class="form-group" style="margin-bottom:12px">'
+    + '<label>VMID Offset <span style="font-weight:400;color:var(--muted);text-transform:none">(0 = keep original IDs)</span></label>'
+    + '<input class="form-control" id="rvmOffset" type="number" value="0" style="width:100px"></div>'
+    + '<div class="form-group" style="margin-bottom:14px">'
+    + '<label>Original Storage ID in VM configs <span style="font-weight:400;color:var(--muted);text-transform:none">(rewrite if pvesm name changed; leave empty if same)</span></label>'
+    + '<input class="form-control" id="rvmOldSid" placeholder="e.g. old-san-storage"></div>'
+    + '<div id="rvmErr" style="color:var(--error);font-size:12px;margin-bottom:10px"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+    + '<button class="btn btn-ghost" onclick="closeRvmModal()">Cancel</button>'
+    + '<button class="btn btn-primary" id="rvmOkBtn" onclick="doRestoreVms()">Restore Selected VMs</button>'
+    + '</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  _rvmOverlay = overlay;
+  overlay.addEventListener('keydown', function(ev){ if(ev.key==='Escape') closeRvmModal(); });
+  // Load manifests / VMs
+  if (protocol==='nfs') { rvmLoadSnapshots(); } else { rvmLoadManifest(); }
+}
+
+function closeRvmModal() {
+  if (_rvmOverlay) { document.body.removeChild(_rvmOverlay); _rvmOverlay=null; }
+}
+
+async function rvmLoadSnapshots() {
+  var sel = document.getElementById('rvmSnapSel');
+  if (!sel) return;
+  try {
+    var r = await api('GET', 'provisioning/recovery/manifests?ds_id=' + encodeURIComponent(_rvmState.ds_id));
+    var snaps = r.snapshots||[];
+    sel.innerHTML = snaps.length
+      ? snaps.map(function(s){
+          return '<option value="'+esc(s.snap_name)+'">'+esc(s.snap_name)+'</option>';
+        }).join('')
+      : '<option value="">No manifests found</option>';
+    if (snaps.length) rvmLoadManifest();
+  } catch(e) {
+    sel.innerHTML = '<option value="">Error: '+esc(e.message)+'</option>';
+  }
+}
+
+async function rvmLoadManifest() {
+  var listEl = document.getElementById('rvmVmList');
+  if (!listEl) return;
+  listEl.innerHTML = '<span class="spinner"></span> Loading VMs…';
+  var snapName = '';
+  if (_rvmState.protocol==='nfs') {
+    var sel = document.getElementById('rvmSnapSel');
+    if (sel) snapName = sel.value;
+  }
+  var url = 'provisioning/recovery/manifests?ds_id=' + encodeURIComponent(_rvmState.ds_id);
+  if (snapName) url += '&snap_name=' + encodeURIComponent(snapName);
+  try {
+    var r = await api('GET', url);
+    var vms = r.vms||[];
+    if (!vms.length) { listEl.innerHTML='<div style="color:var(--muted);font-size:12px">No VMs in manifest.</div>'; return; }
+    listEl.innerHTML = '<div style="font-size:12px;font-weight:600;margin-bottom:6px">VMs in this snapshot:</div>'
+      + '<div style="display:flex;flex-direction:column;gap:4px">'
+      + vms.map(function(vm) {
+          var icon = vm.vmtype==='lxc' ? '📦' : '🖥️';
+          return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer">'
+            + '<input type="checkbox" class="rvmVmCb" value="'+vm.vmid+'" checked> '
+            + icon+' <strong>'+esc(String(vm.vmid))+'</strong> '+esc(vm.name||'')
+            + ' <span class="badge badge-gray" style="font-size:10px">'+esc(vm.vmtype||'qemu')+'</span>'
+            + '</label>';
+        }).join('')
+      + '</div>';
+  } catch(e) {
+    listEl.innerHTML = '<span style="color:var(--error);font-size:12px">'+esc(e.message)+'</span>';
+  }
+}
+
+async function doRestoreVms() {
+  var vmidEls = document.querySelectorAll('.rvmVmCb:checked');
+  var vmids   = Array.from(vmidEls).map(function(el){return parseInt(el.value,10);});
+  var offset  = parseInt((document.getElementById('rvmOffset')||{}).value||'0', 10) || 0;
+  var oldSid  = (document.getElementById('rvmOldSid')||{}).value||'';
+  var snapName= '';
+  if (_rvmState.protocol==='nfs') {
+    var sel = document.getElementById('rvmSnapSel');
+    if (sel) snapName = sel.value;
+    if (!snapName) { document.getElementById('rvmErr').textContent='Select a snapshot.'; return; }
+  }
+  if (!vmids.length) { document.getElementById('rvmErr').textContent='Select at least one VM.'; return; }
+
+  var btn = document.getElementById('rvmOkBtn');
+  if (btn) { btn.disabled=true; btn.textContent='Restoring…'; }
+
+  try {
+    var r = await api('POST', 'provisioning/recovery/restore-vms', {
+      ds_id:          _rvmState.ds_id,
+      snap_name:      snapName,
+      vmids:          vmids,
+      vmid_offset:    offset,
+      storage_id_old: oldSid,
+    });
+    closeRvmModal();
+    toast((r.restored||0)+' VM config(s) written successfully.', 'success');
+  } catch(e) {
+    var errEl = document.getElementById('rvmErr');
+    if (errEl) errEl.textContent = e.message||String(e);
+    if (btn) { btn.disabled=false; btn.textContent='Restore Selected VMs'; }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Initial load
 applyI18n();

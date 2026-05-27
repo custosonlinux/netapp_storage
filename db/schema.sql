@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS netapp_provisioned_datastores (
     -- Lifecycle
     status              TEXT NOT NULL DEFAULT 'active',    -- provisioning | active | error | removing
     error_message       TEXT NOT NULL DEFAULT '',
+    imported_from       TEXT NOT NULL DEFAULT '',          -- '' | 'recovery_bind' | 'import'
     created_by          TEXT NOT NULL DEFAULT '',
     created_at          TEXT NOT NULL DEFAULT '',
     updated_at          TEXT NOT NULL DEFAULT ''

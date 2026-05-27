@@ -58,6 +58,10 @@ def _init_db():
         _add_column_if_missing(db, "netapp_endpoints", "skip_nfs",      "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(db, "netapp_endpoints", "san_optimized", "INTEGER NOT NULL DEFAULT 0")
 
+        # v1.1: recovery bind
+        _add_column_if_missing(db, "netapp_provisioned_datastores", "imported_from",
+                               "TEXT NOT NULL DEFAULT ''")
+
         # SAN extension (iSCSI / NVMe-oF)
         _add_column_if_missing(db, "netapp_volume_mapping", "storage_protocol",     "TEXT NOT NULL DEFAULT 'nfs'")
         _add_column_if_missing(db, "netapp_volume_mapping", "lun_uuid",              "TEXT NOT NULL DEFAULT ''")
@@ -97,6 +101,7 @@ def register(app):
     from .api.snapmirror import register_routes as reg_snapmirror
     from .api.settings import register_routes as reg_settings
     from .api.provisioning import register_routes as reg_provisioning
+    from .api.recovery import register_routes as reg_recovery
 
     reg_snap()
     reg_restore()
@@ -105,6 +110,7 @@ def register(app):
     reg_snapmirror()
     reg_settings()
     reg_provisioning()
+    reg_recovery()
     start_scheduler()
 
     log.info(f"[PLUGINS] {PLUGIN_NAME} registriert (UI: /api/plugins/netapp_storage/api/ui)")
