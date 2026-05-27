@@ -4777,7 +4777,7 @@ async function rcvLoadEndpoints() {
   var sel = document.getElementById('rcvEndpoint');
   if (sel.options.length > 1) return; // already loaded
   try {
-    var r = await api('GET', 'settings/endpoints');
+    var r = await api('GET', 'endpoints');
     (r.endpoints||[]).forEach(function(ep) {
       var o = document.createElement('option');
       o.value = ep.id; o.textContent = ep.name;
