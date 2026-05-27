@@ -2347,6 +2347,10 @@ async function apiPost(path, body) {
     body: JSON.stringify(body)
   });
 }
+async function api(method, path, body) {
+  if (method === 'POST') return apiPost(path, body);
+  return apiFetch(path);
+}
 
 // confirm() and alert() are blocked in iframe context — use inline modals instead.
 function uiConfirm(msg, okLabel, okClass) {
