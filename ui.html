@@ -2178,14 +2178,14 @@ function applyI18n() {
         <div id="impStorageRewSection" style="margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:6px;display:none">
           <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Datastore Name Rewrite</div>
           <div id="impStorageRewInfo" style="font-size:12px;margin-bottom:8px;line-height:1.5"></div>
-          <div style="display:flex;align-items:center;gap:8px;font-size:13px">
-            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">
-              Override detected name:
-            </label>
-            <input class="form-control" id="impStorageOld" style="max-width:220px"
-                   placeholder="(auto-detected)">
-            <span style="color:var(--muted);font-size:11px">leave empty to use auto-detected value</span>
+          <div id="impStorageRewFields" style="display:flex;align-items:center;gap:8px;font-size:13px">
+            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">From:</label>
+            <input class="form-control" id="impStorageOld" style="max-width:180px" placeholder="(auto-detected)">
+            <span style="color:var(--muted);font-size:13px">→</span>
+            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">To:</label>
+            <input class="form-control" id="impStorageNew" style="max-width:180px;opacity:.7;cursor:default" readonly tabindex="-1" placeholder="(current datastore)">
           </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Edit <em>From</em> only if the manifest uses a different name than auto-detected.</div>
         </div>
 
         <div style="display:flex;align-items:center;gap:8px">
@@ -5411,28 +5411,33 @@ function impToggleAll(checked) {
 function _impAutodetectStorageId(r) {
   var detected   = (r.detected_storage_ids || [])[0] || '';
   var currentSid = (_impState.ds && _impState.ds.sid) || '';
-  var sect  = document.getElementById('impStorageRewSection');
-  var info  = document.getElementById('impStorageRewInfo');
-  var input = document.getElementById('impStorageOld');
+  var sect      = document.getElementById('impStorageRewSection');
+  var info      = document.getElementById('impStorageRewInfo');
+  var fields    = document.getElementById('impStorageRewFields');
+  var oldInput  = document.getElementById('impStorageOld');
+  var newInput  = document.getElementById('impStorageNew');
 
   if (!detected) {
     sect.style.display = 'none';
-    input.value = '';
+    oldInput.value = '';
     return;
   }
-  sect.style.display = '';
+  sect.style.display  = '';
+  newInput.value      = currentSid;
+  newInput.placeholder = currentSid || '(current datastore)';
+
   if (detected === currentSid) {
-    info.innerHTML = '✓ Datastore name matches: <strong style="color:var(--success)">'
-      + esc(currentSid) + '</strong> — no rewrite needed.';
-    input.value       = '';
-    input.placeholder = '(no rewrite needed)';
+    info.innerHTML    = '✓ Datastore name matches — no rewrite needed.';
+    fields.style.display = 'none';
+    oldInput.value    = '';
+    oldInput.placeholder = '(no rewrite needed)';
   } else {
-    info.innerHTML = '⚠ Name mismatch — manifest references <strong style="color:var(--warning)">'
-      + esc(detected) + '</strong>, current datastore is <strong style="color:var(--info)">'
-      + esc(currentSid) + '</strong>. '
-      + 'References in the imported .conf files will be rewritten automatically.';
-    input.value       = detected;   // pre-fill; user can clear/override
-    input.placeholder = detected;
+    info.innerHTML    = '⚠ Manifest references <strong style="color:var(--warning)">'
+      + esc(detected) + '</strong> — will be rewritten to <strong style="color:var(--success)">'
+      + esc(currentSid) + '</strong>.';
+    fields.style.display = '';
+    oldInput.value       = detected;
+    oldInput.placeholder = detected;
   }
 }
 

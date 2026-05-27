@@ -478,6 +478,20 @@ def run_bind(job_id, ds_id, params, username, db):
         else:
             raise RuntimeError(f"Protocol '{protocol}' not supported for recovery bind")
 
+        # Fetch and persist volume size from ONTAP
+        try:
+            endpoint   = get_endpoint(db, params["endpoint_id"])
+            tmp_client = build_ontap_client(endpoint)
+            vol_info   = tmp_client.get_volume(params["volume_uuid"])
+            size_bytes = (vol_info.get("space") or {}).get("size", 0)
+            if size_bytes:
+                db.execute(
+                    "UPDATE netapp_provisioned_datastores SET size_bytes=? WHERE id=?",
+                    (size_bytes, ds_id),
+                )
+        except Exception as sz_exc:
+            jlog.log(f"WARNING: could not fetch volume size: {sz_exc}")
+
         _finish_job(db, job_id)
         jlog.log("Bind complete.")
 
