@@ -1961,21 +1961,28 @@ function applyI18n() {
             </div>
             <div class="form-group">
               <label>SVM</label>
-              <select class="form-control" id="rcvSvm">
+              <select class="form-control" id="rcvSvm" onchange="rcvOnSvmChange()">
                 <option value="">— select endpoint first —</option>
               </select>
+            </div>
+            <div class="form-group" id="rcvNfsLifRow" style="display:none">
+              <label>NFS LIF <span style="color:var(--muted);font-weight:400">(storage network interface)</span></label>
+              <select class="form-control" id="rcvNfsLif">
+                <option value="">— loading… —</option>
+              </select>
+              <span id="rcvNfsLifErr" style="color:var(--error);font-size:12px;margin-top:4px;display:block"></span>
             </div>
             <div class="form-group">
               <label>Protocol</label>
               <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
                 <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="rcvProto" value="nfs" checked> NFS
+                  <input type="radio" name="rcvProto" value="nfs" checked onchange="rcvOnSvmChange()"> NFS
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="rcvProto" value="iscsi"> iSCSI
+                  <input type="radio" name="rcvProto" value="iscsi" onchange="rcvOnSvmChange()"> iSCSI
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="rcvProto" value="nvme"> NVMe-oF
+                  <input type="radio" name="rcvProto" value="nvme" onchange="rcvOnSvmChange()"> NVMe-oF
                 </label>
               </div>
             </div>
@@ -2010,13 +2017,6 @@ function applyI18n() {
             <div class="form-group">
               <label>Storage Name <span style="color:var(--muted);font-weight:400">(PVE storage ID, e.g. netapp-prod)</span></label>
               <input class="form-control" id="rcvStorageId" placeholder="e.g. netapp-prod">
-            </div>
-            <div class="form-group" id="rcvNfsLifRow" style="display:none">
-              <label>NFS LIF <span style="color:var(--muted);font-weight:400">(storage network interface)</span></label>
-              <select class="form-control" id="rcvNfsLif">
-                <option value="">— loading… —</option>
-              </select>
-              <span id="rcvNfsLifErr" style="color:var(--error);font-size:12px;margin-top:4px;display:block"></span>
             </div>
             <div class="form-group" id="rcvVgRow">
               <label>VG Name <span style="color:var(--muted);font-weight:400">(existing LVM volume group)</span></label>
@@ -4797,13 +4797,25 @@ async function rcvLoadEndpoints() {
   rcvLoadHosts();
 }
 
+function rcvOnSvmChange() {
+  var proto = document.querySelector('input[name="rcvProto"]:checked').value;
+  var svm   = document.getElementById('rcvSvm').value;
+  var row   = document.getElementById('rcvNfsLifRow');
+  if (proto === 'nfs' && svm) {
+    row.style.display = '';
+    rcvLoadNfsLifs();
+  } else {
+    row.style.display = 'none';
+  }
+}
+
 async function rcvLoadSvms() {
   var epId = document.getElementById('rcvEndpoint').value;
   var sel  = document.getElementById('rcvSvm');
   sel.innerHTML = '<option value="">Loading…</option>';
   if (!epId) { sel.innerHTML = '<option value="">— select endpoint first —</option>'; return; }
   try {
-    var r = await api('GET', 'provisioning/svms?endpoint_id=' + encodeURIComponent(epId));
+    var r = await apiFetch('provisioning/svms?endpoint_id=' + encodeURIComponent(epId));
     sel.innerHTML = '<option value="">— select SVM —</option>';
     (r.svms||[]).forEach(function(s) {
       var o = document.createElement('option');
@@ -4833,8 +4845,8 @@ function rcvSelectAllHosts(checked) {
 async function rcvLoadNfsLifs() {
   var sel   = document.getElementById('rcvNfsLif');
   var errEl = document.getElementById('rcvNfsLifErr');
-  var epId  = rcvState.endpoint_id;
-  var svm   = rcvState.svm_name;
+  var epId  = document.getElementById('rcvEndpoint').value;
+  var svm   = document.getElementById('rcvSvm').value;
   if (errEl) errEl.textContent = '';
   if (!epId || !svm) {
     sel.innerHTML = '<option value="">— select endpoint/SVM first —</option>';
@@ -4937,9 +4949,7 @@ function rcvSelectVolume(uuid, name, type, smRelUuid, hasSm) {
   document.getElementById('rcvVgRow').style.display      = isSan ? '' : 'none';
   document.getElementById('rcvLvmTypeRow').style.display = isSan ? '' : 'none';
   document.getElementById('rcvJunctionRow').style.display= proto==='nfs' ? '' : 'none';
-  document.getElementById('rcvNfsLifRow').style.display  = proto==='nfs' ? '' : 'none';
   rcvLvmTypeChange();
-  if (proto==='nfs') rcvLoadNfsLifs();
 }
 
 function rcvShowStep(n) {
