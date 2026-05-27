@@ -422,6 +422,13 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
 
                     if patch_fn:
                         content = patch_fn(content)
+                        jlog.log(
+                            f"  NOTE: Existing ONTAP snapshots still contain the old disk "
+                            f"names (vm-{vmid_orig}-*). New snapshots will use the renamed "
+                            f"names (vm-{vmid_new}-*). If you ever need to restore from a "
+                            f"snapshot taken BEFORE this import, you will need to rename "
+                            f"the restored files/LVs manually."
+                        )
                     elif vmid_new != vmid_orig:
                         jlog.log(f"  [rename] VMID {vmid_orig} → {vmid_new}: "
                                  f"disk rename not performed "
