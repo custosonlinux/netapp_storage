@@ -32,6 +32,7 @@ Endpoints for the "Bind Volume + Restore VMs" wizard:
 
 import json
 import logging
+import re
 import uuid as _uuid
 from datetime import datetime, timezone
 
@@ -158,7 +159,12 @@ def _recovery_manifests():
             try:
                 manifest = read_nfs_manifest(sh, su, sp, sk, mount_point, snap_name)
                 vms      = _summarize_vms(manifest)
-                return {"manifest": manifest, "vms": vms, "snap_name": snap_name}
+                return {
+                    "manifest":             manifest,
+                    "vms":                  vms,
+                    "snap_name":            snap_name,
+                    "detected_storage_ids": _detect_storage_ids(manifest),
+                }
             except Exception as exc:
                 return {"error": str(exc)}, 500
 
@@ -173,12 +179,13 @@ def _recovery_manifests():
             vms      = _summarize_vms(manifest)
             # SAN: only the live (= last) manifest is available without a temp clone
             return {
-                "manifest":  manifest,
-                "vms":       vms,
-                "snap_name": manifest.get("snap_name", "latest"),
-                "snapshots": [{"snap_name": manifest.get("snap_name", "latest"),
-                               "manifest_path": f"snapmanifest:{vg_name}"}],
-                "protocol":  protocol,
+                "manifest":             manifest,
+                "vms":                  vms,
+                "snap_name":            manifest.get("snap_name", "latest"),
+                "snapshots":            [{"snap_name": manifest.get("snap_name", "latest"),
+                                         "manifest_path": f"snapmanifest:{vg_name}"}],
+                "protocol":             protocol,
+                "detected_storage_ids": _detect_storage_ids(manifest),
             }
         except Exception as exc:
             return {"error": str(exc)}, 500
@@ -197,6 +204,32 @@ def _summarize_vms(manifest):
         for vm in manifest.get("vms", [])
         if vm.get("vmid")
     ]
+
+
+_DISK_KEY_RE = re.compile(
+    r"^(?:scsi|virtio|ide|sata|efidisk|tpmstate|unused)\d*:\s*([^:,\s]+):",
+    re.MULTILINE,
+)
+_DEFAULT_STORAGE = {"local", "local-lvm", "local-zfs", "local-btrfs"}
+
+
+def _detect_storage_ids(manifest):
+    """Scans VM configs in the manifest and returns storage IDs sorted by frequency.
+
+    Returns a list of non-default pvesm storage IDs found in disk lines,
+    most common first.  Example: ['aff-nfs-ds06', 'local-lvm']
+    """
+    counts: dict = {}
+    for vm in manifest.get("vms", []):
+        conf = vm.get("config", "")
+        if not conf:
+            raw = vm.get("raw_config", {})
+            if isinstance(raw, dict):
+                conf = "\n".join(f"{k}: {v}" for k, v in raw.items() if v)
+        for sid in _DISK_KEY_RE.findall(conf):
+            if sid not in _DEFAULT_STORAGE:
+                counts[sid] = counts.get(sid, 0) + 1
+    return sorted(counts, key=lambda s: -counts[s])
 
 
 # ── POST /provisioning/recovery/bind ──────────────────────────────────────────

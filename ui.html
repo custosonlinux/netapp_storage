@@ -2174,17 +2174,18 @@ function applyI18n() {
           </table>
         </div>
 
-        <!-- Storage ID rewrite -->
-        <div class="form-group" style="margin-bottom:14px;max-width:480px">
-          <label>
-            Storage ID Rewrite
-            <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
-              If the VM configs were written with a different pvesm storage ID (e.g. the VMs came from another cluster or the datastore was renamed), select the original ID here. All references in the imported .conf files will be rewritten to match the current datastore name. Leave empty if the storage ID is unchanged.
-            </span>
-          </label>
-          <select class="form-control" id="impStorageOld">
-            <option value="">— no rewrite needed —</option>
-          </select>
+        <!-- Datastore Name Rewrite (auto-detected) -->
+        <div id="impStorageRewSection" style="margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:6px;display:none">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Datastore Name Rewrite</div>
+          <div id="impStorageRewInfo" style="font-size:12px;margin-bottom:8px;line-height:1.5"></div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">
+              Override detected name:
+            </label>
+            <input class="form-control" id="impStorageOld" style="max-width:220px"
+                   placeholder="(auto-detected)">
+            <span style="color:var(--muted);font-size:11px">leave empty to use auto-detected value</span>
+          </div>
         </div>
 
         <div style="display:flex;align-items:center;gap:8px">
@@ -5222,12 +5223,14 @@ async function impLoadDatastores() {
   } catch(e) {
     sel.innerHTML = '<option value="">Error: ' + esc(e.message) + '</option>';
   }
-  // Reset step 2
+  // Reset steps 1+2
   _impState.ds = null; _impState.snapName = ''; _impState.vms = []; _impState.usedVmids = [];
-  document.getElementById('impVmsCard').style.display   = 'none';
-  document.getElementById('impSnapRow').style.display    = 'none';
-  document.getElementById('impSnapSanRow').style.display = 'none';
-  document.getElementById('impHostRow').style.display    = 'none';
+  document.getElementById('impVmsCard').style.display         = 'none';
+  document.getElementById('impSnapRow').style.display          = 'none';
+  document.getElementById('impSnapSanRow').style.display       = 'none';
+  document.getElementById('impHostRow').style.display          = 'none';
+  document.getElementById('impStorageRewSection').style.display = 'none';
+  document.getElementById('impStorageOld').value                = '';
 }
 
 async function impOnDsChange() {
@@ -5252,21 +5255,9 @@ async function impOnDsChange() {
   // Load available PVE hosts for this datastore
   _impLoadHosts(hostIds);
 
-  // Populate storage ID rewrite dropdown with all known IDs (excluding the current one)
-  var storageSel = document.getElementById('impStorageOld');
-  var currentSid = (opt && opt.dataset.sid) || '';
-  storageSel.innerHTML = '<option value="">— no rewrite needed —</option>';
-  (_impState.allDs || []).forEach(function(ds) {
-    var sid = ds.pve_storage_id || ds.name;
-    if (sid && sid !== currentSid) {
-      var o = document.createElement('option');
-      o.value = sid;
-      o.textContent = sid + (ds.name !== sid ? ' (' + ds.name + ')' : '');
-      storageSel.appendChild(o);
-    }
-  });
-  // Also allow a free-text fallback via an "Other…" option that shows an input
-  // (kept simple: user can pick from known IDs, which covers the main use case)
+  // Reset auto-detect section
+  document.getElementById('impStorageRewSection').style.display = 'none';
+  document.getElementById('impStorageOld').value = '';
 
   if (proto === 'nfs') {
     document.getElementById('impSnapRow').style.display = '';
@@ -5335,6 +5326,7 @@ async function impLoadVms() {
     if (!vms.length) { errEl.textContent='No VMs found in manifest.'; return; }
     _impState.vms = vms;
     _impRenderVmTable();
+    _impAutodetectStorageId(r);
     document.getElementById('impVmsCard').style.display = '';
     impFetchUsedVmids(); // pre-load used VMIDs for auto-assign
   } catch(e) {
@@ -5418,6 +5410,34 @@ function impToggleAll(checked) {
   document.querySelectorAll('.impVmCb').forEach(function(cb) { cb.checked = checked; });
 }
 
+function _impAutodetectStorageId(r) {
+  var detected   = (r.detected_storage_ids || [])[0] || '';
+  var currentSid = (_impState.ds && _impState.ds.sid) || '';
+  var sect  = document.getElementById('impStorageRewSection');
+  var info  = document.getElementById('impStorageRewInfo');
+  var input = document.getElementById('impStorageOld');
+
+  if (!detected) {
+    sect.style.display = 'none';
+    input.value = '';
+    return;
+  }
+  sect.style.display = '';
+  if (detected === currentSid) {
+    info.innerHTML = '✓ Datastore name matches: <strong style="color:var(--success)">'
+      + esc(currentSid) + '</strong> — no rewrite needed.';
+    input.value       = '';
+    input.placeholder = '(no rewrite needed)';
+  } else {
+    info.innerHTML = '⚠ Name mismatch — manifest references <strong style="color:var(--warning)">'
+      + esc(detected) + '</strong>, current datastore is <strong style="color:var(--info)">'
+      + esc(currentSid) + '</strong>. '
+      + 'References in the imported .conf files will be rewritten automatically.';
+    input.value       = detected;   // pre-fill; user can clear/override
+    input.placeholder = detected;
+  }
+}
+
 async function impDoImport() {
   if (!_impState.ds) {
     document.getElementById('impImportErr').textContent = 'No datastore selected.';
@@ -5439,7 +5459,10 @@ async function impDoImport() {
     vmid_map[origId] = newId;
   });
 
-  var storageOld   = (document.getElementById('impStorageOld') || {}).value || '';
+  // Use the input value; if empty fall back to the placeholder (auto-detected ID)
+  var oldInput   = document.getElementById('impStorageOld');
+  var storageOld = (oldInput && (oldInput.value || oldInput.placeholder)) || '';
+  if (storageOld === '(no rewrite needed)' || storageOld === '(auto-detected)') storageOld = '';
   var targetHostId = (document.getElementById('impHostSel') || {}).value || '';
   var btn          = document.getElementById('impImportBtn');
   var spinner    = document.getElementById('impImportSpinner');

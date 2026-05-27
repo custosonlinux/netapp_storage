@@ -346,13 +346,27 @@ def _bind_nfs(ds_id, params, db, jlog):
 
     # ── Resolve junction path ──────────────────────────────────────────────────
     vol_export    = client.get_volume_export_info(volume_uuid)
-    junction_path = (params.get("junction_path_override") or
-                     vol_export.get("junction_path") or "")
+    current_path  = vol_export.get("junction_path") or ""
+    override_path = params.get("junction_path_override") or ""
+
+    junction_path = override_path or current_path
+
     if not junction_path:
+        # No path at all — derive from volume name and mount
         junction_path = f"/{volume_name}"
         jlog.log(f"Volume has no junction path — mounting at {junction_path} …")
         client.mount_volume(volume_uuid, junction_path)
         jlog.log("Volume mounted.")
+    elif override_path and override_path != current_path:
+        # User-specified override differs from current ONTAP path — (re)mount
+        if current_path:
+            jlog.log(f"Volume currently mounted at '{current_path}' — "
+                     f"remounting at '{override_path}' …")
+            client.unmount_volume(volume_uuid)
+        else:
+            jlog.log(f"Volume not mounted — mounting at '{override_path}' …")
+        client.mount_volume(volume_uuid, override_path)
+        jlog.log("Volume mounted at junction path.")
     else:
         jlog.log(f"Junction path: {junction_path}")
 
