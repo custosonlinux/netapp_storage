@@ -422,6 +422,35 @@ def _run_snapshot(job_id, params, username):
                         ]
                 except Exception:
                     pass
+                # Fetch SnapMirror relationship for this volume (best-health row)
+                sm_info = None
+                try:
+                    vol_uuid = mapping["volume_uuid"] if mapping else ""
+                    if vol_uuid:
+                        sm_row = db.query_one(
+                            "SELECT dest_cluster_name, dest_svm, dest_volume, "
+                            "state, healthy, lag_time, last_transfer_time "
+                            "FROM netapp_snapmirror_relationships "
+                            "WHERE source_volume_uuid=? "
+                            "ORDER BY healthy DESC, last_transfer_time DESC LIMIT 1",
+                            (vol_uuid,),
+                        )
+                        if sm_row:
+                            r = dict(sm_row)
+                            sm_info = {
+                                "exists":             True,
+                                "dest_cluster":       r.get("dest_cluster_name", ""),
+                                "dest_svm":           r.get("dest_svm", ""),
+                                "dest_volume":        r.get("dest_volume", ""),
+                                "state":              r.get("state", ""),
+                                "healthy":            bool(r.get("healthy", 0)),
+                                "lag_time":           r.get("lag_time", ""),
+                                "last_transfer_time": r.get("last_transfer_time", ""),
+                            }
+                        else:
+                            sm_info = {"exists": False}
+                except Exception:
+                    pass
                 from ..api.settings import send_job_notification
                 send_job_notification(
                     schedule_name=params.get("schedule_name", snap_name),
@@ -432,6 +461,7 @@ def _run_snapshot(job_id, params, username):
                     log_lines=log_entries,
                     vm_list=vm_list,
                     datastore=params.get("pve_storage_id", ""),
+                    snapmirror_info=sm_info,
                 )
             except Exception as ne:
                 log.warning(f"[netapp_storage] Notification failed for job {job_id}: {ne}")

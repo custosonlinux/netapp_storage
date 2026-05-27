@@ -270,7 +270,7 @@ def stop_scheduler():
 def _list_schedules():
     db = get_db()
     rows = db.query(
-        "SELECT s.*, vm.pve_storage_id, vm.volume_name, ep.name AS endpoint_name "
+        "SELECT s.*, vm.pve_storage_id, vm.volume_name, vm.volume_uuid, ep.name AS endpoint_name "
         "FROM netapp_snapshot_schedules s "
         "JOIN netapp_volume_mapping vm ON vm.id = s.mapping_id "
         "JOIN netapp_endpoints ep ON ep.id = vm.endpoint_id "
@@ -280,6 +280,31 @@ def _list_schedules():
     for r in rows:
         d = dict(r)
         d["vmids"] = json.loads(d.get("vmids_json") or "[]")
+
+        # Attach SnapMirror relationship for this volume (prefer healthy/most-recent)
+        sm_rows = db.query(
+            "SELECT dest_cluster_name, dest_svm, dest_volume, state, healthy, "
+            "lag_time, last_transfer_time "
+            "FROM netapp_snapmirror_relationships "
+            "WHERE source_volume_uuid=? "
+            "ORDER BY healthy DESC, last_transfer_time DESC LIMIT 1",
+            (d.get("volume_uuid", ""),),
+        )
+        if sm_rows:
+            rel = dict(sm_rows[0])
+            d["snapmirror"] = {
+                "exists":             True,
+                "dest_cluster":       rel.get("dest_cluster_name", ""),
+                "dest_svm":           rel.get("dest_svm", ""),
+                "dest_volume":        rel.get("dest_volume", ""),
+                "state":              rel.get("state", ""),
+                "healthy":            bool(rel.get("healthy", 0)),
+                "lag_time":           rel.get("lag_time", ""),
+                "last_transfer_time": rel.get("last_transfer_time", ""),
+            }
+        else:
+            d["snapmirror"] = {"exists": False}
+
         result.append(d)
     return result
 

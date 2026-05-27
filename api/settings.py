@@ -152,6 +152,22 @@ def _log_severity(msg):
     return "info"
 
 
+def _format_lag(s):
+    """Convert ISO 8601 duration (P0DT4H23M5S) to a human-readable string."""
+    import re
+    if not s:
+        return "–"
+    m = re.match(r'P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?', s)
+    if not m:
+        return s
+    parts = []
+    if m.group(1): parts.append(f"{m.group(1)}d")
+    if m.group(2): parts.append(f"{m.group(2)}h")
+    if m.group(3): parts.append(f"{m.group(3)}m")
+    if m.group(4): parts.append(f"{int(float(m.group(4)))}s")
+    return " ".join(parts) if parts else "0s"
+
+
 def _build_notification_email(subject, schedule_name, snap_name, job_status, log_lines=None,
                                extra_rows=None, vm_list=None, datastore=None):
     """
@@ -315,11 +331,16 @@ def _build_notification_email(subject, schedule_name, snap_name, job_status, log
 
 
 def send_job_notification(schedule_name, job_status, snap_name,
-                          recipients_csv, notify_on, log_lines=None, vm_list=None, datastore=None):
+                          recipients_csv, notify_on, log_lines=None, vm_list=None,
+                          datastore=None, snapmirror_info=None):
     """Send a snapshot job result notification email.
 
     Called from the snapshot engine after a scheduled job finishes.
     Recipients is a comma-separated string.  notify_on is 'all', 'failed', or 'success'.
+
+    snapmirror_info: optional dict with keys exists, dest_cluster, dest_svm, dest_volume,
+                     state, healthy, lag_time, last_transfer_time  (from the DB relationship
+                     row for this volume).  Shown as an extra summary row in the email.
     """
     if not recipients_csv or not recipients_csv.strip():
         return
@@ -347,8 +368,32 @@ def send_job_notification(schedule_name, job_status, snap_name,
         status_str = 'Success' if job_status == 'done' else job_status.capitalize()
         subject    = f"[PegaProx] Snapshot {status_str}: {schedule_name} — {snap_name}"
 
+        # Build SnapMirror extra row for the summary card
+        extra_rows = []
+        if snapmirror_info and snapmirror_info.get("exists"):
+            sm = snapmirror_info
+            dest     = sm.get("dest_cluster") or sm.get("dest_svm") or "?"
+            state    = sm.get("state") or "?"
+            lag_str  = _format_lag(sm.get("lag_time") or "")
+            last_t   = (sm.get("last_transfer_time") or "")[:16].replace("T", " ")
+            if not sm.get("healthy") or state in ("broken_off", "broken-off"):
+                color, icon = "#dc2626", "✗"
+            elif state == "snapmirrored":
+                color, icon = "#16a34a", "⟳"
+            else:
+                color, icon = "#d97706", "⚠"
+            sm_val = (
+                f'<span style="color:{color};font-weight:700">{icon} {dest}</span>'
+                f' <span style="color:#6b7280;font-size:12px">({state}, lag: {lag_str}'
+                f'{", last: " + last_t if last_t else ""})</span>'
+            )
+            extra_rows.append(("SnapMirror®", sm_val))
+        elif snapmirror_info and not snapmirror_info.get("exists"):
+            extra_rows.append(("SnapMirror®", '<span style="color:#6b7280">– not configured</span>'))
+
         html_body, plain_body = _build_notification_email(
             subject, schedule_name, snap_name, job_status, log_lines,
+            extra_rows=extra_rows if extra_rows else None,
             vm_list=vm_list, datastore=datastore)
 
         recipients = [r.strip() for r in recipients_csv.split(',') if r.strip()]

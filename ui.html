@@ -1483,10 +1483,10 @@ function applyI18n() {
         <table style="min-width:860px">
           <thead><tr>
             <th data-i18n="th_name">Name</th><th data-i18n="th_volume">Volume</th><th data-i18n="th_vms">VMs</th><th data-i18n="th_schedule">Schedule</th>
-            <th data-i18n="th_label">Label</th><th data-i18n="th_retention">Retention</th><th data-i18n="th_status">Status</th><th data-i18n="th_last_run">Last run</th><th data-i18n="th_actions">Actions</th>
+            <th data-i18n="th_label">Label</th><th data-i18n="th_retention">Retention</th><th data-i18n="th_status">Status</th><th data-i18n="th_last_run">Last run</th><th>SnapMirror®</th><th data-i18n="th_actions">Actions</th>
           </tr></thead>
           <tbody id="schedulesBody">
-            <tr><td colspan="9" class="empty"><span class="spinner"></span></td></tr>
+            <tr><td colspan="10" class="empty"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
       </div>
@@ -3031,7 +3031,7 @@ async function loadSchedules() {
     _schedulesCache = rows;
     var tbody = document.getElementById('schedulesBody');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">'+t('empty_schedules')+'</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">'+t('empty_schedules')+'</td></tr>';
       return;
     }
     // Load VM names for all mappings
@@ -3066,6 +3066,7 @@ async function loadSchedules() {
         '<td>'+s.retention_count+'×</td>' +
         '<td>'+(s.enabled?'<span class="badge badge-green">'+t('badge_active')+'</span>':'<span class="badge badge-gray">'+t('badge_inactive')+'</span>')+'</td>' +
         '<td style="color:var(--muted)">'+lastRun+'</td>' +
+        '<td>'+schedSmBadge(s.snapmirror)+'</td>' +
         '<td><div class="row-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="toggleSchedule(\''+s.id+'\','+s.enabled+')">'+(s.enabled?t('act_deactivate'):t('act_activate'))+'</button>' +
           '<button class="btn btn-primary btn-sm" onclick="runNow(\''+s.id+'\',\''+esc(s.name)+'\')">'+t('act_run_now')+'</button>' +
@@ -3751,6 +3752,27 @@ function statusBadge(s) {
 function vmBadge(id, name) {
   var cls = 'badge badge-vm badge-vm-' + (parseInt(id) % 6);
   return '<span class="'+cls+'">'+esc(String(id))+(name ? ' – '+esc(name) : '')+'</span>';
+}
+
+function schedSmBadge(sm) {
+  if (!sm || !sm.exists) return '<span style="color:var(--muted)">–</span>';
+  var dest = esc(sm.dest_cluster || sm.dest_svm || '?');
+  var lag  = formatLag(sm.lag_time);
+  var tip  = 'State: ' + esc(sm.state || '?') + ' | Lag: ' + lag;
+  if (sm.last_transfer_time) {
+    tip += ' | Last: ' + esc((sm.last_transfer_time||'').slice(0,16).replace('T',' '));
+  }
+  var color, icon;
+  if (!sm.healthy || sm.state === 'broken_off' || sm.state === 'broken-off') {
+    color = 'red';   icon = '✗';
+  } else if (sm.state === 'snapmirrored') {
+    color = 'green'; icon = '⟳';
+  } else {
+    color = 'orange'; icon = '⚠';
+  }
+  return '<span class="badge badge-'+color+'" title="'+tip+'" style="cursor:default">'
+       + icon + ' ' + dest + '</span>'
+       + '<div style="font-size:10px;color:var(--muted);margin-top:2px">Lag: '+lag+'</div>';
 }
 
 // ═══════════════════════════ SNAPMIRROR® ══════════════════════════════════════
