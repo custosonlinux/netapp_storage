@@ -1181,9 +1181,20 @@ def _adopt_or_create_igroup(client, svm_name, lun_uuid, volume_name, host_meta, 
 
     if not igroup_uuid:
         igroup_name = f"igr-rcv-{volume_name[:20]}"
-        jlog.log(f"Creating new iGroup '{igroup_name}' …")
-        igroup_uuid = client.create_igroup(svm_name, igroup_name, protocol="iscsi", os_type="linux")
-        jlog.log(f"iGroup created: {igroup_uuid}")
+        # Check if an iGroup with that name already exists (e.g. from a previous bind attempt)
+        try:
+            for ig in client.list_igroups(svm_name=svm_name):
+                if ig.get("name") == igroup_name:
+                    igroup_uuid = ig.get("uuid", "")
+                    jlog.log(f"Found existing iGroup '{igroup_name}' ({igroup_uuid}) — adopting.")
+                    break
+        except Exception as exc:
+            jlog.log(f"WARNING: iGroup name search: {exc}")
+
+        if not igroup_uuid:
+            jlog.log(f"Creating new iGroup '{igroup_name}' …")
+            igroup_uuid = client.create_igroup(svm_name, igroup_name, protocol="iscsi", os_type="linux")
+            jlog.log(f"iGroup created: {igroup_uuid}")
 
     # Add our host IQNs (idempotent)
     try:
@@ -1222,9 +1233,20 @@ def _adopt_or_create_subsystem(client, svm_name, ns_uuid, volume_name, host_meta
 
     if not subsystem_uuid:
         subsystem_name = f"sub-rcv-{volume_name[:20]}"
-        jlog.log(f"Creating new subsystem '{subsystem_name}' …")
-        subsystem_uuid = client.create_nvme_subsystem(svm_name, subsystem_name)
-        jlog.log(f"Subsystem created: {subsystem_uuid}")
+        # Check if a subsystem with that name already exists (e.g. from a previous bind attempt)
+        try:
+            for sub in client.list_nvme_subsystems(svm_name=svm_name):
+                if sub.get("name") == subsystem_name:
+                    subsystem_uuid = sub.get("uuid", "")
+                    jlog.log(f"Found existing subsystem '{subsystem_name}' ({subsystem_uuid}) — adopting.")
+                    break
+        except Exception as exc:
+            jlog.log(f"WARNING: subsystem name search: {exc}")
+
+        if not subsystem_uuid:
+            jlog.log(f"Creating new subsystem '{subsystem_name}' …")
+            subsystem_uuid = client.create_nvme_subsystem(svm_name, subsystem_name)
+            jlog.log(f"Subsystem created: {subsystem_uuid}")
 
     # Add our host NQNs (idempotent)
     try:
