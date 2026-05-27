@@ -2016,6 +2016,7 @@ function applyI18n() {
               <select class="form-control" id="rcvNfsLif">
                 <option value="">— loading… —</option>
               </select>
+              <span id="rcvNfsLifErr" style="color:var(--error);font-size:12px;margin-top:4px;display:block"></span>
             </div>
             <div class="form-group" id="rcvVgRow">
               <label>VG Name <span style="color:var(--muted);font-weight:400">(existing LVM volume group)</span></label>
@@ -4830,10 +4831,15 @@ function rcvSelectAllHosts(checked) {
 }
 
 async function rcvLoadNfsLifs() {
-  var sel  = document.getElementById('rcvNfsLif');
-  var epId = rcvState.endpoint_id;
-  var svm  = rcvState.svm_name;
-  if (!epId || !svm) { sel.innerHTML='<option value="">— select endpoint/SVM first —</option>'; return; }
+  var sel   = document.getElementById('rcvNfsLif');
+  var errEl = document.getElementById('rcvNfsLifErr');
+  var epId  = rcvState.endpoint_id;
+  var svm   = rcvState.svm_name;
+  if (errEl) errEl.textContent = '';
+  if (!epId || !svm) {
+    sel.innerHTML = '<option value="">— select endpoint/SVM first —</option>';
+    return;
+  }
   sel.innerHTML = '<option value="">— loading… —</option>';
   try {
     var r = await apiFetch('provisioning/nfs-lifs?endpoint_id='
@@ -4845,9 +4851,11 @@ async function rcvLoadNfsLifs() {
       }).join('');
     } else {
       sel.innerHTML = '<option value="">— no NFS LIFs found —</option>';
+      if (errEl) errEl.textContent = 'No NFS data LIFs found on SVM "'+svm+'". Check ONTAP LIF config.';
     }
   } catch(e) {
-    sel.innerHTML = '<option value="">— error loading LIFs —</option>';
+    sel.innerHTML = '<option value="">— error —</option>';
+    if (errEl) errEl.textContent = 'Error: ' + e.message;
     console.error('rcvLoadNfsLifs:', e);
   }
 }
