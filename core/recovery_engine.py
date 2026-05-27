@@ -345,46 +345,49 @@ def _bind_nfs(ds_id, params, db, jlog):
         raise RuntimeError(f"No NFS LIF found for SVM '{svm_name}'")
     jlog.log(f"NFS LIF: {nfs_ip}")
 
-    # ── pvesm add nfs on each host ─────────────────────────────────────────────
+    # ── pvesm add nfs — first reachable host only (cluster propagates via pmxcfs) ──
     sid_q = shlex.quote(pve_storage_id)
     pvesm_cmd = (
         f"pvesm add nfs {sid_q} "
         f"--server {shlex.quote(nfs_ip)} "
         f"--export {shlex.quote(junction_path)} "
-        f"--content images,rootdir,vztmpl,iso,snippets "
+        f"--content images,rootdir "
         f"--options vers=3"
     )
     nfs_mount_path = f"/mnt/pve/{pve_storage_id}"
 
+    pvesm_done = False
     for hid in pve_host_ids:
         m = host_meta.get(hid)
         if not m:
             continue
         sh, su, sp, sk = m["host"], m["user"], m["pass"], m["key"]
-        jlog.log(f"[{sh}] Registering PVE NFS storage '{pve_storage_id}' …")
-        try:
-            check = ssh_run(sh, su, sp,
-                            f"pvesm status {shlex.quote(pve_storage_id)} 2>/dev/null "
-                            f"&& echo EXISTS || echo MISSING",
-                            capture=True, key_material=sk)
-            if "EXISTS" not in check:
-                ssh_run(sh, su, sp, pvesm_cmd, key_material=sk, timeout=30)
-                jlog.log(f"[{sh}] PVE NFS storage registered.")
-            else:
-                jlog.log(f"[{sh}] PVE NFS storage already exists.")
-            # Resolve actual mount path
+        if pvesm_done:
+            # Already registered on one cluster node — just resolve mount path
+            jlog.log(f"[{sh}] PVE storage already propagated by cluster.")
+        else:
+            jlog.log(f"[{sh}] Registering PVE NFS storage '{pve_storage_id}' …")
             try:
-                out = ssh_run(sh, su, sp,
-                              f"pvesm path {shlex.quote(pve_storage_id + ':backup/dummy')} 2>/dev/null || "
-                              f"df --output=target 2>/dev/null | grep {shlex.quote(pve_storage_id)} | head -1 || true",
-                              capture=True, key_material=sk, timeout=10)
-                guessed = out.strip()
-                if guessed and guessed.startswith("/"):
-                    nfs_mount_path = guessed.split("/backup/")[0] if "/backup/" in guessed else guessed
-            except Exception:
-                pass
-        except Exception as exc:
-            jlog.log(f"[{sh}] WARNING: pvesm add nfs: {exc}")
+                check = ssh_run(sh, su, sp,
+                                f"pvesm status {shlex.quote(pve_storage_id)} 2>/dev/null "
+                                f"&& echo EXISTS || echo MISSING",
+                                capture=True, key_material=sk)
+                if "EXISTS" not in check:
+                    ssh_run(sh, su, sp, pvesm_cmd, key_material=sk, timeout=120)
+                    jlog.log(f"[{sh}] PVE NFS storage registered.")
+                else:
+                    jlog.log(f"[{sh}] PVE NFS storage already exists.")
+                pvesm_done = True
+            except Exception as exc:
+                jlog.log(f"[{sh}] WARNING: pvesm add nfs: {exc}")
+                continue
+        # Resolve actual mount path (on every host for the mapping)
+        try:
+            out = ssh_run(sh, su, sp,
+                          f"pvesm status {shlex.quote(pve_storage_id)} 2>/dev/null | awk 'NR>1{{print $1}}' || true",
+                          capture=True, key_material=sk, timeout=10)
+        except Exception:
+            pass
 
     _set_ds_status(db, ds_id, "active")
     db.execute(

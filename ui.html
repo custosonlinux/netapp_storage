@@ -2011,6 +2011,12 @@ function applyI18n() {
               <label>Storage Name <span style="color:var(--muted);font-weight:400">(PVE storage ID, e.g. netapp-prod)</span></label>
               <input class="form-control" id="rcvStorageId" placeholder="e.g. netapp-prod">
             </div>
+            <div class="form-group" id="rcvNfsLifRow" style="display:none">
+              <label>NFS LIF <span style="color:var(--muted);font-weight:400">(storage network interface)</span></label>
+              <select class="form-control" id="rcvNfsLif">
+                <option value="">— loading… —</option>
+              </select>
+            </div>
             <div class="form-group" id="rcvVgRow">
               <label>VG Name <span style="color:var(--muted);font-weight:400">(existing LVM volume group)</span></label>
               <input class="form-control" id="rcvVgName" placeholder="e.g. pve-san-vg">
@@ -4765,7 +4771,7 @@ var rcvState = {
   volume_uuid:'', volume_name:'', volume_type:'rw',
   sm_rel_uuid:'', has_sm:false,
   vg_name:'', lvm_type:'linear', pool_name:'data',
-  storage_id:'', junction_override:'',
+  storage_id:'', nfs_ip:'', junction_override:'',
   pve_host_ids:[]
 };
 
@@ -4803,13 +4809,36 @@ async function rcvLoadHosts() {
   var wrap = document.getElementById('rcvHostCheckboxes');
   if (!wrap) return;
   try {
-    var r = await api('GET', 'provisioning/pve-hosts');
+    var r = await apiFetch('provisioning/pve-hosts');
     wrap.innerHTML = (r.hosts||[]).map(function(h) {
       return '<label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer">'
         + '<input type="checkbox" class="rcvHostCb" value="'+esc(h.id)+'"> '
         + esc(h.name) + ' <span style="color:var(--muted);font-size:11px">('+esc(h.host)+')</span></label>';
     }).join('') || '<span style="color:var(--muted);font-size:12px">No PVE hosts configured</span>';
   } catch(e) {}
+}
+
+async function rcvLoadNfsLifs() {
+  var sel  = document.getElementById('rcvNfsLif');
+  var epId = rcvState.endpoint_id;
+  var svm  = rcvState.svm_name;
+  if (!epId || !svm) { sel.innerHTML='<option value="">— select endpoint/SVM first —</option>'; return; }
+  sel.innerHTML = '<option value="">— loading… —</option>';
+  try {
+    var r = await apiFetch('provisioning/ontap-resources?endpoint_id='
+      + encodeURIComponent(epId) + '&svm_name=' + encodeURIComponent(svm));
+    var lifs = r.nfs_lifs || [];
+    if (lifs.length) {
+      sel.innerHTML = lifs.map(function(l) {
+        return '<option value="'+esc(l.ip)+'">'+esc(l.name)+' — '+esc(l.ip)+'</option>';
+      }).join('');
+    } else {
+      sel.innerHTML = '<option value="">— no NFS LIFs found —</option>';
+    }
+  } catch(e) {
+    sel.innerHTML = '<option value="">— error loading LIFs —</option>';
+    console.error('rcvLoadNfsLifs:', e);
+  }
 }
 
 async function rcvScanVolumes() {
@@ -4889,7 +4918,9 @@ function rcvSelectVolume(uuid, name, type, smRelUuid, hasSm) {
   document.getElementById('rcvVgRow').style.display      = isSan ? '' : 'none';
   document.getElementById('rcvLvmTypeRow').style.display = isSan ? '' : 'none';
   document.getElementById('rcvJunctionRow').style.display= proto==='nfs' ? '' : 'none';
+  document.getElementById('rcvNfsLifRow').style.display  = proto==='nfs' ? '' : 'none';
   rcvLvmTypeChange();
+  if (proto==='nfs') rcvLoadNfsLifs();
 }
 
 function rcvShowStep(n) {
@@ -4926,6 +4957,11 @@ function rcvNext2() {
   rcvState.storage_id      = sid;
   rcvState.junction_override = (document.getElementById('rcvJunctionPath')||{}).value||'';
   rcvState.pve_host_ids    = hosts;
+  if (rcvState.protocol==='nfs') {
+    var lifSel = document.getElementById('rcvNfsLif');
+    rcvState.nfs_ip = lifSel ? lifSel.value : '';
+    if (!rcvState.nfs_ip) { alert('Please select an NFS LIF.'); return; }
+  }
 
   // Build summary
   var smBreak = rcvState.has_sm && document.getElementById('rcvSmBreak').checked;
@@ -4933,6 +4969,9 @@ function rcvNext2() {
     '📦 Volume: <strong>'+esc(rcvState.volume_name)+'</strong> ('+esc(rcvState.protocol.toUpperCase())+')',
     '💾 Storage Name: <strong>'+esc(rcvState.storage_id)+'</strong>',
   ];
+  if (rcvState.protocol==='nfs') {
+    lines.push('🌐 NFS LIF: <strong>'+esc(rcvState.nfs_ip)+'</strong>');
+  }
   if (isSan) {
     lines.push('🗄️  VG: <strong>'+esc(rcvState.vg_name)+'</strong> ('+esc(rcvState.lvm_type)+')');
     if (rcvState.lvm_type==='thin') lines.push('📊 Thin pool: <strong>'+esc(rcvState.pool_name)+'</strong>');
@@ -4961,6 +5000,7 @@ async function rcvBind() {
     lvm_type:                     rcvState.lvm_type||'linear',
     lvm_pool_name:                rcvState.pool_name||'data',
     junction_path_override:       rcvState.junction_override||'',
+    nfs_ip:                       rcvState.nfs_ip||'',
     snapmirror_break:             smBreak,
     snapmirror_relationship_uuid: rcvState.sm_rel_uuid||'',
     size_bytes:                   0,
