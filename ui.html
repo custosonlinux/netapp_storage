@@ -4781,13 +4781,13 @@ async function rcvLoadEndpoints() {
   var sel = document.getElementById('rcvEndpoint');
   if (sel.options.length > 1) return; // already loaded
   try {
-    var r = await api('GET', 'endpoints');
-    (r.endpoints||[]).forEach(function(ep) {
+    var eps = await apiFetch('endpoints');
+    (Array.isArray(eps) ? eps : []).forEach(function(ep) {
       var o = document.createElement('option');
       o.value = ep.id; o.textContent = ep.name;
       sel.appendChild(o);
     });
-  } catch(e) {}
+  } catch(e) { console.error('rcvLoadEndpoints:', e); }
   rcvLoadHosts();
 }
 
