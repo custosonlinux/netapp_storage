@@ -387,6 +387,26 @@ def _prov_svms():
         return {"error": str(exc)}, 500
 
 
+def _prov_nfs_lifs():
+    """Lightweight endpoint: returns NFS LIFs for a given endpoint + SVM."""
+    err = _require_admin()
+    if err:
+        return err
+    from flask import request
+    endpoint_id = request.args.get("endpoint_id")
+    svm_name    = request.args.get("svm_name", "")
+    if not endpoint_id:
+        return {"error": "endpoint_id required"}, 400
+    db       = get_db()
+    endpoint = get_endpoint(db, endpoint_id)
+    client   = build_ontap_client(endpoint)
+    try:
+        lifs = client.list_nfs_lifs(svm_name=svm_name)
+        return {"lifs": lifs}
+    except Exception as exc:
+        return {"error": str(exc)}, 500
+
+
 def _prov_import():
     """Register an existing (manually created) datastore in the Provisioning tab.
 
@@ -524,6 +544,7 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, "provisioning/ontap-resources",       _prov_ontap_resources)
     register_plugin_route(PLUGIN_ID, "provisioning/pve-hosts",             _prov_pve_hosts)
     register_plugin_route(PLUGIN_ID, "provisioning/svms",                  _prov_svms)
+    register_plugin_route(PLUGIN_ID, "provisioning/nfs-lifs",              _prov_nfs_lifs)
 
 
 # ── Job helpers ───────────────────────────────────────────────────────────────

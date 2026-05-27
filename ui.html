@@ -2038,7 +2038,14 @@ function applyI18n() {
             </div>
           </div>
           <div class="form-group" style="margin-bottom:14px">
-            <label>PVE Hosts</label>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <label style="margin:0">PVE Hosts</label>
+              <span style="font-size:12px">
+                <a href="#" onclick="rcvSelectAllHosts(true);return false;" style="color:var(--primary);text-decoration:none">All</a>
+                &nbsp;/&nbsp;
+                <a href="#" onclick="rcvSelectAllHosts(false);return false;" style="color:var(--muted);text-decoration:none">None</a>
+              </span>
+            </div>
             <div id="rcvHostCheckboxes" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px"></div>
           </div>
           <div id="rcvSmBreakRow" style="display:none;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-left:3px solid var(--warning);border-radius:4px">
@@ -4812,10 +4819,14 @@ async function rcvLoadHosts() {
     var r = await apiFetch('provisioning/pve-hosts');
     wrap.innerHTML = (r.hosts||[]).map(function(h) {
       return '<label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer">'
-        + '<input type="checkbox" class="rcvHostCb" value="'+esc(h.id)+'"> '
+        + '<input type="checkbox" class="rcvHostCb" value="'+esc(h.id)+'" checked> '
         + esc(h.name) + ' <span style="color:var(--muted);font-size:11px">('+esc(h.host)+')</span></label>';
     }).join('') || '<span style="color:var(--muted);font-size:12px">No PVE hosts configured</span>';
   } catch(e) {}
+}
+
+function rcvSelectAllHosts(checked) {
+  document.querySelectorAll('.rcvHostCb').forEach(function(cb){ cb.checked = checked; });
 }
 
 async function rcvLoadNfsLifs() {
@@ -4825,9 +4836,9 @@ async function rcvLoadNfsLifs() {
   if (!epId || !svm) { sel.innerHTML='<option value="">— select endpoint/SVM first —</option>'; return; }
   sel.innerHTML = '<option value="">— loading… —</option>';
   try {
-    var r = await apiFetch('provisioning/ontap-resources?endpoint_id='
+    var r = await apiFetch('provisioning/nfs-lifs?endpoint_id='
       + encodeURIComponent(epId) + '&svm_name=' + encodeURIComponent(svm));
-    var lifs = r.nfs_lifs || [];
+    var lifs = r.lifs || [];
     if (lifs.length) {
       sel.innerHTML = lifs.map(function(l) {
         return '<option value="'+esc(l.ip)+'">'+esc(l.name)+' — '+esc(l.ip)+'</option>';
