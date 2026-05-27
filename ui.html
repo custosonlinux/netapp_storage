@@ -5486,8 +5486,19 @@ async function impDoImport() {
     });
     spinner.style.display = 'none';
     if (btn) { btn.disabled = false; }
-    okEl.textContent = (r.restored || 0) + ' VM config(s) imported successfully.';
-    toast((r.restored || 0) + ' VM config(s) imported.', 'success');
+    var cnt = r.restored || 0;
+    okEl.textContent = cnt + ' VM config(s) imported successfully.';
+    toast(cnt + ' VM config(s) imported.', 'success');
+    // Show rename log lines (disk renames, warnings, etc.)
+    var logLines = (r.log || []).filter(function(l){ return l; });
+    if (logLines.length) {
+      var logEl = document.createElement('pre');
+      logEl.style.cssText = 'margin-top:10px;padding:8px 10px;background:var(--bg);'
+        + 'border-radius:4px;font-size:10px;color:var(--muted);'
+        + 'font-family:var(--mono);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto';
+      logEl.textContent = logLines.join('\n');
+      okEl.parentNode.insertBefore(logEl, okEl.nextSibling);
+    }
   } catch(e) {
     spinner.style.display = 'none';
     if (btn) { btn.disabled = false; }

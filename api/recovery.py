@@ -381,18 +381,25 @@ def _recovery_restore_vms():
     else:
         return {"error": f"Unsupported protocol: {protocol}"}, 400
 
-    # Write configs
+    # Write configs (+ rename disks if VMID changes)
     from ..core.recovery_engine import restore_vm_configs
+    fake_jlog = _FakeJlog()
     try:
         restored = restore_vm_configs(
             manifest, pve_host_ids,
             vmid_offset, vmids_to_restore,
             storage_id_old, pve_storage_id,
             db,
-            _FakeJlog(),
+            fake_jlog,
             vmid_map=vmid_map,
+            protocol=protocol,
+            vg_name=vg_name,
         )
-        return {"restored": restored, "message": f"{restored} VM config(s) written."}
+        return {
+            "restored": restored,
+            "message":  f"{restored} VM config(s) written.",
+            "log":      fake_jlog.lines,
+        }
     except Exception as exc:
         log.error(f"[netapp_storage] restore-vms: {exc}")
         return {"error": str(exc)}, 500
@@ -428,8 +435,12 @@ def _recovery_used_vmids():
 
 class _FakeJlog:
     """Minimal JobLogger substitute for synchronous restore-vms endpoint."""
+    def __init__(self):
+        self.lines = []
+
     def log(self, msg):
         log.info(f"[netapp_storage] restore-vms: {msg}")
+        self.lines.append(msg)
 
 
 # ── Job helpers ───────────────────────────────────────────────────────────────

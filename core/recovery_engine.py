@@ -21,6 +21,7 @@ VM config restore (protocol-independent):
 
 import json
 import logging
+import re
 import shlex
 import uuid as _uuid
 from datetime import datetime, timezone
@@ -201,9 +202,149 @@ def get_used_vmids(pve_host_ids, db):
     return []
 
 
+def _rename_vm_disks_nfs(old_vmid, new_vmid, storage_id, sh, su, sp, sk, jlog):
+    """Rename NFS disk image directory and files when VMID changes.
+
+    PVE NFS layout: /mnt/pve/{storage}/images/{vmid}/vm-{vmid}-disk-N.{ext}
+    Config path reference: {storage}:{vmid}/vm-{vmid}-disk-N.{ext}
+
+    Returns a substitution function to update config content.
+    Logs warnings on failures but does NOT raise (best-effort).
+    """
+    if old_vmid == new_vmid:
+        return None  # no rename needed
+
+    mount_base = f"/mnt/pve/{storage_id}"
+    old_vmid_s = str(old_vmid)
+    new_vmid_s = str(new_vmid)
+
+    # Locate disk directory — PVE uses images/{vmid}/ but fall back to {vmid}/
+    old_dir = new_dir = None
+    for subdir in ("images", ""):
+        candidate = (f"{mount_base}/{subdir}/{old_vmid_s}" if subdir
+                     else f"{mount_base}/{old_vmid_s}")
+        try:
+            check = ssh_run(sh, su, sp,
+                            f"test -d {shlex.quote(candidate)} && echo EXISTS || echo MISSING",
+                            capture=True, key_material=sk, timeout=10)
+            if "EXISTS" in check:
+                old_dir = candidate
+                new_dir = (f"{mount_base}/{subdir}/{new_vmid_s}" if subdir
+                           else f"{mount_base}/{new_vmid_s}")
+                break
+        except Exception:
+            pass
+
+    if not old_dir:
+        jlog.log(f"  [rename] NFS disk dir for VM {old_vmid_s} not found on {sh} — "
+                 f"disk files not renamed (config paths unchanged).")
+        return None
+
+    # Check target doesn't already exist
+    try:
+        check = ssh_run(sh, su, sp,
+                        f"test -d {shlex.quote(new_dir)} && echo EXISTS || echo MISSING",
+                        capture=True, key_material=sk, timeout=10)
+        if "EXISTS" in check:
+            jlog.log(f"  [rename] Target dir {new_dir} already exists — skipping disk rename.")
+            return None
+    except Exception:
+        pass
+
+    # Rename individual files: vm-{old_vmid}-* → vm-{new_vmid}-*
+    try:
+        ssh_run(sh, su, sp,
+                f"for f in {shlex.quote(old_dir)}/vm-{old_vmid_s}-*; do "
+                f"  [ -e \"$f\" ] || continue; "
+                f"  bn=$(basename \"$f\"); "
+                f"  nb=$(echo \"$bn\" | sed 's/^vm-{old_vmid_s}-/vm-{new_vmid_s}-/'); "
+                f"  mv -n \"$f\" {shlex.quote(old_dir)}/\"$nb\"; "
+                f"done",
+                key_material=sk, timeout=30)
+        # Rename the directory itself
+        ssh_run(sh, su, sp,
+                f"mv {shlex.quote(old_dir)} {shlex.quote(new_dir)}",
+                key_material=sk, timeout=15)
+        jlog.log(f"  [rename] NFS disks: {old_dir} → {new_dir}")
+    except Exception as exc:
+        jlog.log(f"  WARNING: NFS disk rename failed for VM {old_vmid_s}: {exc}")
+        return None
+
+    # Return a function that updates config content to use the new paths
+    def _patch(content):
+        # e.g. "aff-nfs-ds:100/vm-100-disk-0.raw" → "aff-nfs-ds:300/vm-300-disk-0.raw"
+        content = content.replace(f":{old_vmid_s}/vm-{old_vmid_s}-",
+                                  f":{new_vmid_s}/vm-{new_vmid_s}-")
+        content = re.sub(rf'(?<=[:/])vm-{re.escape(old_vmid_s)}-disk-',
+                         f'vm-{new_vmid_s}-disk-', content)
+        content = re.sub(rf'(?<=[:/])vm-{re.escape(old_vmid_s)}-cloudinit\b',
+                         f'vm-{new_vmid_s}-cloudinit', content)
+        return content
+    return _patch
+
+
+def _rename_vm_disks_san(old_vmid, new_vmid, vg_name, sh, su, sp, sk, jlog):
+    """Rename LVM logical volumes when VMID changes.
+
+    PVE SAN/LVM LV naming: vm-{vmid}-disk-N, vm-{vmid}-cloudinit
+    Returns a substitution function or None on failure.
+    """
+    if old_vmid == new_vmid or not vg_name:
+        return None
+
+    old_vmid_s = str(old_vmid)
+    new_vmid_s = str(new_vmid)
+
+    # Find all LVs matching vm-{old_vmid}-*
+    try:
+        out = ssh_run(sh, su, sp,
+                      f"lvs --noheadings -o lv_name {shlex.quote(vg_name)} 2>/dev/null "
+                      f"| grep -w 'vm-{old_vmid_s}-' | awk '{{print $1}}'",
+                      capture=True, key_material=sk, timeout=15)
+        lvs = [l.strip() for l in out.splitlines() if l.strip()]
+    except Exception as exc:
+        jlog.log(f"  WARNING: SAN disk rename — LV list failed for VM {old_vmid_s}: {exc}")
+        return None
+
+    if not lvs:
+        jlog.log(f"  [rename] No LVs found for vm-{old_vmid_s} in VG {vg_name}.")
+        return None
+
+    renamed = []
+    for old_lv in lvs:
+        new_lv = re.sub(rf'^vm-{re.escape(old_vmid_s)}-',
+                        f'vm-{new_vmid_s}-', old_lv)
+        if old_lv == new_lv:
+            continue
+        try:
+            ssh_run(sh, su, sp,
+                    f"lvrename {shlex.quote(vg_name)} "
+                    f"{shlex.quote(old_lv)} {shlex.quote(new_lv)}",
+                    key_material=sk, timeout=30)
+            jlog.log(f"  [rename] LV {old_lv} → {new_lv}")
+            renamed.append((old_lv, new_lv))
+        except Exception as exc:
+            jlog.log(f"  WARNING: lvrename {old_lv}: {exc}")
+
+    if not renamed:
+        return None
+
+    def _patch(content):
+        for old_lv, new_lv in renamed:
+            content = content.replace(f":{old_lv}", f":{new_lv}")
+            content = content.replace(f":{old_lv},", f":{new_lv},")
+        # Catch any remaining vm-{old}-disk-N / vm-{old}-cloudinit patterns
+        content = re.sub(rf'\bvm-{re.escape(old_vmid_s)}-disk-',
+                         f'vm-{new_vmid_s}-disk-', content)
+        content = re.sub(rf'\bvm-{re.escape(old_vmid_s)}-cloudinit\b',
+                         f'vm-{new_vmid_s}-cloudinit', content)
+        return content
+    return _patch
+
+
 def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
                        vmids_to_restore, storage_id_old, storage_id_new, db, jlog,
-                       vmid_map=None):
+                       vmid_map=None, protocol=None, vg_name=None):
     """Writes VM .conf files from a manifest dict to PVE hosts.
 
     manifest           : dict with 'vms' list (from manifest.json)
@@ -213,6 +354,8 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
     storage_id_old     : original pvesm storage ID in the conf (may be '')
     storage_id_new     : new pvesm storage ID after bind (may be '')
     vmid_map           : dict {orig_vmid(int): new_vmid(int)} — overrides offset
+    protocol           : 'nfs' | 'iscsi' | 'nvme' — needed for disk rename
+    vg_name            : LVM VG name (SAN only) — needed for disk rename
     Returns number of VM configs successfully written.
     """
     vms = manifest.get("vms", [])
@@ -241,18 +384,18 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
             continue
 
         # Rewrite storage ID references if the pvesm name changed
+        sid_for_rename = storage_id_new or storage_id_old
         if storage_id_old and storage_id_new and storage_id_old != storage_id_new:
-            content = content.replace(
-                f"{storage_id_old}:", f"{storage_id_new}:")
+            content = content.replace(f"{storage_id_old}:", f"{storage_id_new}:")
 
         conf_path = f"{conf_dir}/{vmid_new}.conf"
         written   = False
 
         for hid in pve_host_ids:
             try:
-                pve             = build_pve_client(db, hid)
-                su, sp, sk      = get_ssh_creds(pve)
-                sh              = pve.host
+                pve        = build_pve_client(db, hid)
+                su, sp, sk = get_ssh_creds(pve)
+                sh         = pve.host
 
                 # Skip if config already exists (idempotent)
                 check = ssh_run(
@@ -263,7 +406,27 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
                 if "EXISTS" in check:
                     jlog.log(f"  VM {vmid_new} ({vm_type}): config already exists — skipping.")
                     written = True
-                    break  # In a PVE cluster pmxcfs syncs automatically
+                    break
+
+                # ── Rename disk files/LVs when VMID changes ───────────────────
+                patch_fn = None
+                if vmid_new != vmid_orig and sid_for_rename:
+                    if protocol == "nfs":
+                        patch_fn = _rename_vm_disks_nfs(
+                            vmid_orig, vmid_new, sid_for_rename,
+                            sh, su, sp, sk, jlog)
+                    elif protocol in ("iscsi", "nvme") and vg_name:
+                        patch_fn = _rename_vm_disks_san(
+                            vmid_orig, vmid_new, vg_name,
+                            sh, su, sp, sk, jlog)
+
+                    if patch_fn:
+                        content = patch_fn(content)
+                    elif vmid_new != vmid_orig:
+                        jlog.log(f"  [rename] VMID {vmid_orig} → {vmid_new}: "
+                                 f"disk rename not performed "
+                                 f"(protocol='{protocol}', sid='{sid_for_rename}'). "
+                                 f"Config paths reference old VMID.")
 
                 ssh_run(
                     sh, su, sp,
@@ -274,7 +437,7 @@ def restore_vm_configs(manifest, pve_host_ids, vmid_offset,
                 )
                 jlog.log(f"  [{sh}] VM {vmid_new} ({vm_type}): config written → {conf_path}")
                 written = True
-                break  # Write to one node; PVE cluster syncs via pmxcfs
+                break  # pmxcfs syncs across cluster
 
             except Exception as exc:
                 jlog.log(f"  WARNING: VM {vmid_new} on host {hid}: {exc}")
