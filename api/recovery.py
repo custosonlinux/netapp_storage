@@ -250,8 +250,7 @@ def _recovery_bind():
     protocol = body["protocol"]
     if protocol not in ("nfs", "iscsi", "nvme"):
         return {"error": f"Unknown protocol: {protocol}"}, 400
-    if protocol in ("iscsi", "nvme") and not body.get("vg_name"):
-        return {"error": "vg_name required for iSCSI/NVMe bind"}, 400
+    # vg_name is optional — auto-detected from device if not provided
 
     db       = get_db()
     username = request.session.get("user", "unknown")
