@@ -653,9 +653,6 @@ def _bind_iscsi(ds_id, params, db, jlog):
     lvm_type       = params.get("lvm_type", "linear")
     lvm_pool_name  = params.get("lvm_pool_name", "") or "data"
 
-    if not vg_name:
-        raise RuntimeError("vg_name is required for iSCSI bind")
-
     endpoint = get_endpoint(db, endpoint_id)
     client   = build_ontap_client(endpoint)
 
@@ -724,6 +721,28 @@ def _bind_iscsi(ds_id, params, db, jlog):
                 key_material=sk, timeout=40)
         device = find_device_by_serial(sh, su, sp, sk, serial, timeout_s=60)
         jlog.log(f"[{sh}] Device ready: {device}")
+
+        # ── Auto-detect VG name if not provided ───────────────────────────────
+        if not vg_name:
+            try:
+                ssh_run(sh, su, sp,
+                        f"pvscan --cache 2>/dev/null; true",
+                        key_material=sk, timeout=15)
+                detected = ssh_run(sh, su, sp,
+                                   f"pvs --noheadings -o vg_name {shlex.quote(device)} "
+                                   f"2>/dev/null | awk '{{print $1}}' | head -1",
+                                   capture=True, key_material=sk, timeout=10).strip()
+                if detected:
+                    vg_name = detected
+                    jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
+                else:
+                    raise RuntimeError(
+                        f"No LVM VG found on device {device}. "
+                        "Provide vg_name manually for a new/empty LUN.")
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f"VG name auto-detection failed: {exc}")
 
         # Activate existing VG (data is intact) or create fresh if not present
         vg_q  = shlex.quote(vg_name)
@@ -843,9 +862,6 @@ def _bind_nvme(ds_id, params, db, jlog):
     lvm_type       = params.get("lvm_type", "linear")
     lvm_pool_name  = params.get("lvm_pool_name", "") or "data"
 
-    if not vg_name:
-        raise RuntimeError("vg_name is required for NVMe bind")
-
     endpoint = get_endpoint(db, endpoint_id)
     client   = build_ontap_client(endpoint)
 
@@ -919,6 +935,28 @@ def _bind_nvme(ds_id, params, db, jlog):
             device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
         jlog.log(f"[{sh}] Device ready: {device}")
         host_meta[hid]["device"] = device
+
+        # ── Auto-detect VG name if not provided ───────────────────────────────
+        if not vg_name:
+            try:
+                ssh_run(sh, su, sp,
+                        f"pvscan --cache 2>/dev/null; true",
+                        key_material=sk, timeout=15)
+                detected = ssh_run(sh, su, sp,
+                                   f"pvs --noheadings -o vg_name {shlex.quote(device)} "
+                                   f"2>/dev/null | awk '{{print $1}}' | head -1",
+                                   capture=True, key_material=sk, timeout=10).strip()
+                if detected:
+                    vg_name = detected
+                    jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
+                else:
+                    raise RuntimeError(
+                        f"No LVM VG found on device {device}. "
+                        "Provide vg_name manually for a new/empty namespace.")
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f"VG name auto-detection failed: {exc}")
 
         vg_q  = shlex.quote(vg_name)
         dev_q = shlex.quote(device)

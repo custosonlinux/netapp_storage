@@ -1778,8 +1778,8 @@ function applyI18n() {
               <input class="form-control" id="rcvStorageId" placeholder="e.g. netapp-prod">
             </div>
             <div class="form-group" id="rcvVgRow">
-              <label>VG Name <span style="color:var(--muted);font-weight:400">(existing LVM volume group)</span></label>
-              <input class="form-control" id="rcvVgName" placeholder="e.g. pve-san-vg">
+              <label>VG Name <span style="color:var(--muted);font-weight:400">(optional — auto-detected if empty)</span></label>
+              <input class="form-control" id="rcvVgName" placeholder="auto-detect from device">
             </div>
             <div class="form-group" id="rcvLvmTypeRow">
               <label>LVM Type</label>
@@ -5112,9 +5112,7 @@ function rcvNext2() {
   if (!hosts.length) { alert('Select at least one PVE host.'); return; }
   var isSan  = rcvState.protocol==='iscsi'||rcvState.protocol==='nvme';
   if (isSan) {
-    var vg = document.getElementById('rcvVgName').value.trim();
-    if (!vg) { alert('VG Name is required for iSCSI/NVMe.'); return; }
-    rcvState.vg_name   = vg;
+    rcvState.vg_name   = document.getElementById('rcvVgName').value.trim();
     rcvState.lvm_type  = document.getElementById('rcvLvmType').value;
     rcvState.pool_name = document.getElementById('rcvPoolName').value.trim() || 'data';
   }
@@ -5138,7 +5136,7 @@ function rcvNext2() {
     lines.push('🌐 NFS LIF: <strong>'+esc(rcvState.nfs_ip)+'</strong>');
   }
   if (isSan) {
-    lines.push('🗄️  VG: <strong>'+esc(rcvState.vg_name)+'</strong> ('+esc(rcvState.lvm_type)+')');
+    lines.push('🗄️  VG: <strong>'+(rcvState.vg_name||'<em style="color:var(--muted)">auto-detect</em>')+'</strong> ('+esc(rcvState.lvm_type)+')');
     if (rcvState.lvm_type==='thin') lines.push('📊 Thin pool: <strong>'+esc(rcvState.pool_name)+'</strong>');
   }
   if (rcvState.junction_override) {
