@@ -92,6 +92,22 @@ def _prov_datastores():
                         "UPDATE netapp_provisioned_datastores SET vg_name=? WHERE id=?",
                         (vg, d["id"]),
                     )
+            # Backfill size_bytes from ONTAP for active datastores that have none yet
+            if not d.get("size_bytes") and d.get("volume_uuid") and d.get("status") == "active":
+                try:
+                    from ..core._helpers import get_endpoint, build_ontap_client
+                    endpoint   = get_endpoint(db, d["endpoint_id"])
+                    tmp_client = build_ontap_client(endpoint)
+                    vol_info   = tmp_client.get_volume(d["volume_uuid"])
+                    sz = (vol_info.get("space") or {}).get("size", 0)
+                    if sz:
+                        d["size_bytes"] = sz
+                        db.execute(
+                            "UPDATE netapp_provisioned_datastores SET size_bytes=? WHERE id=?",
+                            (sz, d["id"]),
+                        )
+                except Exception:
+                    pass
             result.append(d)
         return {"datastores": result}
 

@@ -167,7 +167,7 @@ class OntapClient:
 
     def get_volume(self, volume_uuid):
         return self._get(f"storage/volumes/{volume_uuid}",
-                         params={"fields": "uuid,name,svm,nas.path,state"})
+                         params={"fields": "uuid,name,svm,nas.path,state,space"})
 
     # ── Snapshots ───────────────────────────────────────────────────────────
 
