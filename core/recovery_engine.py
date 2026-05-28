@@ -714,15 +714,17 @@ def _bind_iscsi(ds_id, params, db, jlog):
     mapper_dev    = _iscsi_serial_to_mapper(serial)
     ordered_hosts = [hid for hid in pve_host_ids if hid in host_meta]
 
-    # ── Per-host: login → activate / create VG ────────────────────────────────
+    # ── Per-host: discover → login → device → activate VG ────────────────────
     for hid in ordered_hosts:
         m  = host_meta[hid]
         sh, su, sp, sk = m["host"], m["user"], m["pass"], m["key"]
 
-        jlog.log(f"[{sh}] iSCSI discover + login …")
+        jlog.log(f"[{sh}] Discovering iSCSI target …")
         ssh_run(sh, su, sp,
                 f"iscsiadm -m discovery -t sendtargets -p {shlex.quote(portal_ip)} 2>&1 || true",
                 key_material=sk, timeout=30)
+
+        jlog.log(f"[{sh}] Logging into target …")
         ssh_run(sh, su, sp,
                 f"iscsiadm -m node -T {shlex.quote(target_iqn)} -p {shlex.quote(portal_ip)}"
                 f" --login 2>&1 || true",
@@ -736,52 +738,45 @@ def _bind_iscsi(ds_id, params, db, jlog):
         device = find_device_by_serial(sh, su, sp, sk, serial, timeout_s=60)
         jlog.log(f"[{sh}] Device ready: {device}")
 
-        # ── Auto-detect VG name if not provided ───────────────────────────────
+        # ── Auto-detect VG name (best-effort, matches provisioning pvscan pattern)
         if not vg_name:
-            try:
-                # Scan the specific device AND the persistent mapper path.
-                # find_device_by_serial may return /dev/dm-N (transient dm number)
-                # when the persistent /dev/mapper/WWID symlink isn't present yet.
-                # pvs /dev/dm-N may fail if LVM cached the PV under the mapper path.
-                dev_q_scan    = shlex.quote(device)
-                mapper_q_scan = shlex.quote(mapper_dev)
-                # Use -aay (auto-activate) like provisioning does — forces LVM to
-                # scan the device and make PV metadata visible to subsequent pvs calls.
-                ssh_run(sh, su, sp,
-                        f"pvscan --cache -aay {dev_q_scan} 2>/dev/null; "
-                        f"pvscan --cache -aay {mapper_q_scan} 2>/dev/null; true",
-                        key_material=sk, timeout=15)
-                detected = ""
-                for dev_try in [device, mapper_dev]:
-                    out = ssh_run(sh, su, sp,
-                                  f"pvs --noheadings -o vg_name {shlex.quote(dev_try)} "
-                                  f"2>/dev/null | awk '{{print $1}}' | head -1",
-                                  capture=True, key_material=sk, timeout=10)
-                    detected = out.strip()
-                    if detected:
+            jlog.log(f"[{sh}] VG name not set — scanning device for LVM VG …")
+            # pvscan --cache -aay activates VGs on the device (same as provisioning).
+            # vgscan rescans all devices for VG metadata (catches foreign/SnapMirror VGs).
+            ssh_run(sh, su, sp,
+                    f"pvscan --cache -aay {shlex.quote(mapper_dev)} 2>/dev/null; "
+                    "vgscan 2>/dev/null; true",
+                    key_material=sk, timeout=20)
+            # Try both mapper path (persistent) and raw device path
+            for _dev_try in [mapper_dev, device]:
+                try:
+                    _out = ssh_run(sh, su, sp,
+                                   f"pvs --noheadings -o vg_name {shlex.quote(_dev_try)} "
+                                   f"2>/dev/null | awk '{{print $1}}' | head -1",
+                                   capture=True, key_material=sk, timeout=10)
+                    _detected = _out.strip()
+                    if _detected:
+                        vg_name = _detected
+                        jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
+                        db.execute(
+                            "UPDATE netapp_provisioned_datastores SET vg_name=?, updated_at=? WHERE id=?",
+                            (vg_name, _now(), ds_id),
+                        )
                         break
-                if detected:
-                    vg_name = detected
-                    jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
-                    db.execute(
-                        "UPDATE netapp_provisioned_datastores SET vg_name=?, updated_at=? WHERE id=?",
-                        (vg_name, _now(), ds_id),
-                    )
-                else:
-                    raise RuntimeError(
-                        f"No LVM VG found on device {device}. "
-                        "Provide vg_name manually for a new/empty LUN.")
-            except RuntimeError:
-                raise
-            except Exception as exc:
-                raise RuntimeError(f"VG name auto-detection failed: {exc}")
+                except Exception:
+                    pass
+            if not vg_name:
+                raise RuntimeError(
+                    f"No LVM VG found on {mapper_dev} (device confirmed ready). "
+                    "The LUN has no LVM volume group — either set vg_name to create one, "
+                    "or verify the LUN was provisioned with LVM.")
 
-        # Activate existing VG (data is intact) or create fresh if not present
+        # ── Activate or create VG (mirrors provisioning's vgs EXISTS/MISSING check) ──
         vg_q  = shlex.quote(vg_name)
         dev_q = shlex.quote(device)
         out   = ssh_run(sh, su, sp,
                         f"vgs {vg_q} 2>/dev/null && echo EXISTS || echo MISSING",
-                        capture=True, key_material=sk)
+                        capture=True, key_material=sk, timeout=20)
         if "EXISTS" in out:
             jlog.log(f"[{sh}] VG '{vg_name}' found — activating …")
             ssh_run(sh, su, sp,
@@ -790,9 +785,10 @@ def _bind_iscsi(ds_id, params, db, jlog):
                     key_material=sk, timeout=30)
             jlog.log(f"[{sh}] VG active.")
         else:
-            jlog.log(f"[{sh}] VG '{vg_name}' not found — creating …")
-            ssh_run(sh, su, sp, f"pvcreate {dev_q}", key_material=sk)
-            ssh_run(sh, su, sp, f"vgcreate {vg_q} {dev_q}", key_material=sk)
+            jlog.log(f"[{sh}] VG '{vg_name}' not found — creating PV + VG …")
+            ssh_run(sh, su, sp, f"pvcreate {dev_q}", key_material=sk, timeout=30)
+            ssh_run(sh, su, sp, f"vgcreate {vg_q} {dev_q}", key_material=sk, timeout=30)
+            jlog.log(f"[{sh}] VG '{vg_name}' created.")
             if lvm_type == "thin":
                 ssh_run(sh, su, sp,
                         f"lvcreate -l 95%VG --thin {vg_q}/{shlex.quote(lvm_pool_name)}",
@@ -803,9 +799,8 @@ def _bind_iscsi(ds_id, params, db, jlog):
                 jlog.log(f"[{sh}] snapmanifest LV initialized.")
             except Exception as exc:
                 jlog.log(f"[{sh}] WARNING: snapmanifest init: {exc}")
-            jlog.log(f"[{sh}] VG '{vg_name}' created.")
 
-    # ── pvscan on ALL hosts ────────────────────────────────────────────────────
+    # ── All hosts: pvscan --cache -aay (matches provisioning's second pass) ───
     jlog.log("Activating VG on all hosts via pvscan …")
     for hid in ordered_hosts:
         m  = host_meta[hid]
@@ -814,6 +809,7 @@ def _bind_iscsi(ds_id, params, db, jlog):
             ssh_run(sh, su, sp,
                     f"pvscan --cache -aay {shlex.quote(mapper_dev)} 2>/dev/null; true",
                     key_material=sk, timeout=30)
+            jlog.log(f"[{sh}] pvscan done.")
         except Exception as exc:
             jlog.log(f"[{sh}] WARNING: pvscan: {exc}")
 
