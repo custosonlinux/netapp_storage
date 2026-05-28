@@ -484,7 +484,7 @@ de:{
   sm_no_dest_ep:'Kein Sekundär-Endpoint — erst scannen',
   ct_dr_clone:'DR-Clone von Sekundärsystem',btn_start_dr_clone:'DR-Clone starten',
   sm_source_vol:'Quell-Volume',sm_dest_vol:'Ziel-Volume',sm_state:'Zustand',sm_lag:'Verzug',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',tab_recovery:'Recovery',
   sect_smtp:'E-Mail-Benachrichtigungen (SMTP)',
   lbl_smtp_host:'SMTP-Server',lbl_smtp_port:'Port',lbl_smtp_user:'Benutzername',
   lbl_smtp_pass:'Passwort',lbl_smtp_from:'Absender (Von)',lbl_smtp_encryption:'Verschlüsselung',
@@ -598,7 +598,7 @@ en:{
   sm_no_dest_ep:'No secondary endpoint configured — scan first',
   ct_dr_clone:'DR Clone from Secondary',btn_start_dr_clone:'Start DR Clone',
   sm_source_vol:'Source Volume',sm_dest_vol:'Destination Volume',sm_state:'State',sm_lag:'Lag',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',tab_recovery:'Recovery',
   sect_smtp:'Email Notifications (SMTP)',
   lbl_smtp_host:'SMTP Server',lbl_smtp_port:'Port',lbl_smtp_user:'Username',
   lbl_smtp_pass:'Password',lbl_smtp_from:'Sender (From)',lbl_smtp_encryption:'Encryption',
@@ -712,7 +712,7 @@ fr:{
   sm_no_dest_ep:'Aucun endpoint secondaire configuré — scanner d\'abord',
   ct_dr_clone:'DR Clone depuis le secondaire',btn_start_dr_clone:'Démarrer DR Clone',
   sm_source_vol:'Volume Source',sm_dest_vol:'Volume Destination',sm_state:'État',sm_lag:'Décalage',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',tab_recovery:'Recovery',
   sect_smtp:'Notifications e-mail (SMTP)',
   lbl_smtp_host:'Serveur SMTP',lbl_smtp_port:'Port',lbl_smtp_user:"Nom d'utilisateur",
   lbl_smtp_pass:'Mot de passe',lbl_smtp_from:'Expéditeur (De)',lbl_smtp_encryption:'Chiffrement',
@@ -826,7 +826,7 @@ es:{
   sm_no_dest_ep:'Sin endpoint secundario configurado — escanear primero',
   ct_dr_clone:'DR Clone desde Secundario',btn_start_dr_clone:'Iniciar DR Clone',
   sm_source_vol:'Volumen Origen',sm_dest_vol:'Volumen Destino',sm_state:'Estado',sm_lag:'Retraso',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',tab_recovery:'Recovery',
   sect_smtp:'Notificaciones por correo (SMTP)',
   lbl_smtp_host:'Servidor SMTP',lbl_smtp_port:'Puerto',lbl_smtp_user:'Usuario',
   lbl_smtp_pass:'Contraseña',lbl_smtp_from:'Remitente (De)',lbl_smtp_encryption:'Cifrado',
@@ -940,7 +940,7 @@ pt:{
   sm_no_dest_ep:'Sem endpoint secundário configurado — escanear primeiro',
   ct_dr_clone:'DR Clone do Secundário',btn_start_dr_clone:'Iniciar DR Clone',
   sm_source_vol:'Volume Origem',sm_dest_vol:'Volume Destino',sm_state:'Estado',sm_lag:'Atraso',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',tab_recovery:'Recovery',
   sect_smtp:'Notificações por e-mail (SMTP)',
   lbl_smtp_host:'Servidor SMTP',lbl_smtp_port:'Porta',lbl_smtp_user:'Usuário',
   lbl_smtp_pass:'Senha',lbl_smtp_from:'Remetente (De)',lbl_smtp_encryption:'Criptografia',
@@ -1054,7 +1054,7 @@ ko:{
   sm_no_dest_ep:'보조 엔드포인트 미구성 — 먼저 스캔하세요',
   ct_dr_clone:'보조에서 DR 클론',btn_start_dr_clone:'DR 클론 시작',
   sm_source_vol:'소스 볼륨',sm_dest_vol:'대상 볼륨',sm_state:'상태',sm_lag:'지연',
-  tab_restore:'복원',tab_clone:'클론',tab_provision:'프로비전',tab_recovery:'복구',
+  tab_restore:'복원',tab_clone:'클론',tab_provision:'프로비전',tab_storage:'스토리지',tab_recovery:'복구',
   sect_smtp:'이메일 알림 (SMTP)',
   lbl_smtp_host:'SMTP 서버',lbl_smtp_port:'포트',lbl_smtp_user:'사용자 이름',
   lbl_smtp_pass:'비밀번호',lbl_smtp_from:'보낸 사람 (From)',lbl_smtp_encryption:'암호화',
@@ -1168,7 +1168,7 @@ it:{
   sm_no_dest_ep:'Nessun endpoint secondario configurato — scansionare prima',
   ct_dr_clone:'DR Clone dal Secondario',btn_start_dr_clone:'Avvia DR Clone',
   sm_source_vol:'Volume Sorgente',sm_dest_vol:'Volume Destinazione',sm_state:'Stato',sm_lag:'Ritardo',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_recovery:'Recovery',
+  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',tab_recovery:'Recovery',
   sect_smtp:'Notifiche e-mail (SMTP)',
   lbl_smtp_host:'Server SMTP',lbl_smtp_port:'Porta',lbl_smtp_user:'Nome utente',
   lbl_smtp_pass:'Password',lbl_smtp_from:'Mittente (Da)',lbl_smtp_encryption:'Cifratura',
@@ -1214,8 +1214,7 @@ function applyI18n() {
     <div class="subtab" data-tab="schedules" data-i18n="tab_schedules">Schedules</div>
     <div class="subtab" data-tab="restore" data-i18n="tab_restore">Restore</div>
     <div class="subtab" data-tab="clone" data-i18n="tab_clone">Clone</div>
-    <div class="subtab" data-tab="snapmirror" data-i18n="tab_snapmirror">SnapMirror®</div>
-    <div class="subtab" data-tab="provision" data-i18n="tab_provision">Provision</div>
+    <div class="subtab" data-tab="storage" data-i18n="tab_storage">Storage</div>
     <div class="subtab" data-tab="recovery" data-i18n="tab_recovery">Recovery</div>
     <div class="subtab" data-tab="jobs" data-i18n="tab_jobs">Jobs &amp; Logs</div>
     <div class="subtab" data-tab="settings" data-i18n="tab_settings">Settings</div>
@@ -1494,30 +1493,6 @@ function applyI18n() {
     </div>
 
     <!-- ══════════════════════ SNAPMIRROR® ══════════════════════ -->
-    <div id="tab-snapmirror" class="tab-panel" style="display:none">
-      <div class="card">
-        <div class="card-header" style="display:flex;align-items:center;gap:8px">
-          <h2 data-i18n="sect_sm_rels">SnapMirror® Relationships</h2>
-          <button class="btn btn-primary btn-sm" onclick="scanSnapMirror()" style="margin-left:auto"><span data-i18n="sm_scan">Scan</span></button>
-        </div>
-        <div id="sm_rel_container">
-          <table class="data-table" style="margin-top:8px">
-            <thead><tr>
-              <th data-i18n="sm_source_vol">Source Volume</th>
-              <th data-i18n="sm_dest_vol">Destination Volume</th>
-              <th>Policy</th>
-              <th data-i18n="sm_state">State</th>
-              <th data-i18n="sm_lag">Lag</th>
-              <th data-i18n="th_actions">Actions</th>
-            </tr></thead>
-            <tbody id="smRelBody">
-              <tr><td colspan="6" class="empty"><span data-i18n="sm_no_rels">No SnapMirror® relationships found. Configure an endpoint and run scan.</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
     <!-- ═══════════════════════ VM-RESTORE ══════════════════════ -->
     <div id="tab-restore" class="tab-panel" style="display:none">
       <div class="card">
@@ -1690,12 +1665,17 @@ function applyI18n() {
     </div>
 
     <!-- ══════════════════════ PROVISION ══════════════════════ -->
-    <div id="tab-provision" class="tab-panel" style="display:none">
+    <div id="tab-storage" class="tab-panel" style="display:none">
 
       <div class="section-actions">
         <button class="btn btn-primary" onclick="showProvWizard()">+ Provision New</button>
-        <button class="btn btn-secondary" onclick="showBindWizard()">⇢ Mount existing Datastore</button>
-        <button class="btn btn-ghost" onclick="loadProvDatastores()">Refresh</button>
+        <button class="btn btn-secondary" onclick="showBindWizard()">⇢ Mount existing</button>
+        <button class="btn btn-ghost" onclick="runDiscovery()">
+          <span id="discoverSpinner" style="display:none" class="spinner"></span>
+          🔍 Detect
+        </button>
+        <button class="btn btn-ghost" onclick="scanSnapMirror()">↻ Scan SnapMirror</button>
+        <button class="btn btn-ghost" onclick="loadStorageUnified()">⟳ Refresh</button>
       </div>
 
       <!-- ── Bind Wizard (moved from Recovery tab) ─────────────────── -->
@@ -2055,16 +2035,16 @@ function applyI18n() {
 
       </div><!-- /provWizCard -->
 
-      <!-- ── Datastores table ────────────────────────────────────── -->
+      <!-- ── All Datastores table ──────────────────────────────── -->
       <div class="card table-scroll">
-        <div class="card-title">Managed Datastores</div>
-        <div id="provEmpty" class="empty" style="display:none">No provisioned datastores yet. Click &ldquo;+ Add Datastore&rdquo; to get started.</div>
-        <table>
+        <div class="card-title">All Datastores</div>
+        <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click &ldquo;🔍 Detect&rdquo; to discover existing datastores, or &ldquo;+ Provision New&rdquo; to create one.</div>
+        <table style="min-width:1040px">
           <thead><tr>
             <th>Name</th><th>Protocol</th><th>Volume</th><th>VG / Mount</th>
-            <th>Hosts</th><th>Size</th><th>Status</th><th>Actions</th>
+            <th>Hosts</th><th>Size</th><th>SnapMirror®</th><th>Status</th><th>Actions</th>
           </tr></thead>
-          <tbody id="provTbody"></tbody>
+          <tbody id="storageTbody"></tbody>
         </table>
       </div>
 
@@ -2337,28 +2317,6 @@ function applyI18n() {
         </table>
       </div>
 
-      <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title" data-i18n="sect_discovery">Volume Discovery</span>
-        <button class="btn btn-primary btn-sm" onclick="runDiscovery()">
-          <span id="discoverSpinner" style="display:none" class="spinner"></span>
-          <span data-i18n="btn_detect_now">Detect Now</span>
-        </button>
-        <span class="section-hint" style="margin-left:8px" data-i18n="hint_discovery">Scans PVE hosts for NFS, iSCSI, and NVMe datastores and maps them to ONTAP volumes.</span>
-      </div>
-
-
-      <div class="card table-scroll">
-        <table style="min-width:900px">
-          <thead><tr>
-            <th data-i18n="th_pve_hosts">PVE Hosts</th><th data-i18n="th_storage_id">Storage-ID</th><th data-i18n="th_svm">SVM</th><th data-i18n="th_volume">Volume</th>
-            <th data-i18n="th_junction">Protocol / Path</th><th data-i18n="th_nfs_server">Details</th><th data-i18n="th_endpoint">Endpoint</th><th data-i18n="th_detected">Discovered on</th><th></th>
-          </tr></thead>
-          <tbody id="mappingsBody">
-            <tr><td colspan="9" class="empty" data-i18n="hint_no_discovery">No discovery performed yet.</td></tr>
-          </tbody>
-        </table>
-      </div>
-
       <!-- ═══════════════ EMAIL / SMTP ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
         <span class="sub-header-title" data-i18n="sect_smtp">Email Notifications (SMTP)</span>
@@ -2545,13 +2503,12 @@ document.querySelectorAll('.subtab').forEach(function(t) {
     var loaders = {
       snapshots: loadSnapshots,
       schedules: loadSchedules,
-      snapmirror: loadSnapMirrorRelationships,
       restore:   function(){ loadSnapshotsForRestore(); loadDrRelationshipSelector(); },
       clone:     function(){ loadCloneSnapshots(); loadDrCloneRelationshipSelector(); },
-      provision: loadProvDatastores,
+      storage:   loadStorageUnified,
       recovery:  function(){ impLoadDatastores(); },
       jobs:      loadAllJobs,
-      settings:  function(){ loadEndpoints(); loadPveHosts(); loadMappings(); loadSmtp(); }
+      settings:  function(){ loadEndpoints(); loadPveHosts(); loadSmtp(); }
     };
     if (loaders[t.dataset.tab]) loaders[t.dataset.tab]();
   });
@@ -2617,9 +2574,8 @@ async function testEndpoint(id, name) {
 async function discoverOne(id) {
   document.querySelectorAll('.subtab').forEach(function(x){ x.classList.remove('active'); });
   document.querySelectorAll('.tab-panel').forEach(function(x){ x.style.display='none'; });
-  document.querySelector('[data-tab="settings"]').classList.add('active');
-  document.getElementById('tab-settings').style.display = 'block';
-  loadEndpoints(); loadPveHosts();
+  document.querySelector('[data-tab="storage"]').classList.add('active');
+  document.getElementById('tab-storage').style.display = 'block';
   runDiscovery(id);
 }
 
@@ -2780,7 +2736,7 @@ async function snapmanifestCheck(mappingId, storageId) {
       toast('snapmanifest LV ' + r.lv + ' OK', 'success');
     } else {
       toast('snapmanifest LV ' + r.lv + ' not found — resetting status', 'warning');
-      loadMappings();
+      loadStorageUnified();
     }
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -2791,7 +2747,7 @@ async function snapmanifestInit(mappingId, storageId) {
     var r = await apiPost('san/snapmanifest-init', {mapping_id: mappingId});
     if (r.success) {
       toast(r.message || 'snapmanifest initialized', 'success');
-      loadMappings();
+      loadStorageUnified();
     } else {
       toast(r.error || 'Error', 'error');
     }
@@ -2804,7 +2760,7 @@ async function deleteMapping(mappingId, storageId) {
     var r = await apiPost('volume-mappings/delete', {mapping_id: mappingId});
     if (r.success) {
       toast('Mapping "'+storageId+'" removed', 'success');
-      loadMappings();
+      loadStorageUnified();
     } else {
       toast(r.error || 'Delete failed', 'error');
     }
@@ -2813,15 +2769,15 @@ async function deleteMapping(mappingId, storageId) {
 
 async function importToProvisioning(mappingId, storageId) {
   if (!await uiConfirm(
-    'Add "'+storageId+'" to the Provisioning tab?\n\n' +
+    'Add "'+storageId+'" to the managed datastores?\n\n' +
     'The plugin will look up the ONTAP objects (iGroup, LUN, subsystem) automatically. ' +
-    'The datastore will appear in Provisioning as "active" and can then be resized or removed.',
-    'Add to Provisioning', 'btn-primary')) return;
+    'The datastore will appear as "managed" and can then be resized or removed.',
+    'Add to managed', 'btn-primary')) return;
   try {
     var r = await apiPost('provisioning/datastores/import', {mapping_id: mappingId});
     if (r.success) {
-      toast('"'+r.name+'" added to Provisioning tab', 'success');
-      loadMappings();
+      toast('"'+r.name+'" is now managed', 'success');
+      loadStorageUnified();
     } else {
       toast(r.error || 'Import failed', 'error');
     }
@@ -2829,12 +2785,12 @@ async function importToProvisioning(mappingId, storageId) {
 }
 
 async function runDiscovery(endpointId) {
-  document.getElementById('discoverSpinner').style.display = 'inline-block';
+  var sp = document.getElementById('discoverSpinner');
+  if (sp) sp.style.display = 'inline-block';
   try {
     var body = endpointId ? {endpoint_id: endpointId} : {};
     var d = await apiPost('discover', body);
     if (d.count > 0) {
-      // Count unique volumes (same as table grouping) to match the displayed row count
       var seen = {};
       (d.mappings || []).forEach(function(m) { seen[m.volume_uuid || m.volume_name || m.id] = 1; });
       var dispCount = Object.keys(seen).length || d.count;
@@ -2842,9 +2798,9 @@ async function runDiscovery(endpointId) {
     } else {
       toast(t('msg_discovery_none'), 'info');
     }
-    loadMappings();
+    loadStorageUnified();
   } catch(e) { toast(e.message,'error'); }
-  finally { document.getElementById('discoverSpinner').style.display = 'none'; }
+  finally { if (sp) sp.style.display = 'none'; }
 }
 
 // ═══════════════════════════ SNAPSHOTS ════════════════════════════════════
@@ -4076,38 +4032,15 @@ function schedSmBadge(sm) {
 
 // ═══════════════════════════ SNAPMIRROR® ══════════════════════════════════════
 
-async function loadSnapMirrorRelationships() {
-  var tbody = document.getElementById('smRelBody');
-  tbody.innerHTML = '<tr><td colspan="6" class="empty"><span class="spinner"></span></td></tr>';
-  try {
-    var rels = await apiFetch('snapmirror/relationships');
-    if (!rels.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">'+t('sm_no_rels')+'</td></tr>';
-      return;
-    }
-    tbody.innerHTML = rels.map(function(r) {
-      var stateColor = r.state === 'snapmirrored' ? 'green' : r.state === 'broken_off' ? 'red' : 'gray';
-      var epBadge = r.dest_endpoint_id
-        ? '<span class="badge badge-blue">'+esc(r.dest_endpoint_name||r.dest_cluster_name)+'</span>'
-        : '<span class="badge badge-gray">'+t('sm_unmatched')+'</span>';
-      return '<tr>' +
-        '<td><code>'+esc(r.source_volume)+'</code></td>' +
-        '<td><code>'+esc(r.dest_cluster_name)+':'+esc(r.dest_volume)+'</code><br>'+epBadge+'</td>' +
-        '<td><span style="opacity:.7">'+esc(r.policy_type||'–')+'</span></td>' +
-        '<td><span class="badge badge-'+stateColor+'">'+esc(r.state||'–')+'</span></td>' +
-        '<td style="color:var(--muted);font-size:12px">'+formatLag(r.lag_time)+'</td>' +
-        '<td><button class="btn btn-ghost btn-sm" onclick="smUpdateNow(\''+r.id+'\')">'+t('sm_update_now')+'</button></td>' +
-        '</tr>';
-    }).join('');
-  } catch(e) { toast(e.message, 'error'); }
-}
+// loadSnapMirrorRelationships() removed — SnapMirror status is now
+// shown inline in the Storage tab via loadStorageUnified().
 
 async function scanSnapMirror() {
-  toast('…', 'info');
+  toast('Scanning SnapMirror® relationships…', 'info');
   try {
     var r = await apiPost('snapmirror/scan', {});
     toast(r.found + ' relationship(s) found' + (r.errors.length ? ' ('+r.errors.length+' error(s))' : ''), 'success');
-    loadSnapMirrorRelationships();
+    loadStorageUnified();
     loadDrRelationshipSelector();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -4383,43 +4316,88 @@ async function testSmtp() {
 var _provPveHosts = [];
 var _provOntapRes = {volumes:[], luns:[], igroups:[]};
 
-async function loadProvDatastores() {
+async function loadStorageUnified() {
   try {
-    var d = await apiFetch('provisioning/datastores');
-    var rows = d.datastores || [];
-    var tbody = document.getElementById('provTbody');
-    var empty = document.getElementById('provEmpty');
-    if (!rows.length) {
+    var d = await apiFetch('storage/unified');
+    var items = d.items || [];
+    var tbody = document.getElementById('storageTbody');
+    var empty = document.getElementById('storageEmpty');
+    if (!items.length) {
       tbody.innerHTML = '';
       empty.style.display = 'block';
       return;
     }
     empty.style.display = 'none';
-    tbody.innerHTML = rows.map(function(ds) {
+    tbody.innerHTML = items.map(function(ds) {
       var _protoBg = {nfs:'#0ea5e9', iscsi:'#f97316', nvme:'#a855f7'}[ds.protocol];
-      var _protoBadge = _protoBg
-        ? '<span class="badge" style="background:'+_protoBg+';color:#fff">'+esc((ds.protocol||'').toUpperCase())+'</span>'
-        : '<span class="badge badge-gray">'+esc((ds.protocol||'').toUpperCase())+'</span>';
-      var sc = {active:'badge-green', provisioning:'badge-orange', error:'badge-red', removing:'badge-orange'}[ds.status]||'badge-gray';
+      var _protoBadge = '<span class="badge" style="background:'+(_protoBg||'#888')+';color:#fff">'
+        + esc((ds.protocol||'').toUpperCase()) + '</span>';
+      var _srcBadge = ds.source === 'provisioned'
+        ? '<span class="badge badge-blue" style="font-size:9px;padding:1px 5px">managed</span>'
+        : '<span class="badge badge-gray" style="font-size:9px;padding:1px 5px">discovered</span>';
+      var sc = {active:'badge-green', provisioning:'badge-orange', error:'badge-red',
+                removing:'badge-orange'}[ds.status] || 'badge-gray';
+      // SnapMirror cell
+      var smCell;
+      if (ds.snapmirror) {
+        var sm = ds.snapmirror;
+        var smColor = sm.state === 'snapmirrored' ? 'green'
+                    : sm.state === 'broken_off'   ? 'red' : 'gray';
+        smCell = '<span class="badge badge-'+smColor+'" style="font-size:10px">'
+          + esc(sm.state||'–') + '</span>';
+        if (sm.lag_time)
+          smCell += '<br><span style="color:var(--muted);font-size:10px">'+formatLag(sm.lag_time)+'</span>';
+        smCell += ' <button class="btn btn-ghost btn-sm"'
+          + ' style="padding:1px 5px;font-size:10px;vertical-align:middle"'
+          + ' onclick="smUpdateNow(\''+sm.id+'\')" title="Trigger SnapMirror update">↻</button>';
+      } else {
+        smCell = '<span style="color:var(--muted)">—</span>';
+      }
+      // Hosts
       var hosts = (ds.pve_host_ids||[]).length;
-      return '<tr>' +
-        '<td><strong>'+esc(ds.name)+'</strong></td>' +
-        '<td>'+_protoBadge+'</td>' +
-        '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.volume_name||(ds.volume_uuid||'').slice(0,8))+'</td>' +
-        '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.vg_name||ds.nfs_junction_path||'–')+'</td>' +
-        '<td>'+hosts+' host'+(hosts===1?'':'s')+'</td>' +
-        '<td>'+(ds.size_bytes?fmtBytes(ds.size_bytes):'–')+'</td>' +
-        '<td><span class="badge '+sc+'">'+esc(ds.status)+'</span>' +
-          (ds.error_message?'<br><span style="color:var(--error);font-size:10px">'+esc(ds.error_message.slice(0,60))+'</span>':'')+
-        '</td>' +
-        '<td><div class="row-actions">' +
-          '<button class="btn btn-success btn-sm" onclick="showAddHostDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+JSON.stringify(ds.pve_host_ids||[]).replace(/"/g,'&quot;')+')">+ Host</button> ' +
-          '<button class="btn btn-success btn-sm" onclick="showResizeDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','+ds.size_bytes+',\''+esc(ds.protocol||'')+'\')">Resize</button> ' +
-          '<button class="btn btn-danger btn-sm" onclick="confirmRemoveDatastore(\''+ds.id+'\',\''+esc(ds.name)+'\')">Remove</button>' +
-        '</div></td></tr>';
+      var hostsCell = hosts > 0 ? hosts+' host'+(hosts===1?'':'s')
+                                : '<span style="color:var(--muted)">—</span>';
+      // Actions per source type
+      var actions;
+      if (ds.source === 'provisioned') {
+        actions =
+          '<button class="btn btn-success btn-sm" onclick="showAddHostDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','
+            + JSON.stringify(ds.pve_host_ids||[]).replace(/"/g,'&quot;')+')">+ Host</button> '
+          + '<button class="btn btn-success btn-sm" onclick="showResizeDialog(\''+ds.id+'\',\''+esc(ds.name)+'\','
+            + (ds.size_bytes||0)+',\''+esc(ds.protocol||'')+'\')">Resize</button> '
+          + '<button class="btn btn-danger btn-sm" onclick="confirmRemoveDatastore(\''+ds.id+'\',\''+esc(ds.name)+'\')">Remove</button>';
+      } else {
+        var smBtn = ds.snapinfo_initialized
+          ? '<button class="btn btn-sm" style="font-size:10px;padding:2px 7px;background:var(--success);color:#000;border:none"'
+            + ' onclick="snapmanifestCheck(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Check snapmanifest">snapmanifest ✓</button> '
+          : '<button class="btn btn-sm" style="font-size:10px;padding:2px 7px;background:var(--warning);color:#000;border:none"'
+            + ' onclick="snapmanifestInit(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Setup snapmanifest">Setup snapmanifest</button> ';
+        actions = smBtn
+          + '<button class="btn btn-ghost btn-sm"'
+            + ' onclick="importToProvisioning(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')"'
+            + ' title="Add to managed datastores">+ Manage</button> '
+          + '<button class="btn btn-danger btn-sm"'
+            + ' onclick="deleteMapping(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Remove from database">✕</button>';
+      }
+      return '<tr>'
+        + '<td><strong>'+esc(ds.name)+'</strong> '+_srcBadge+'</td>'
+        + '<td>'+_protoBadge+'</td>'
+        + '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.volume_name||'–')+'</td>'
+        + '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.vg_name||ds.nfs_junction_path||'–')+'</td>'
+        + '<td>'+hostsCell+'</td>'
+        + '<td>'+(ds.size_bytes?fmtBytes(ds.size_bytes):'—')+'</td>'
+        + '<td>'+smCell+'</td>'
+        + '<td><span class="badge '+sc+'">'+esc(ds.status)+'</span>'
+            + (ds.error_message?'<br><span style="color:var(--error);font-size:10px">'
+               +esc(ds.error_message.slice(0,60))+'</span>':'')+'</td>'
+        + '<td><div class="row-actions">'+actions+'</div></td>'
+        + '</tr>';
     }).join('');
   } catch(e) { toast(e.message,'error'); }
 }
+
+// kept for any remaining internal callers
+function loadProvDatastores() { loadStorageUnified(); }
 
 function showProvWizard() {
   provWizShowStep(1);
@@ -4900,7 +4878,7 @@ async function importPluginData(input) {
     status.style.color = 'var(--success, green)';
     toast('Import complete — ' + data.rows_imported + ' rows restored', 'success');
     // reload settings data so the UI reflects the restored state
-    loadEndpoints(); loadPveHosts(); loadMappings(); loadSmtp();
+    loadEndpoints(); loadPveHosts(); loadSmtp(); loadStorageUnified();
   } catch(e) {
     status.textContent = 'Import failed: ' + e.message;
     status.style.color = 'var(--error, red)';

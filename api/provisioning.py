@@ -567,8 +567,133 @@ def _prov_import():
     return {"success": True, "id": ds_id, "name": ds_name}
 
 
+def _storage_unified():
+    """
+    GET  storage/unified
+    Returns a merged, SnapMirror-enriched list of all known datastores:
+      source = "provisioned"  — managed by this plugin (netapp_provisioned_datastores)
+      source = "discovered"   — found by auto-discovery only (netapp_volume_mapping)
+    Provisioned entries take precedence: a discovered mapping with the same
+    pve_storage_id as a provisioned datastore is suppressed (already represented).
+    """
+    db = get_db()
+
+    # ── 1. Provisioned datastores joined with SnapMirror ──────────────────────
+    prov_rows = db.query("""
+        SELECT p.*, ep.name AS endpoint_name,
+               sm.id AS sm_id, sm.state AS sm_state, sm.lag_time AS sm_lag,
+               sm.healthy AS sm_healthy, sm.dest_cluster_name AS sm_dest_cluster,
+               sm.last_transfer_time AS sm_last_transfer,
+               sm.dest_endpoint_id AS sm_dest_ep_id
+        FROM netapp_provisioned_datastores p
+        LEFT JOIN netapp_endpoints ep ON ep.id = p.endpoint_id
+        LEFT JOIN netapp_snapmirror_relationships sm
+               ON sm.source_volume_uuid = p.volume_uuid
+        ORDER BY p.created_at DESC
+    """)
+
+    items = []
+    prov_storage_ids: set = set()
+
+    for r in (prov_rows or []):
+        d = _ds_to_dict(r)
+        d["source"] = "provisioned"
+        # Backfill vg_name from volume_mapping for auto-detected binds
+        if not d.get("vg_name") and d.get("protocol") in ("iscsi", "nvme"):
+            vm_row = db.query_one(
+                "SELECT lvm_vg_name FROM netapp_volume_mapping "
+                "WHERE pve_storage_id=? LIMIT 1",
+                (d.get("pve_storage_id", ""),),
+            )
+            if vm_row:
+                vg = dict(vm_row).get("lvm_vg_name", "")
+                if vg:
+                    d["vg_name"] = vg
+        # SnapMirror sub-object (columns were added by LEFT JOIN)
+        if d.get("sm_id"):
+            d["snapmirror"] = {
+                "id":                d.pop("sm_id"),
+                "state":             d.pop("sm_state", None),
+                "lag_time":          d.pop("sm_lag", None),
+                "healthy":           bool(d.pop("sm_healthy", True)),
+                "dest_cluster_name": d.pop("sm_dest_cluster", None),
+                "last_transfer_time":d.pop("sm_last_transfer", None),
+                "dest_endpoint_id":  d.pop("sm_dest_ep_id", None),
+            }
+        else:
+            for k in ("sm_id", "sm_state", "sm_lag", "sm_healthy",
+                      "sm_dest_cluster", "sm_last_transfer", "sm_dest_ep_id"):
+                d.pop(k, None)
+            d["snapmirror"] = None
+        prov_storage_ids.add(d.get("pve_storage_id", ""))
+        items.append(d)
+
+    # ── 2. Discovered mappings not already covered by provisioned entries ──────
+    map_rows = db.query("""
+        SELECT m.id AS mapping_id, m.pve_storage_id, m.svm_name, m.volume_uuid,
+               m.volume_name, m.junction_path, m.storage_protocol,
+               m.lvm_vg_name, m.snapinfo_initialized, m.endpoint_id, m.discovered_at,
+               ep.name AS endpoint_name,
+               sm.id AS sm_id, sm.state AS sm_state, sm.lag_time AS sm_lag,
+               sm.healthy AS sm_healthy, sm.dest_cluster_name AS sm_dest_cluster,
+               sm.last_transfer_time AS sm_last_transfer,
+               sm.dest_endpoint_id AS sm_dest_ep_id
+        FROM netapp_volume_mapping m
+        LEFT JOIN netapp_endpoints ep ON ep.id = m.endpoint_id
+        LEFT JOIN netapp_snapmirror_relationships sm
+               ON sm.source_volume_uuid = m.volume_uuid
+        ORDER BY m.discovered_at DESC
+    """)
+
+    seen_discovered: set = set()
+    for r in (map_rows or []):
+        m = dict(r)
+        storage_id = m.get("pve_storage_id", "")
+        if storage_id in prov_storage_ids:
+            continue  # already represented by a provisioned entry
+        if storage_id in seen_discovered:
+            continue  # deduplicate multi-host rows for the same volume
+        seen_discovered.add(storage_id)
+
+        item = {
+            "id":               f"mapping-{m['mapping_id']}",
+            "mapping_id":       m["mapping_id"],
+            "source":           "discovered",
+            "name":             storage_id,
+            "pve_storage_id":   storage_id,
+            "protocol":         m.get("storage_protocol", "nfs"),
+            "endpoint_id":      m.get("endpoint_id"),
+            "endpoint_name":    m.get("endpoint_name", ""),
+            "svm_name":         m.get("svm_name", ""),
+            "volume_name":      m.get("volume_name", ""),
+            "volume_uuid":      m.get("volume_uuid", ""),
+            "vg_name":          m.get("lvm_vg_name", ""),
+            "nfs_junction_path":m.get("junction_path", ""),
+            "size_bytes":       None,
+            "status":           "active",
+            "pve_host_ids":     [],
+            "snapinfo_initialized": bool(m.get("snapinfo_initialized", 0)),
+        }
+        if m.get("sm_id"):
+            item["snapmirror"] = {
+                "id":                m["sm_id"],
+                "state":             m.get("sm_state"),
+                "lag_time":          m.get("sm_lag"),
+                "healthy":           bool(m.get("sm_healthy", True)),
+                "dest_cluster_name": m.get("sm_dest_cluster"),
+                "last_transfer_time":m.get("sm_last_transfer"),
+                "dest_endpoint_id":  m.get("sm_dest_ep_id"),
+            }
+        else:
+            item["snapmirror"] = None
+        items.append(item)
+
+    return {"items": items}
+
+
 def register_routes():
     from pegaprox.api.plugins import register_plugin_route
+    register_plugin_route(PLUGIN_ID, "storage/unified",                    _storage_unified)
     register_plugin_route(PLUGIN_ID, "provisioning/datastores",            _prov_datastores)
     register_plugin_route(PLUGIN_ID, "provisioning/datastores/import",     _prov_import)
     register_plugin_route(PLUGIN_ID, "provisioning/datastores/remove",     _prov_remove)
