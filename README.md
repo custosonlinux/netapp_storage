@@ -39,6 +39,8 @@ All operations run as background jobs with live log streaming. Every snapshot em
 | Storage Provisioning (auto-setup) | ✅ | 🟡 Beta | 🟡 Beta |
 | Storage Resize | ✅ grow & shrink | 🟡 Beta grow only | 🟡 Beta grow only |
 | Job cancellation | ✅ | 🟡 Beta | 🟡 Beta |
+| Datastore Recovery — Import existing datastores with VMs | 🔵 Dev | 🔵 Dev | 🔵 Dev |
+| Full DR Scenario — Failover, Test-DR, Failback | 🔄 Planned | 🔄 Planned | 🔄 Planned |
 
 Legend: ✅ Stable · 🟡 Beta · 🟠 Alpha · 🔵 In Development · 🔄 Planned · ❌ N/A
 
@@ -753,6 +755,39 @@ All routes are relative to `/api/plugins/netapp_storage/api/`.
 | POST | `settings/smtp/test` | Test SMTP connection |
 | POST | `settings/notify-test` | Send a test notification email |
 | GET | `ui` | Plugin management UI |
+
+---
+
+## Roadmap
+
+### Datastore Recovery — Import existing datastores with VMs *(v1.1 — `dev` branch)*
+
+Sometimes a datastore already has a VG and VMs on it but is not yet registered in the plugin — after a cluster migration, a storage takeover, or a scenario where the plugin database was lost. The Datastore Recovery feature handles this without reprovisioning:
+
+**Use cases covered:**
+
+- **Cluster migration / storage takeover:** An existing iSCSI or NVMe-oF datastore with live VMs needs to be adopted by a new PegaProx/Proxmox installation. The plugin scans the ONTAP volume, rediscovers the LUN/namespace and VG, and re-registers everything — including the snapmanifest — without touching the VMs.
+- **DR recovery from storage data:** After a DR failover (SnapMirror break-off), a secondary volume containing VMs needs to be imported as an active datastore on the DR site. The plugin reads the snapmanifest from inside the volume, reconstructs the VM inventory, and allows VMID assignment and PVE registration in one step.
+
+**Workflow:**
+
+1. Select ONTAP endpoint and SVM → browse existing volumes
+2. Scan for LUNs / namespaces and auto-detect VG name
+3. Read snapmanifest from the VG → display VM inventory (VMIDs, names, disk layout)
+4. (Optional) Reassign VMIDs in case of conflicts with the target cluster
+5. Bind the datastore (iSCSI login / NVMe connect, VG activate, pvesm register) and import VM configs
+
+---
+
+### Full DR Scenario *(Roadmap)*
+
+Building on SnapMirror DR restore/clone and Datastore Recovery, the planned Full DR Scenario adds orchestrated failover and failback:
+
+- **DR site activation:** Break SnapMirror, activate secondary volumes as writable datastores, import all VMs in one operation — site is operational within minutes.
+- **DR test environment:** Use FlexClone to bring up a DR test cluster without breaking SnapMirror replication (non-disruptive, read/write isolated clone of the secondary volume). Tear down with one click.
+- **Planned failover:** Quiesce primary VMs → final SnapMirror sync → break → activate on DR site → update DNS/IP as needed.
+- **Failback:** Reverse-resync the DR volume back to the primary site once the primary is available again.
+- **DR runbook integration:** Pre/post-hooks and per-VM startup ordering so complex multi-tier applications come up in the correct sequence.
 
 ---
 
