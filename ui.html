@@ -104,6 +104,29 @@
     color: var(--text);
   }
 
+  /* ── Deploy Wizard ──────────────────────────────────────────── */
+  .setup-step-pill {
+    flex: 1;
+    text-align: center;
+    padding: 7px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--bg);
+    color: var(--muted);
+    border-right: 1px solid var(--border);
+    transition: background .15s, color .15s;
+    white-space: nowrap;
+  }
+  .setup-step-pill:last-child { border-right: none; }
+  .setup-step-pill:hover { background: var(--hover); color: var(--text); }
+  .setup-step-pill.active { background: var(--accent); color: #fff; }
+  .setup-step-pill.done { background: var(--success-bg, #1a3a1a); color: var(--success); }
+  .setup-step-card { margin-bottom: 0; }
+  .setup-ok   { color: var(--success); font-weight: 600; }
+  .setup-warn { color: var(--warning, #f59e0b); font-weight: 600; }
+  .setup-err  { color: var(--error); font-weight: 600; }
+
   /* ── Forms ──────────────────────────────────────────────────── */
   .form-grid {
     display: grid;
@@ -2204,6 +2227,196 @@ function applyI18n() {
 
     <!-- ════════════════════════ SETTINGS ════════════════════════ -->
     <div id="tab-settings" class="tab-panel" style="display:none">
+
+      <!-- ═══════════════════════ DEPLOY WIZARD ═══════════════════════ -->
+      <div class="sub-header" style="cursor:pointer;user-select:none" onclick="setupWizardToggle()">
+        <span class="sub-header-title">🚀 Deploy Wizard</span>
+        <span style="font-size:12px;color:var(--muted);margin-left:8px">First-time setup — configure everything from scratch</span>
+        <span id="setupWizardChevron" style="margin-left:auto;font-size:16px;color:var(--muted)">▼</span>
+      </div>
+
+      <div id="setupWizardBody" style="display:none">
+
+        <!-- Progress strip -->
+        <div style="display:flex;gap:0;margin-bottom:16px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+          <div class="setup-step-pill" id="spill1" onclick="setupShowStep(1)">① System</div>
+          <div class="setup-step-pill" id="spill2" onclick="setupShowStep(2)">② ONTAP</div>
+          <div class="setup-step-pill" id="spill3" onclick="setupShowStep(3)">③ ONTAP User</div>
+          <div class="setup-step-pill" id="spill4" onclick="setupShowStep(4)">④ PVE SSH</div>
+          <div class="setup-step-pill" id="spill5" onclick="setupShowStep(5)">⑤ Packages</div>
+          <div class="setup-step-pill" id="spill6" onclick="setupShowStep(6)">⑥ Ready</div>
+        </div>
+
+        <!-- ── Step 1: PegaProx System Check ── -->
+        <div class="card setup-step-card" id="setupStep1">
+          <div class="card-title">① PegaProx System Check</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Checks that all required tools are available on the PegaProx host.
+          </p>
+          <div id="setupDepsResult" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="setupRunSystemCheck()">
+              Run Checks <span id="setupSysSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <div id="setupSshKeyBox" style="display:none;margin-left:8px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:12px;max-width:100%">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">SSH Public Key (copy to PVE hosts if needed)</div>
+              <code id="setupSshPubKey" style="word-break:break-all;font-size:11px;color:var(--text)"></code>
+              <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:11px" onclick="setupCopySshKey()">📋 Copy</button>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <button class="btn btn-secondary btn-sm" onclick="setupShowStep(2)">Next →</button>
+          </div>
+        </div>
+
+        <!-- ── Step 2: ONTAP Connectivity ── -->
+        <div class="card setup-step-card" id="setupStep2" style="display:none">
+          <div class="card-title">② ONTAP Connectivity</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Tests the REST API connection to all configured ONTAP endpoints.
+            If no endpoints exist, add one in the <em>NetApp Systems</em> section below.
+          </p>
+          <div id="setupEpResult" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="setupTestEndpoints()">
+              Test All Endpoints <span id="setupEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <button class="btn btn-ghost" onclick="showAddEndpointForm()">+ Add Endpoint</button>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="setupShowStep(1)">← Back</button>
+            <button class="btn btn-secondary btn-sm" onclick="setupShowStep(3)">Next →</button>
+          </div>
+        </div>
+
+        <!-- ── Step 3: Create ONTAP User ── -->
+        <div class="card setup-step-card" id="setupStep3" style="display:none">
+          <div class="card-title">③ Dedicated ONTAP User (recommended)</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Creates a dedicated <code>pegaprox</code> account on the ONTAP cluster with
+            <strong>HTTP-only access</strong> — no CLI or SSH.
+            Use this instead of the cluster <code>admin</code> account for day-to-day plugin operations.
+          </p>
+          <div class="form-grid" style="margin-bottom:12px">
+            <div class="form-group">
+              <label>Cluster IP / FQDN</label>
+              <input class="form-control" id="setupOntapHost" placeholder="10.0.0.1">
+            </div>
+            <div class="form-group">
+              <label>Admin Username <span style="font-weight:400;color:var(--muted)">(temporary, for user creation)</span></label>
+              <input class="form-control" id="setupAdminUser" value="admin">
+            </div>
+            <div class="form-group">
+              <label>Admin Password</label>
+              <input class="form-control" id="setupAdminPass" type="password" placeholder="admin password">
+            </div>
+            <div class="form-group">
+              <label>New Username</label>
+              <input class="form-control" id="setupNewUser" value="pegaprox">
+            </div>
+            <div class="form-group">
+              <label>New Password</label>
+              <input class="form-control" id="setupNewPass" type="password" placeholder="strong password">
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select class="form-control" id="setupOntapRole">
+                <option value="admin">admin (full REST API access, HTTP only)</option>
+                <option value="readonly">readonly (monitoring only — no create/delete)</option>
+              </select>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400">
+            <input type="checkbox" id="setupSslVerify"> Verify SSL certificate
+          </label>
+          <div id="setupUserResult" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="setupCreateOntapUser()">
+              Create User <span id="setupUserSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <button class="btn btn-ghost" onclick="setupShowStep(4)" style="color:var(--muted);font-size:12px">Skip (use existing account)</button>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="setupShowStep(2)">← Back</button>
+            <button class="btn btn-secondary btn-sm" onclick="setupShowStep(4)">Next →</button>
+          </div>
+        </div>
+
+        <!-- ── Step 4: PVE SSH ── -->
+        <div class="card setup-step-card" id="setupStep4" style="display:none">
+          <div class="card-title">④ PVE Host SSH Access</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Tests SSH connectivity to all configured PVE hosts.
+            Use <em>Push SSH Key</em> to install the PegaProx public key on a host for passwordless access.
+          </p>
+          <div id="setupSshResult" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <button class="btn btn-primary" onclick="setupTestSsh()">
+              Test SSH to All Hosts <span id="setupSshSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <button class="btn btn-ghost" onclick="showAddPveHostForm ? showAddPveHostForm() : null">+ Add PVE Host</button>
+          </div>
+          <!-- Push SSH key to single host -->
+          <div style="padding:10px 14px;background:var(--bg);border-radius:6px;margin-top:8px">
+            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Push SSH Key to Host</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select class="form-control" id="setupPushKeyHost" style="max-width:220px">
+                <option value="">— select host —</option>
+              </select>
+              <input class="form-control" id="setupPushKeyPass" type="password" placeholder="root password (one-time)" style="max-width:200px">
+              <button class="btn btn-secondary" onclick="setupPushSshKey()">
+                Push Key <span id="setupPushSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+              </button>
+              <span id="setupPushResult" style="font-size:12px"></span>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="setupShowStep(3)">← Back</button>
+            <button class="btn btn-secondary btn-sm" onclick="setupShowStep(5)">Next →</button>
+          </div>
+        </div>
+
+        <!-- ── Step 5: PVE Packages ── -->
+        <div class="card setup-step-card" id="setupStep5" style="display:none">
+          <div class="card-title">⑤ PVE Host Packages</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Installs the required packages for each storage protocol on every PVE host.
+          </p>
+          <div id="setupPkgTable" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="setupCheckAllPackages()">
+              Check All Hosts <span id="setupPkgCheckSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <button class="btn btn-secondary" onclick="setupInstallSelected()">
+              Install Selected Packages
+            </button>
+          </div>
+          <div id="setupPkgInstallResult" style="margin-top:8px;font-size:12px"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="setupShowStep(4)">← Back</button>
+            <button class="btn btn-secondary btn-sm" onclick="setupShowStep(6)">Next →</button>
+          </div>
+        </div>
+
+        <!-- ── Step 6: Ready ── -->
+        <div class="card setup-step-card" id="setupStep6" style="display:none">
+          <div class="card-title">⑥ Ready — Run Initial Discovery</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Everything is configured. Run Auto-Discovery to detect datastores already present on your PVE cluster.
+          </p>
+          <div id="setupReadySummary" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="runDiscovery(); setupWizardToggle();">
+              🔍 Run Discovery &amp; Close Wizard
+            </button>
+            <button class="btn btn-ghost" onclick="setupWizardToggle()">Close</button>
+          </div>
+          <div style="display:flex;justify-content:flex-start;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="setupShowStep(5)">← Back</button>
+          </div>
+        </div>
+
+      </div><!-- /setupWizardBody -->
 
       <div class="sub-header">
         <span class="sub-header-title" data-i18n="sect_netapp">NetApp Systems</span>
@@ -5545,6 +5758,342 @@ function impResetWizard() {
   if (btn) btn.disabled = false;
   document.getElementById('impImportErr').textContent = '';
   impLoadDatastores();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DEPLOY WIZARD
+// ══════════════════════════════════════════════════════════════════════════════
+
+var _setupCurrentStep = 1;
+var _setupPveHosts    = [];  // cached from status call
+var _setupPkgData     = {};  // host_id → {host, packages, error}
+
+function setupWizardToggle() {
+  var body    = document.getElementById('setupWizardBody');
+  var chevron = document.getElementById('setupWizardChevron');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    chevron.textContent = '▲';
+    setupWizardInit();
+  } else {
+    body.style.display = 'none';
+    chevron.textContent = '▼';
+  }
+}
+
+async function setupWizardInit() {
+  try {
+    var r = await apiFetch('setup/status');
+    _setupPveHosts = r.pve_hosts || [];
+    var sel = document.getElementById('setupPushKeyHost');
+    while (sel.options.length > 1) sel.remove(1);
+    _setupPveHosts.forEach(function(h) {
+      var opt = document.createElement('option');
+      opt.value = h.id;
+      opt.textContent = h.name + ' (' + h.host + ')';
+      sel.appendChild(opt);
+    });
+    if (r.endpoints && r.endpoints.length > 0) {
+      document.getElementById('setupOntapHost').value = r.endpoints[0].host || '';
+    }
+    if (r.ssh_pubkey) {
+      document.getElementById('setupSshPubKey').textContent = r.ssh_pubkey;
+      document.getElementById('setupSshKeyBox').style.display = '';
+    }
+  } catch(e) { /* silent */ }
+  setupShowStep(1);
+}
+
+function setupShowStep(n) {
+  _setupCurrentStep = n;
+  for (var i = 1; i <= 6; i++) {
+    var card = document.getElementById('setupStep' + i);
+    var pill = document.getElementById('spill' + i);
+    if (card) card.style.display = (i === n) ? '' : 'none';
+    if (pill) {
+      pill.classList.remove('active');
+      if (i === n) pill.classList.add('active');
+    }
+  }
+}
+
+// ── Step 1: System checks ──────────────────────────────────────────────────
+
+async function setupRunSystemCheck() {
+  var sp = document.getElementById('setupSysSpinner');
+  var el = document.getElementById('setupDepsResult');
+  sp.style.display = '';
+  el.textContent = '';
+  try {
+    var key = await apiFetch('setup/ssh-pubkey');
+    if (key.pubkey) {
+      document.getElementById('setupSshPubKey').textContent = key.pubkey;
+      document.getElementById('setupSshKeyBox').style.display = '';
+    }
+    var s    = await apiFetch('setup/status');
+    var deps = s.deps || {};
+    var items = [
+      ['requests', 'Python requests library',      true],
+      ['ssh',      'ssh command (OpenSSH)',          true],
+      ['sshpass',  'sshpass (for password auth)',    false],
+    ];
+    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px"><tbody>';
+    items.forEach(function(item) {
+      var key = item[0], label = item[1], required = item[2];
+      var ok  = deps[key];
+      var cls = ok ? 'setup-ok' : (required ? 'setup-err' : 'setup-warn');
+      var ico = ok ? '✅' : (required ? '❌' : '⚠️');
+      var hint = !ok ? (key === 'requests' ? '<code>pip3 install requests</code>' :
+                        key === 'sshpass'  ? '<code>apt-get install sshpass</code>' : '') : '';
+      html += '<tr><td style="padding:3px 8px 3px 0;width:200px">' + label + '</td>';
+      html += '<td class="' + cls + '">' + ico + ' ' + (ok ? 'OK' : 'Missing') + '</td>';
+      html += '<td style="color:var(--muted);font-size:11px">' + hint + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+function setupCopySshKey() {
+  var key = document.getElementById('setupSshPubKey').textContent;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(key).then(function() { toast('SSH key copied', 'success'); });
+  } else {
+    toast('Copy not supported — select key manually', 'warning');
+  }
+}
+
+// ── Step 2: Test ONTAP endpoints ──────────────────────────────────────────
+
+async function setupTestEndpoints() {
+  var sp = document.getElementById('setupEpSpinner');
+  var el = document.getElementById('setupEpResult');
+  sp.style.display = '';
+  el.textContent = 'Testing…';
+  try {
+    var r       = await apiPost('setup/test-endpoints', {});
+    var results = r.results || [];
+    if (!results.length) {
+      el.innerHTML = '<span class="setup-warn">⚠️ No endpoints configured. Add one in <em>NetApp Systems</em> below.</span>';
+      return;
+    }
+    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px"><tbody>';
+    results.forEach(function(ep) {
+      var ico = ep.ok ? '✅' : '❌';
+      var cls = ep.ok ? 'setup-ok' : 'setup-err';
+      html += '<tr>';
+      html += '<td style="padding:3px 8px 3px 0;width:220px"><strong>' + esc(ep.name) + '</strong> <span style="color:var(--muted);font-size:11px">' + esc(ep.host) + '</span></td>';
+      html += '<td class="' + cls + '">' + ico + ' ' + (ep.ok ? 'Reachable' : 'Failed') + '</td>';
+      html += '<td style="font-size:11px;color:' + (ep.ok ? 'var(--muted)' : 'var(--error)') + '">';
+      html += ep.ok ? (esc(ep.cluster||'') + (ep.version ? ' · ' + esc(ep.version) : '')) : esc(ep.error||'');
+      html += '</td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+// ── Step 3: Create ONTAP user ─────────────────────────────────────────────
+
+async function setupCreateOntapUser() {
+  var sp = document.getElementById('setupUserSpinner');
+  var el = document.getElementById('setupUserResult');
+  sp.style.display = '';
+  el.textContent = '';
+  var newUser = document.getElementById('setupNewUser').value.trim();
+  var body = {
+    host:           document.getElementById('setupOntapHost').value.trim(),
+    admin_user:     document.getElementById('setupAdminUser').value.trim(),
+    admin_password: document.getElementById('setupAdminPass').value,
+    new_username:   newUser,
+    new_password:   document.getElementById('setupNewPass').value,
+    ssl_verify:     document.getElementById('setupSslVerify').checked,
+    role:           document.getElementById('setupOntapRole').value,
+  };
+  if (!body.host || !body.admin_password || !body.new_password) {
+    sp.style.display = 'none';
+    el.innerHTML = '<span class="setup-err">❌ Host, admin password and new password are required.</span>';
+    return;
+  }
+  try {
+    var r = await apiPost('setup/create-ontap-user', body);
+    if (r.ok) {
+      var msg = r.created
+        ? '✅ User <strong>' + esc(newUser) + '</strong> created. Add or update endpoint credentials below.'
+        : '⚠️ User <strong>' + esc(newUser) + '</strong> already exists on this cluster.';
+      el.innerHTML = '<span class="' + (r.created ? 'setup-ok' : 'setup-warn') + '">' + msg + '</span>';
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Unknown error') + '</span>';
+    }
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+// ── Step 4: SSH test + key push ───────────────────────────────────────────
+
+async function setupTestSsh() {
+  var sp = document.getElementById('setupSshSpinner');
+  var el = document.getElementById('setupSshResult');
+  sp.style.display = '';
+  el.textContent = 'Testing…';
+  try {
+    var r       = await apiPost('setup/test-ssh', {});
+    var results = r.results || [];
+    if (!results.length) {
+      el.innerHTML = '<span class="setup-warn">⚠️ No PVE hosts configured. Add one below.</span>';
+      return;
+    }
+    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px"><tbody>';
+    results.forEach(function(h) {
+      var ico = h.ok ? '✅' : '❌';
+      var cls = h.ok ? 'setup-ok' : 'setup-err';
+      html += '<tr>';
+      html += '<td style="padding:3px 8px 3px 0;width:220px"><strong>' + esc(h.name) + '</strong> <span style="color:var(--muted);font-size:11px">' + esc(h.host) + '</span></td>';
+      html += '<td class="' + cls + '">' + ico + ' ' + (h.ok ? 'SSH OK' : 'Failed') + '</td>';
+      html += '<td style="color:var(--error);font-size:11px">' + esc(h.error || '') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+async function setupPushSshKey() {
+  var sp      = document.getElementById('setupPushSpinner');
+  var el      = document.getElementById('setupPushResult');
+  var host_id = document.getElementById('setupPushKeyHost').value;
+  var pass    = document.getElementById('setupPushKeyPass').value;
+  if (!host_id) { el.innerHTML = '<span class="setup-err">Select a host first</span>'; return; }
+  sp.style.display = '';
+  el.textContent = '';
+  try {
+    var r = await apiPost('setup/push-ssh-key', { host_id: host_id, password: pass });
+    if (r.ok) {
+      el.innerHTML = '<span class="setup-ok">✅ ' + esc(r.message) + '</span>';
+      document.getElementById('setupPushKeyPass').value = '';
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Failed') + '</span>';
+    }
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+// ── Step 5: Packages ──────────────────────────────────────────────────────
+
+async function setupCheckAllPackages() {
+  var sp = document.getElementById('setupPkgCheckSpinner');
+  var el = document.getElementById('setupPkgTable');
+  sp.style.display = '';
+  el.innerHTML = 'Checking…';
+  _setupPkgData = {};
+  var hosts = _setupPveHosts;
+  if (!hosts.length) {
+    sp.style.display = 'none';
+    el.innerHTML = '<span class="setup-warn">⚠️ No PVE hosts configured.</span>';
+    return;
+  }
+  await Promise.all(hosts.map(async function(h) {
+    try {
+      var r = await apiPost('setup/check-packages', { host_id: h.id });
+      _setupPkgData[h.id] = { host: h, packages: r.packages || {} };
+    } catch(e) {
+      _setupPkgData[h.id] = { host: h, packages: {}, error: e.message || String(e) };
+    }
+  }));
+  sp.style.display = 'none';
+  _setupRenderPkgTable();
+}
+
+function _setupRenderPkgTable() {
+  var el   = document.getElementById('setupPkgTable');
+  var pkgs = ['nfs-common','open-iscsi','multipath-tools','lvm2','nvme-cli'];
+  var html = '<table style="border-collapse:collapse;width:100%;font-size:12px">';
+  html += '<thead><tr style="color:var(--muted)">';
+  html += '<th style="text-align:left;padding:4px 8px 4px 0;min-width:140px">Host</th>';
+  pkgs.forEach(function(p) { html += '<th style="padding:4px 6px;text-align:center">' + p + '</th>'; });
+  html += '<th style="padding:4px 6px">Action</th></tr></thead><tbody>';
+  Object.values(_setupPkgData).forEach(function(d) {
+    var h = d.host;
+    html += '<tr><td style="padding:4px 8px 4px 0"><strong>' + esc(h.name) + '</strong><br><span style="color:var(--muted);font-size:11px">' + esc(h.host) + '</span></td>';
+    pkgs.forEach(function(p) {
+      var ok = d.packages[p];
+      html += '<td style="text-align:center;padding:4px 6px">';
+      if (d.error)         html += '<span style="color:var(--muted)">—</span>';
+      else if (ok === undefined) html += '<span style="color:var(--muted)">?</span>';
+      else                 html += ok ? '<span class="setup-ok">✅</span>' : '<span class="setup-err">❌</span>';
+      html += '</td>';
+    });
+    var missing = pkgs.filter(function(p) { return d.packages[p] === false; });
+    html += '<td style="padding:4px 6px">';
+    if (missing.length)
+      html += '<button class="btn btn-warning btn-sm" style="font-size:11px" onclick="setupInstallForHost(' + JSON.stringify(h.id) + ',' + JSON.stringify(missing) + ')">Install ' + missing.length + ' pkg' + (missing.length > 1 ? 's' : '') + '</button>';
+    else if (d.error)
+      html += '<span class="setup-err" style="font-size:11px">SSH error</span>';
+    else
+      html += '<span class="setup-ok" style="font-size:11px">✅ All OK</span>';
+    html += '</td></tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function setupInstallForHost(hostId, packages) {
+  var el = document.getElementById('setupPkgInstallResult');
+  el.textContent = 'Starting…';
+  try {
+    var r = await apiPost('setup/install-packages', { host_id: hostId, packages: packages });
+    if (r.job_id) {
+      el.innerHTML = '✅ Install job started — <a href="#" onclick="showTabByName(\'jobs\');return false">view in Jobs tab</a> (ID: <code>' + esc(r.job_id.substring(0,8)) + '…</code>)';
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Failed') + '</span>';
+    }
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  }
+}
+
+async function setupInstallSelected() {
+  var el     = document.getElementById('setupPkgInstallResult');
+  var pkgs   = ['nfs-common','open-iscsi','multipath-tools','lvm2','nvme-cli'];
+  var started = 0;
+  await Promise.all(Object.values(_setupPkgData).map(async function(d) {
+    var missing = pkgs.filter(function(p) { return d.packages[p] === false; });
+    if (missing.length) {
+      try { await apiPost('setup/install-packages', { host_id: d.host.id, packages: missing }); started++; }
+      catch(e) {}
+    }
+  }));
+  if (started > 0) {
+    el.innerHTML = '✅ Started ' + started + ' install job(s) — <a href="#" onclick="showTabByName(\'jobs\');return false">view in Jobs tab</a>';
+  } else {
+    el.innerHTML = '<span style="color:var(--muted)">Nothing to install — all packages already present.</span>';
+  }
+}
+
+// helper: click a top-level nav tab by data-tab name
+function showTabByName(name) {
+  var pill = document.querySelector('.nav-tabs [data-tab="' + name + '"]');
+  if (pill) pill.click();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

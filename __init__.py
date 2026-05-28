@@ -102,6 +102,7 @@ def register(app):
     from .api.settings import register_routes as reg_settings
     from .api.provisioning import register_routes as reg_provisioning
     from .api.recovery import register_routes as reg_recovery
+    from .api.setup import register_routes as reg_setup
 
     reg_snap()
     reg_restore()
@@ -111,6 +112,7 @@ def register(app):
     reg_settings()
     reg_provisioning()
     reg_recovery()
+    reg_setup()
     start_scheduler()
 
     log.info(f"[PLUGINS] {PLUGIN_NAME} registriert (UI: /api/plugins/netapp_storage/api/ui)")
