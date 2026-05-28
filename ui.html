@@ -5470,12 +5470,10 @@ async function impDoImport() {
   var btn          = document.getElementById('impImportBtn');
   var spinner    = document.getElementById('impImportSpinner');
   var errEl      = document.getElementById('impImportErr');
-  var okEl       = document.getElementById('impImportOk');
 
   if (btn)    { btn.disabled = true; }
   spinner.style.display = '';
   errEl.textContent     = '';
-  okEl.textContent      = '';
 
   try {
     var r = await apiPost('provisioning/recovery/restore-vms', {
@@ -5488,25 +5486,90 @@ async function impDoImport() {
       target_host_id:  targetHostId || null,
     });
     spinner.style.display = 'none';
-    if (btn) { btn.disabled = false; }
-    var cnt = r.restored || 0;
-    okEl.textContent = cnt + ' VM config(s) imported successfully.';
-    toast(cnt + ' VM config(s) imported.', 'success');
-    // Show rename log lines (disk renames, warnings, etc.)
+    var cnt      = r.restored || 0;
     var logLines = (r.log || []).filter(function(l){ return l; });
-    if (logLines.length) {
-      var logEl = document.createElement('pre');
-      logEl.style.cssText = 'margin-top:10px;padding:8px 10px;background:var(--bg);'
-        + 'border-radius:4px;font-size:10px;color:var(--muted);'
-        + 'font-family:var(--mono);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto';
-      logEl.textContent = logLines.join('\n');
-      okEl.parentNode.insertBefore(logEl, okEl.nextSibling);
-    }
+    toast(cnt + ' VM config(s) imported.', 'success');
+
+    // ── Show "Import Complete" result panel; keep impVmsCard intact in DOM ──
+    var card = document.getElementById('impVmsCard');
+    card.style.display = 'none';  // hide but don't destroy (impVmsTbody etc. must stay)
+
+    var esc = function(s){ return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+    // VM summary rows
+    var vmRows = Object.entries(vmid_map).map(function(kv) {
+      var orig = kv[0], nw = kv[1];
+      var arrow = (orig != nw)
+        ? '<span style="color:var(--muted)">→</span> <strong>' + esc(nw) + '</strong>'
+        : '<span style="color:var(--muted);font-size:11px">unchanged</span>';
+      return '<tr><td style="padding:3px 10px 3px 0">' + esc(orig) + '</td>'
+           + '<td style="padding:3px 0">' + arrow + '</td></tr>';
+    }).join('');
+
+    // Log block
+    var logBlock = logLines.length
+      ? '<div style="margin-top:16px">'
+        + '<div style="font-size:11px;font-weight:600;text-transform:uppercase;'
+        + 'letter-spacing:.06em;color:var(--muted);margin-bottom:6px">Import Log</div>'
+        + '<pre style="padding:10px 14px;background:var(--bg);border-radius:6px;font-size:10px;'
+        + 'color:var(--text);font-family:var(--mono);white-space:pre-wrap;word-break:break-word;'
+        + 'max-height:300px;overflow-y:auto;line-height:1.5">'
+        + esc(logLines.join('\n'))
+        + '</pre></div>'
+      : '';
+
+    var resultDiv = document.createElement('div');
+    resultDiv.id  = 'impResultCard';
+    resultDiv.className = 'card';
+    resultDiv.style.marginBottom = '12px';
+    resultDiv.innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">'
+      + '<span style="font-size:28px;line-height:1">✅</span>'
+      + '<div>'
+      +   '<div style="font-size:15px;font-weight:600;color:var(--success)">'
+      +     cnt + ' VM config(s) imported successfully'
+      +   '</div>'
+      +   '<div style="font-size:12px;color:var(--muted);margin-top:3px">'
+      +     'Datastore: <strong>' + esc((_impState.ds||{}).name || (_impState.ds||{}).pve_storage_id || '') + '</strong>'
+      +   '</div>'
+      + '</div>'
+      + '</div>'
+      + '<table style="font-size:13px;margin-bottom:4px">'
+      +   '<thead><tr>'
+      +     '<th style="padding:0 14px 6px 0;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Original VMID</th>'
+      +     '<th style="padding:0 0 6px 0;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Imported as</th>'
+      +   '</tr></thead>'
+      +   '<tbody>' + vmRows + '</tbody>'
+      + '</table>'
+      + logBlock
+      + '<div style="margin-top:20px;display:flex;gap:8px">'
+      +   '<button class="btn btn-primary" onclick="impResetWizard()">Import another</button>'
+      + '</div>';
+
+    card.parentNode.insertBefore(resultDiv, card);
+
   } catch(e) {
     spinner.style.display = 'none';
     if (btn) { btn.disabled = false; }
     errEl.textContent = e.message || String(e);
   }
+}
+
+function impResetWizard() {
+  // Remove result panel if present
+  var old = document.getElementById('impResultCard');
+  if (old) old.remove();
+  // Reset state & wizard
+  _impState = { ds: null, snapName: null };
+  var dsSel = document.getElementById('impDsSel');
+  if (dsSel) dsSel.value = '';
+  document.getElementById('impVmsCard').style.display = 'none';
+  // Re-enable import button in case it's still disabled
+  var btn = document.getElementById('impImportBtn');
+  if (btn) btn.disabled = false;
+  document.getElementById('impImportErr').textContent = '';
+  impLoadDatastores();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
