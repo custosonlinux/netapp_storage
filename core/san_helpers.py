@@ -812,6 +812,18 @@ def find_nvme_device_for_subsystem_nqn(ssh_host, ssh_user, ssh_pass, ssh_key,
                 log.info(f"[netapp_storage] NVMe device (sysfs): {dev}")
                 return dev
 
+            # ── Baseline-diff fallback (in-loop) ─────────────────────────────
+            # Device may have appeared on a controller with a different NQN
+            # (e.g. the production controller picked up the recovery namespace).
+            # Only active when devices_before was provided by the caller.
+            if devices_before is not None:
+                current = nvme_list_devices(ssh_host, ssh_user, ssh_pass, ssh_key)
+                new_devs = current - devices_before
+                if new_devs:
+                    dev = sorted(new_devs)[0]
+                    log.info(f"[netapp_storage] NVMe device (baseline diff, in-loop): {dev}")
+                    return dev
+
         except Exception:
             pass
         nvme_ns_rescan(ssh_host, ssh_user, ssh_pass, ssh_key)
