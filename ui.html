@@ -2229,10 +2229,12 @@ function applyI18n() {
     <div id="tab-settings" class="tab-panel" style="display:none">
 
       <!-- ═══════════════════════ DEPLOY WIZARD ═══════════════════════ -->
-      <div class="sub-header" style="cursor:pointer;user-select:none" onclick="setupWizardToggle()">
-        <span class="sub-header-title">🚀 Deploy Wizard</span>
-        <span style="font-size:12px;color:var(--muted);margin-left:8px">First-time setup — configure everything from scratch</span>
-        <span id="setupWizardChevron" style="margin-left:auto;font-size:16px;color:var(--muted)">▼</span>
+      <div style="margin:20px 0 10px">
+        <button class="btn btn-ghost" style="width:100%;justify-content:flex-start;gap:10px;padding:10px 14px;text-align:left" onclick="setupWizardToggle()">
+          <span style="font-size:13px;font-weight:600;color:var(--text)">🚀 Deploy Wizard</span>
+          <span style="font-size:11px;color:var(--muted);font-weight:400">First-time setup — configure everything from scratch</span>
+          <span id="setupWizardChevron" style="margin-left:auto;font-size:13px">▼</span>
+        </button>
       </div>
 
       <div id="setupWizardBody" style="display:none">
