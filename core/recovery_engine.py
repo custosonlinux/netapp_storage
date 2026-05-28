@@ -970,10 +970,22 @@ def _bind_nvme(ds_id, params, db, jlog):
                 nvme_connect_all(sh, su, sp, sk)
 
             jlog.log(f"[{sh}] Waiting for NVMe namespace device …")
-            if subsystem_nqn:
-                device = find_nvme_device_for_subsystem_nqn(sh, su, sp, sk, subsystem_nqn, timeout_s=90)
-            else:
-                device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
+            try:
+                if subsystem_nqn:
+                    device = find_nvme_device_for_subsystem_nqn(sh, su, sp, sk, subsystem_nqn, timeout_s=90)
+                else:
+                    device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
+            except RuntimeError:
+                # Log diagnostic info before raising
+                try:
+                    subsys_out = ssh_run(sh, su, sp,
+                                        "nvme list-subsys 2>/dev/null; echo '---'; nvme list 2>/dev/null",
+                                        capture=True, key_material=sk, timeout=15)
+                    for line in subsys_out.splitlines():
+                        jlog.log(f"  [diag] {line}")
+                except Exception:
+                    pass
+                raise
 
         jlog.log(f"[{sh}] Device ready: {device}")
         host_meta[hid]["device"] = device
