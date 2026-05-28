@@ -739,13 +739,25 @@ def _bind_iscsi(ds_id, params, db, jlog):
         # ── Auto-detect VG name if not provided ───────────────────────────────
         if not vg_name:
             try:
+                # Scan the specific device AND the persistent mapper path.
+                # find_device_by_serial may return /dev/dm-N (transient dm number)
+                # when the persistent /dev/mapper/WWID symlink isn't present yet.
+                # pvs /dev/dm-N may fail if LVM cached the PV under the mapper path.
+                dev_q_scan    = shlex.quote(device)
+                mapper_q_scan = shlex.quote(mapper_dev)
                 ssh_run(sh, su, sp,
-                        f"pvscan --cache 2>/dev/null; true",
+                        f"pvscan --cache {dev_q_scan} 2>/dev/null; "
+                        f"pvscan --cache {mapper_q_scan} 2>/dev/null; true",
                         key_material=sk, timeout=15)
-                detected = ssh_run(sh, su, sp,
-                                   f"pvs --noheadings -o vg_name {shlex.quote(device)} "
-                                   f"2>/dev/null | awk '{{print $1}}' | head -1",
-                                   capture=True, key_material=sk, timeout=10).strip()
+                detected = ""
+                for dev_try in [device, mapper_dev]:
+                    out = ssh_run(sh, su, sp,
+                                  f"pvs --noheadings -o vg_name {shlex.quote(dev_try)} "
+                                  f"2>/dev/null | awk '{{print $1}}' | head -1",
+                                  capture=True, key_material=sk, timeout=10)
+                    detected = out.strip()
+                    if detected:
+                        break
                 if detected:
                     vg_name = detected
                     jlog.log(f"[{sh}] VG name auto-detected: {vg_name}")
