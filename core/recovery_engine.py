@@ -745,9 +745,11 @@ def _bind_iscsi(ds_id, params, db, jlog):
                 # pvs /dev/dm-N may fail if LVM cached the PV under the mapper path.
                 dev_q_scan    = shlex.quote(device)
                 mapper_q_scan = shlex.quote(mapper_dev)
+                # Use -aay (auto-activate) like provisioning does — forces LVM to
+                # scan the device and make PV metadata visible to subsequent pvs calls.
                 ssh_run(sh, su, sp,
-                        f"pvscan --cache {dev_q_scan} 2>/dev/null; "
-                        f"pvscan --cache {mapper_q_scan} 2>/dev/null; true",
+                        f"pvscan --cache -aay {dev_q_scan} 2>/dev/null; "
+                        f"pvscan --cache -aay {mapper_q_scan} 2>/dev/null; true",
                         key_material=sk, timeout=15)
                 detected = ""
                 for dev_try in [device, mapper_dev]:
