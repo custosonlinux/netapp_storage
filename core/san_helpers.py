@@ -683,11 +683,19 @@ def find_new_nvme_device(ssh_host, ssh_user, ssh_pass, ssh_key,
 
 
 def find_nvme_device_for_subsystem_nqn(ssh_host, ssh_user, ssh_pass, ssh_key,
-                                        subsystem_nqn, timeout_s=60):
+                                        subsystem_nqn, timeout_s=60,
+                                        devices_before=None):
     """Finds the /dev/nvme*n* device for a specific subsystem NQN.
 
-    Tries JSON output first (unambiguous), falls back to text parsing.
-    Works even if the device was already present before provisioning started.
+    Search strategies (in order):
+    1. JSON:  nvme list-subsys -o json — unambiguous direct namespace path
+    2. Text:  nvme list-subsys plain text — parse controller names → ls /dev/nvmeXn*
+    3. Sysfs: /sys/class/nvme/*/subsysnqn — catches controllers not listed in
+              nvme list-subsys (e.g. stale controllers from a previous bind attempt
+              that were not fully disconnected but still hold a namespace device)
+    4. After timeout: baseline-diff — any device not in `devices_before` (if provided)
+
+    Retries with nvme ns-rescan between iterations until timeout_s.
     """
     import re as _re
     import json as _json
@@ -727,10 +735,42 @@ def find_nvme_device_for_subsystem_nqn(ssh_host, ssh_user, ssh_pass, ssh_key,
                 continue
             if line.strip().startswith("nvme-subsys"):
                 break
-            m = _re.search(r'\+- (nvme\d+)', line)
+            m = _re.search(r'[-+\\|]+\s*(nvme\d+)', line)
             if m:
                 controllers.append(m.group(1))
         return controllers
+
+    def _try_sysfs():
+        """Find namespace device via /sys/class/nvme/*/subsysnqn.
+
+        Catches controllers that are active (have namespace devices) but are
+        not listed in 'nvme list-subsys' for our NQN — e.g. controllers from
+        a previous bind attempt that survived an nvme disconnect and still
+        hold a namespace device under the same subsystem NQN.
+        """
+        try:
+            nqn_q = shlex.quote(subsystem_nqn)
+            script = (
+                "for f in /sys/class/nvme/nvme*/subsysnqn; do "
+                "  [ -f \"$f\" ] || continue; "
+                "  nqn=$(cat \"$f\" 2>/dev/null); "
+                f"  [ \"$nqn\" = {nqn_q} ] || continue; "
+                "  ctrl=$(basename $(dirname \"$f\")); "
+                "  for ns in /dev/${ctrl}n[0-9]*; do "
+                "    [ -b \"$ns\" ] || continue; "
+                "    case \"$ns\" in *p*) continue ;; esac; "
+                "    echo \"$ns\"; break 2; "
+                "  done; "
+                "done 2>/dev/null | head -1"
+            )
+            out = ssh_run(ssh_host, ssh_user, ssh_pass, script,
+                          capture=True, key_material=ssh_key, timeout=15)
+            dev = out.strip()
+            if dev and dev.startswith("/dev/"):
+                return dev
+        except Exception:
+            pass
+        return None
 
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -765,10 +805,33 @@ def find_nvme_device_for_subsystem_nqn(ssh_host, ssh_user, ssh_pass, ssh_key,
                 if dev and dev.startswith("/dev/"):
                     log.info(f"[netapp_storage] NVMe device (text): {dev}")
                     return dev
+
+            # ── Sysfs fallback ────────────────────────────────────────────────
+            dev = _try_sysfs()
+            if dev:
+                log.info(f"[netapp_storage] NVMe device (sysfs): {dev}")
+                return dev
+
         except Exception:
             pass
         nvme_ns_rescan(ssh_host, ssh_user, ssh_pass, ssh_key)
         time.sleep(3)
+
+    # ── Post-timeout: final sysfs check ───────────────────────────────────────
+    dev = _try_sysfs()
+    if dev:
+        log.info(f"[netapp_storage] NVMe device (sysfs, post-timeout): {dev}")
+        return dev
+
+    # ── Post-timeout: baseline-diff fallback ──────────────────────────────────
+    if devices_before is not None:
+        current = nvme_list_devices(ssh_host, ssh_user, ssh_pass, ssh_key)
+        new_devs = current - devices_before
+        if new_devs:
+            dev = sorted(new_devs)[0]
+            log.info(f"[netapp_storage] NVMe device (baseline diff): {dev}")
+            return dev
+
     raise RuntimeError(f"NVMe namespace device not found after {timeout_s}s")
 
 

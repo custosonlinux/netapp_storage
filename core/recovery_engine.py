@@ -972,7 +972,9 @@ def _bind_nvme(ds_id, params, db, jlog):
             jlog.log(f"[{sh}] Waiting for NVMe namespace device …")
             try:
                 if subsystem_nqn:
-                    device = find_nvme_device_for_subsystem_nqn(sh, su, sp, sk, subsystem_nqn, timeout_s=90)
+                    device = find_nvme_device_for_subsystem_nqn(
+                        sh, su, sp, sk, subsystem_nqn, timeout_s=90,
+                        devices_before=devices_before)
                 else:
                     device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
             except RuntimeError:
