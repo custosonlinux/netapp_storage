@@ -5037,13 +5037,30 @@ async function setupRunSystemCheck() {
         document.getElementById('setupSshKeyBox').style.display = '';
       }
     } catch(keyErr) {
-      var errMsg  = (keyErr.data && keyErr.data.error)  ? keyErr.data.error  : keyErr.message;
-      var hintMsg = (keyErr.data && keyErr.data.hint)   ? keyErr.data.hint   : '';
+      var errMsg    = (keyErr.data && keyErr.data.error)         ? keyErr.data.error         : keyErr.message;
+      var hintMsg   = (keyErr.data && keyErr.data.hint)          ? keyErr.data.hint          : '';
+      var autoFixed = (keyErr.data && keyErr.data.auto_fix_attempted);
       document.getElementById('setupSshKeyBox').style.display = '';
       document.getElementById('setupSshPubKey').textContent   = '';
-      keyHint = '<tr><td colspan="3" style="padding:6px 0"><span class="setup-err">⚠️ SSH key: ' +
-                esc(errMsg) + '</span>' +
-                (hintMsg ? '<br><span style="font-size:11px;color:var(--muted)">' + esc(hintMsg) + '</span>' : '') +
+      // Render hint: replace newlines with <br> and format indented lines as code
+      var hintHtml = '';
+      if (hintMsg) {
+        var lines = esc(hintMsg).split('\n');
+        hintHtml = '<div style="margin-top:6px;font-size:11px;color:var(--muted)">' +
+          lines.map(function(l) {
+            var trimmed = l.trimStart();
+            // Lines that start with spaces followed by a command get code formatting
+            if (l.match(/^\s{2,}/)) {
+              return '<code style="display:block;margin:1px 0 1px 12px;white-space:pre">' + trimmed + '</code>';
+            }
+            return '<span>' + l + '</span><br>';
+          }).join('') +
+          '</div>';
+      }
+      keyHint = '<tr><td colspan="3" style="padding:6px 0">' +
+                '<span class="setup-err">⚠️ SSH key: ' + esc(errMsg) + '</span>' +
+                (autoFixed ? '<span style="font-size:11px;color:var(--muted);margin-left:8px">(automatic fix attempted)</span>' : '') +
+                hintHtml +
                 '</td></tr>';
     }
 

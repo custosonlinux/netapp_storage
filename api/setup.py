@@ -193,25 +193,119 @@ def _create_ontap_user():
 
 # ── Step 4: SSH key management ────────────────────────────────────────────────
 
+def _ensure_home_and_ssh(home: str) -> str:
+    """Ensure *home* and *home/.ssh* exist and are writable.
+
+    Tries three approaches in order:
+      1. Direct ``os.makedirs`` — succeeds when running as root or when the
+         directories already exist with correct permissions.
+      2. ``sudo -n`` commands — succeeds when the service account has
+         NOPASSWD sudo rights (common in some installations).
+      3. Raises ``PermissionError`` — caller shows manual instructions.
+
+    Returns the ssh_dir path on success.
+    """
+    import pwd as _pwd
+    import grp as _grp
+
+    ssh_dir = os.path.join(home, ".ssh")
+
+    # Fast path — ssh_dir already usable
+    if os.path.isdir(ssh_dir) and os.access(ssh_dir, os.W_OK):
+        return ssh_dir
+
+    # ── Attempt 1: direct mkdir ───────────────────────────────────────────────
+    try:
+        os.makedirs(home,    mode=0o750, exist_ok=True)
+        os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
+        log.info(f"[setup] Created {ssh_dir} directly")
+        return ssh_dir
+    except PermissionError:
+        pass
+
+    # ── Attempt 2: passwordless sudo ─────────────────────────────────────────
+    try:
+        pw       = _pwd.getpwuid(os.getuid())
+        username = pw.pw_name
+        try:
+            grp_name = _grp.getgrgid(pw.pw_gid).gr_name
+        except Exception:
+            grp_name = username
+
+        subprocess.run(
+            ["sudo", "-n", "mkdir", "-p", home],
+            check=True, capture_output=True, timeout=10,
+        )
+        subprocess.run(
+            ["sudo", "-n", "chmod", "750", home],
+            check=True, capture_output=True, timeout=10,
+        )
+        subprocess.run(
+            ["sudo", "-n", "chown", f"{username}:{grp_name}", home],
+            check=True, capture_output=True, timeout=10,
+        )
+        # Fix /etc/passwd home entry when it differs from the actual path we just created
+        if pw.pw_dir != home:
+            subprocess.run(
+                ["sudo", "-n", "usermod", "-d", home, username],
+                check=True, capture_output=True, timeout=10,
+            )
+        os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
+        log.info(f"[setup] Created {ssh_dir} via sudo")
+        return ssh_dir
+    except Exception as exc:
+        log.info(f"[setup] sudo home-dir approach failed: {exc}")
+
+    raise PermissionError(f"Cannot create {home}/.ssh — no write access and sudo unavailable")
+
+
 def _get_ssh_pubkey():
-    """Returns the SSH public key, generating an ed25519 keypair if none exists."""
+    """Returns the SSH public key, generating an ed25519 keypair if none exists.
+
+    Automatically attempts to create the home directory and ~/.ssh when they
+    are missing or not writable, so fresh installs where the service account
+    has no proper home work out of the box.
+    """
     pubkey = _read_ssh_pubkey()
     if pubkey:
         return jsonify({"pubkey": pubkey, "generated": False})
 
-    # Generate a new ed25519 keypair — wrap everything so Flask never sees a raw exception
-    try:
-        home      = os.path.expanduser("~")
-        ssh_dir   = os.path.join(home, ".ssh")
-        os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
-        priv_path = os.path.join(ssh_dir, "id_ed25519")
-        pub_path  = priv_path + ".pub"
+    home = os.path.expanduser("~")
 
+    # ── Ensure home + ~/.ssh exist ────────────────────────────────────────────
+    try:
+        ssh_dir = _ensure_home_and_ssh(home)
+    except PermissionError:
+        # Auto-fix failed → produce actionable manual instructions
+        import pwd as _pwd, grp as _grp
+        try:
+            pw       = _pwd.getpwuid(os.getuid())
+            username = pw.pw_name
+            grp_name = _grp.getgrgid(pw.pw_gid).gr_name
+        except Exception:
+            username = grp_name = "pegaprox"
+        suggested_home = f"/home/{username}"
+        hint = (
+            f"Run as root on the PegaProx server:\n"
+            f"  mkdir -p {suggested_home}\n"
+            f"  chown {username}:{grp_name} {suggested_home}\n"
+            f"  usermod -d {suggested_home} {username}\n"
+            f"Then reload the wizard."
+        )
+        log.warning(f"[setup] Cannot prepare ~/.ssh for home={home}")
+        return jsonify({
+            "error": "SSH home directory not accessible — automatic setup failed.",
+            "hint":  hint,
+            "auto_fix_attempted": True,
+        }), 500
+
+    # ── Generate keypair ──────────────────────────────────────────────────────
+    priv_path = os.path.join(ssh_dir, "id_ed25519")
+    pub_path  = priv_path + ".pub"
+    try:
         subprocess.run(
             ["ssh-keygen", "-t", "ed25519", "-N", "", "-f", priv_path],
-            check=True,
-            capture_output=True,
-            timeout=15,
+            check=True, capture_output=True, timeout=15,
         )
         with open(pub_path) as f:
             pubkey = f.read().strip()
@@ -219,17 +313,9 @@ def _get_ssh_pubkey():
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode(errors="replace")[:300]
         log.warning(f"[setup] ssh-keygen failed: {stderr}")
-        return jsonify({"error": f"ssh-keygen failed: {stderr}",
-                        "hint": "Make sure openssh-client is installed on the PegaProx host."}), 500
-    except PermissionError as exc:
-        log.warning(f"[setup] Cannot create ~/.ssh: {exc}")
-        home = os.path.expanduser("~")
         return jsonify({
-            "error": f"Cannot create {home}/.ssh: {exc}",
-            "hint": (
-                "The PegaProx service user's home directory does not exist or is not writable. "
-                f"Run on the server: mkdir -p {home} && chown pegaprox:pegaprox {home}"
-            ),
+            "error": f"ssh-keygen failed: {stderr}",
+            "hint":  "Make sure openssh-client is installed on the PegaProx host.",
         }), 500
     except Exception as exc:
         log.warning(f"[setup] ssh-pubkey generation failed: {exc}")
