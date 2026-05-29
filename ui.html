@@ -2232,8 +2232,9 @@ function applyI18n() {
 
       <!-- ═══════════════════════ DEPLOY WIZARD ═══════════════════════ -->
       <div class="sub-header">
-        <button class="btn btn-secondary" onclick="setupWizardToggle()">
-          🚀 Deploy Wizard <span id="setupWizardChevron">▼</span>
+        <span class="sub-header-title">🚀 Deploy Wizard</span>
+        <button class="btn btn-primary btn-sm" onclick="setupWizardToggle()">
+          + Initial Setup <span id="setupWizardChevron"></span>
         </button>
       </div>
 
@@ -5777,11 +5778,9 @@ function setupWizardToggle() {
   var chevron = document.getElementById('setupWizardChevron');
   if (body.style.display === 'none') {
     body.style.display = '';
-    chevron.textContent = '▲';
     setupWizardInit();
   } else {
     body.style.display = 'none';
-    chevron.textContent = '▼';
   }
 }
 
