@@ -5147,15 +5147,6 @@ async function wizRefreshPveHosts() {
   try {
     var rows = await apiFetch('pve-hosts');
     _setupPveHosts = rows;
-    // Update push-key dropdown
-    var sel = document.getElementById('setupPushKeyHost');
-    while (sel.options.length > 1) sel.remove(1);
-    rows.forEach(function(h) {
-      var opt = document.createElement('option');
-      opt.value       = h.id;
-      opt.textContent = h.name + ' (' + h.host + ')';
-      sel.appendChild(opt);
-    });
     // Render already-imported host list
     var el = document.getElementById('wizPveList');
     if (!el) return;
