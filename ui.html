@@ -1235,13 +1235,13 @@ function applyI18n() {
 
   <!-- Sub-tabs -->
   <div class="subtabs">
-    <div class="subtab active" data-tab="snapshots">Snapshots</div>
-    <div class="subtab" data-tab="schedules" data-i18n="tab_schedules">Schedules</div>
-    <div class="subtab" data-tab="restore" data-i18n="tab_restore">Restore</div>
-    <div class="subtab" data-tab="clone" data-i18n="tab_clone">Clone</div>
-    <div class="subtab" data-tab="storage" data-i18n="tab_storage">Storage</div>
-    <div class="subtab" data-tab="jobs" data-i18n="tab_jobs">Jobs &amp; Logs</div>
-    <div class="subtab" data-tab="settings" data-i18n="tab_settings">Settings</div>
+    <div class="subtab active" data-tab="snapshots">📸 Snapshots</div>
+    <div class="subtab" data-tab="schedules" data-i18n="tab_schedules">🗓️ Schedules</div>
+    <div class="subtab" data-tab="restore" data-i18n="tab_restore">🔙 Restore</div>
+    <div class="subtab" data-tab="clone" data-i18n="tab_clone">📋 Clone</div>
+    <div class="subtab" data-tab="storage" data-i18n="tab_storage">🗄️ Storage</div>
+    <div class="subtab" data-tab="jobs" data-i18n="tab_jobs">📜 Jobs &amp; Logs</div>
+    <div class="subtab" data-tab="settings" data-i18n="tab_settings">⚙️ Settings</div>
   </div>
 
   <!-- Scrollable content -->
@@ -1323,7 +1323,7 @@ function applyI18n() {
     <!-- ═══════════════════════ VM-RESTORE ══════════════════════ -->
     <div id="tab-restore" class="tab-panel" style="display:none">
       <div class="card">
-        <div class="card-title" data-i18n="ct_start_restore">Single VM Restore</div>
+        <div class="card-title" data-i18n="ct_start_restore">🔄 Single VM Restore</div>
         <div class="form-grid">
           <div class="form-group">
             <label>Datastore</label>
@@ -1363,7 +1363,7 @@ function applyI18n() {
 
       <!-- DR Restore from SnapMirror® secondary -->
       <div class="card" style="margin-top:16px">
-        <div class="card-title" data-i18n="sm_dr_title">Restore from SnapMirror® Secondary System</div>
+        <div class="card-title" data-i18n="sm_dr_title">🌐 Restore from SnapMirror® Secondary System</div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">SnapMirror® Relationship</label>
@@ -1391,9 +1391,9 @@ function applyI18n() {
         </div>
       </div>
 
-      <!-- ── VM Import from Manifest ──────────────────────────────────── -->
+      <!-- ── Import VMs from Datastore ────────────────────────────────── -->
       <div class="sub-header" style="margin-top:28px">
-        <span class="sub-header-title">📋 VM Import from Manifest</span>
+        <span class="sub-header-title">📥 Import VMs from Datastore</span>
         <button class="btn btn-primary btn-sm" onclick="showVmImportModal()">+ Import VMs</button>
       </div>
 
@@ -1402,7 +1402,7 @@ function applyI18n() {
     <!-- ════════════════════════ VM-CLONE ════════════════════════ -->
     <div id="tab-clone" class="tab-panel" style="display:none">
       <div class="card">
-        <div class="card-title" data-i18n="ct_clone_vm">Clone VM</div>
+        <div class="card-title" data-i18n="ct_clone_vm">📋 Clone VM</div>
         <div class="form-grid" style="margin-bottom:10px">
           <div class="form-group">
             <label>Datastore</label>
@@ -1457,7 +1457,7 @@ function applyI18n() {
 
       <!-- DR-Clone vom Sekundärsystem -->
       <div class="card" style="margin-top:16px">
-        <div class="card-title" data-i18n="ct_dr_clone">DR Clone from Secondary System</div>
+        <div class="card-title" data-i18n="ct_dr_clone">🌐 DR Clone from Secondary System</div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">Select relationship</label>
@@ -1514,7 +1514,7 @@ function applyI18n() {
 
       <!-- ── All Datastores table ──────────────────────────────── -->
       <div class="card table-scroll">
-        <div class="card-title">All Datastores</div>
+        <div class="card-title">🗄️ All Datastores</div>
         <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click &ldquo;🔍 Detect&rdquo; to discover existing datastores, or &ldquo;+ Provision New&rdquo; to create one.</div>
         <table style="min-width:1040px">
           <thead><tr>
@@ -1532,7 +1532,7 @@ function applyI18n() {
     <div id="tab-jobs" class="tab-panel" style="display:none">
       <div class="card table-scroll">
         <div class="card-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span data-i18n="ct_jobs_history">Jobs &amp; History</span>
+          <span data-i18n="ct_jobs_history">📜 Jobs &amp; History</span>
           <button class="btn btn-ghost btn-sm" onclick="loadAllJobs()" data-i18n="btn_refresh">Refresh</button>
           <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="cleanupJobs()" data-i18n="btn_cleanup_jobs">Clean up completed</button>
         </div>
@@ -1563,7 +1563,7 @@ function applyI18n() {
       </div>
 
       <div class="sub-header">
-        <span class="sub-header-title" data-i18n="sect_netapp">NetApp Systems</span>
+        <span class="sub-header-title" data-i18n="sect_netapp">🔷 NetApp Systems</span>
         <button class="btn btn-primary btn-sm" onclick="showAddEndpointForm()" data-i18n="btn_add_netapp">+ Add NetApp System</button>
       </div>
 
@@ -1579,7 +1579,7 @@ function applyI18n() {
       </div>
 
       <div class="sub-header">
-        <span class="sub-header-title" data-i18n="sect_pve">Proxmox VE Hosts</span>
+        <span class="sub-header-title" data-i18n="sect_pve">🖥️ Proxmox VE Hosts</span>
         <button class="btn btn-primary btn-sm" onclick="showAddPveHostForm()" data-i18n="btn_add_pve">+ Add PVE Host</button>
       </div>
 
@@ -1596,7 +1596,7 @@ function applyI18n() {
 
       <!-- ═══════════════ EMAIL / SMTP ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title" data-i18n="sect_smtp">Email Notifications (SMTP)</span>
+        <span class="sub-header-title" data-i18n="sect_smtp">✉️ Email Notifications (SMTP)</span>
       </div>
       <div class="card">
         <div class="form-grid">
@@ -1638,7 +1638,7 @@ function applyI18n() {
 
       <!-- ═══════════════ DATA BACKUP / RESTORE ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title">Data Backup / Restore</span>
+        <span class="sub-header-title">💾 Data Backup / Restore</span>
       </div>
       <div class="card">
         <p class="hint" style="margin-bottom:12px">
@@ -1654,6 +1654,90 @@ function applyI18n() {
           </label>
           <span id="importStatus" style="font-size:13px;color:var(--muted)"></span>
         </div>
+      </div>
+
+      <!-- ═══════════════ PLUGIN UPDATE ═══════════════ -->
+      <div class="sub-header" style="margin-top:16px">
+        <span class="sub-header-title">⬆️ Plugin Update</span>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Current Version</span><br>
+            <span id="pluginCurVer" style="font-size:18px;font-weight:700;font-family:monospace">–</span>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Update Channel</span><br>
+            <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:normal;font-size:13px">
+                <input type="radio" name="updateChannel" value="main" checked> Stable Release
+              </label>
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:normal;font-size:13px">
+                <input type="radio" name="updateChannel" value="dev"> Dev / main
+              </label>
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-ghost" onclick="pluginCheckUpdate()" id="pluginCheckBtn">
+              <span id="pluginCheckSpinner" class="spinner" style="display:none;margin-right:4px"></span>
+              🔍 Check for Update
+            </button>
+          </div>
+        </div>
+
+        <!-- Result area — hidden until check is run -->
+        <div id="pluginUpdateResult" style="display:none">
+          <div style="border-top:1px solid var(--border);padding-top:14px">
+
+            <!-- Release info box -->
+            <div id="pluginReleaseBox" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Latest Stable Release</div>
+                  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span id="pluginRelTag" style="font-size:17px;font-weight:700;font-family:monospace"></span>
+                    <span id="pluginRelDate" style="font-size:12px;color:var(--muted)"></span>
+                    <span id="pluginRelBadge"></span>
+                  </div>
+                  <div id="pluginRelNotes" style="margin-top:8px;font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:80px;overflow-y:auto;line-height:1.5"></div>
+                </div>
+                <div style="flex-shrink:0">
+                  <a id="pluginRelUrl" href="#" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-bottom:6px;display:block;text-align:center">View on GitHub ↗</a>
+                  <button id="pluginApplyRelBtn" class="btn btn-primary btn-sm" onclick="pluginApplyUpdate('main')" style="display:none;width:100%">
+                    <span id="pluginApplyRelSpinner" class="spinner" style="display:none;margin-right:4px"></span>
+                    ⬆️ Update to Release
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dev / main branch info box -->
+            <div id="pluginDevBox" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div>
+                  <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Dev / main branch (latest commit)</div>
+                  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span id="pluginDevSha" style="font-size:14px;font-weight:700;font-family:monospace"></span>
+                    <span id="pluginDevDate" style="font-size:12px;color:var(--muted)"></span>
+                  </div>
+                  <div id="pluginDevMsg" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
+                </div>
+                <div style="flex-shrink:0">
+                  <button id="pluginApplyDevBtn" class="btn btn-secondary btn-sm" onclick="pluginApplyUpdate('dev')" style="display:none">
+                    <span id="pluginApplyDevSpinner" class="spinner" style="display:none;margin-right:4px"></span>
+                    ⬆️ Update to Dev Build
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p id="pluginUpdateError" style="display:none;color:var(--danger);font-size:13px;margin-top:8px"></p>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:12px">
+          After applying an update, restart PegaProx to activate the new version.
+          Your configuration (<code>config.json</code>) and database are never overwritten.
+        </p>
       </div>
 
     </div>
@@ -5215,6 +5299,173 @@ function showTabByName(name) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Plugin Updater ────────────────────────────────────────────────────────────
+
+function pluginCheckUpdate() {
+  var btn     = document.getElementById('pluginCheckBtn');
+  var spinner = document.getElementById('pluginCheckSpinner');
+  var result  = document.getElementById('pluginUpdateResult');
+  var errEl   = document.getElementById('pluginUpdateError');
+
+  spinner.style.display = 'inline-block';
+  btn.disabled = true;
+  result.style.display = 'none';
+  if (errEl) errEl.style.display = 'none';
+
+  fetch(API + '/settings/update/info')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      // Current version
+      document.getElementById('pluginCurVer').textContent = 'v' + (d.current_version || '?');
+
+      var channel = document.querySelector('input[name="updateChannel"]:checked');
+      var ch = channel ? channel.value : 'main';
+
+      // ── Release box ────────────────────────────────────────────
+      var relBox  = document.getElementById('pluginReleaseBox');
+      var devBox  = document.getElementById('pluginDevBox');
+
+      if (ch === 'main') {
+        devBox.style.display  = 'none';
+        relBox.style.display  = 'block';
+        _renderReleaseBox(d);
+      } else {
+        relBox.style.display  = 'none';
+        devBox.style.display  = 'block';
+        _renderDevBox(d);
+      }
+
+      result.style.display = 'block';
+    })
+    .catch(function(e){
+      errEl.textContent     = 'GitHub check failed: ' + e.message;
+      errEl.style.display   = 'block';
+      result.style.display  = 'block';
+    })
+    .finally(function(){
+      spinner.style.display = 'none';
+      btn.disabled = false;
+    });
+}
+
+function _renderReleaseBox(d) {
+  var rel = d.release || {};
+  if (rel.error) {
+    document.getElementById('pluginRelTag').textContent   = '–';
+    document.getElementById('pluginRelDate').textContent  = 'Could not fetch: ' + rel.error;
+    document.getElementById('pluginRelNotes').textContent = '';
+    document.getElementById('pluginRelBadge').innerHTML   = '';
+    document.getElementById('pluginApplyRelBtn').style.display = 'none';
+    document.getElementById('pluginRelUrl').href = '#';
+    return;
+  }
+  var tag    = rel.tag   || '?';
+  var curVer = (document.getElementById('pluginCurVer').textContent || '').replace(/^v/, '');
+  var date   = (rel.published_at || '').substring(0, 10);
+
+  document.getElementById('pluginRelTag').textContent   = tag;
+  document.getElementById('pluginRelDate').textContent  = date ? 'published ' + date : '';
+  document.getElementById('pluginRelNotes').textContent = rel.body || '';
+  document.getElementById('pluginRelUrl').href = rel.url || '#';
+
+  var tagClean = tag.replace(/^v/, '');
+  var isNewer  = tagClean !== curVer;
+  var badge    = document.getElementById('pluginRelBadge');
+  if (isNewer) {
+    badge.innerHTML = '<span style="background:#16a34a;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:700">Update available</span>';
+    document.getElementById('pluginApplyRelBtn').style.display = 'inline-flex';
+  } else {
+    badge.innerHTML = '<span style="background:var(--border);color:var(--muted);border-radius:4px;padding:1px 7px;font-size:11px">Up to date</span>';
+    document.getElementById('pluginApplyRelBtn').style.display = 'none';
+  }
+}
+
+function _renderDevBox(d) {
+  var branches = d.branches || {};
+  // Prefer 'dev' branch, fall back to 'main'
+  var bInfo = branches['dev'] && !branches['dev'].error ? branches['dev'] : branches['main'];
+  var bName = (branches['dev'] && !branches['dev'].error) ? 'dev' : 'main';
+
+  if (!bInfo || bInfo.error) {
+    document.getElementById('pluginDevSha').textContent = '–';
+    document.getElementById('pluginDevDate').textContent = bInfo ? ('Error: ' + bInfo.error) : '';
+    document.getElementById('pluginDevMsg').textContent  = '';
+    document.getElementById('pluginApplyDevBtn').style.display = 'none';
+    return;
+  }
+
+  var date = (bInfo.date || '').substring(0, 10);
+  document.getElementById('pluginDevSha').textContent  = bInfo.sha || '?';
+  document.getElementById('pluginDevDate').textContent = date ? date : '';
+  document.getElementById('pluginDevMsg').textContent  = bInfo.message || '';
+  // Set correct branch on the button
+  document.getElementById('pluginApplyDevBtn').setAttribute('onclick', "pluginApplyUpdate('" + bName + "')");
+  document.getElementById('pluginApplyDevBtn').style.display = 'inline-flex';
+}
+
+function pluginApplyUpdate(branch) {
+  var isRel = (branch === 'main' &&
+    document.querySelector('input[name="updateChannel"]:checked').value === 'main');
+  var spinner = document.getElementById(isRel ? 'pluginApplyRelSpinner' : 'pluginApplyDevSpinner');
+  var btn     = document.getElementById(isRel ? 'pluginApplyRelBtn'     : 'pluginApplyDevBtn');
+  var errEl   = document.getElementById('pluginUpdateError');
+
+  if (!confirm('Apply update from branch \'' + branch + '\'?\n\nAll plugin files will be overwritten (config.json is kept).\nYou will need to restart PegaProx afterwards.')) return;
+
+  spinner.style.display = 'inline-block';
+  btn.disabled = true;
+  errEl.style.display = 'none';
+
+  fetch(API + '/settings/update/apply', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({branch: branch}),
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if (d.error) {
+        errEl.textContent   = 'Update failed: ' + d.error;
+        errEl.style.display = 'block';
+      } else {
+        toast(
+          '✅ ' + (d.files_updated || 0) + ' files updated from ' + branch +
+          '. Please restart PegaProx to activate the new version.',
+          'success'
+        );
+        // Re-check to refresh version display
+        setTimeout(pluginCheckUpdate, 800);
+      }
+    })
+    .catch(function(e){
+      errEl.textContent   = 'Request failed: ' + e.message;
+      errEl.style.display = 'block';
+    })
+    .finally(function(){
+      spinner.style.display = 'none';
+      btn.disabled = false;
+    });
+}
+
+// Auto-load current version when settings tab is opened
+(function(){
+  document.querySelectorAll('.subtab').forEach(function(el){
+    el.addEventListener('click', function(){
+      if (el.dataset.tab === 'settings') {
+        // Populate current version immediately (no network call needed)
+        fetch(API + '/settings/update/info')
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            var el = document.getElementById('pluginCurVer');
+            if (el) el.textContent = 'v' + (d.current_version || '?');
+          })
+          .catch(function(){});
+      }
+    });
+  });
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Initial load
 applyI18n();
 loadSnapshots();
@@ -5784,11 +6035,11 @@ loadSnapshots();
   </div><!-- /modal box -->
 </div><!-- /bindWizModal -->
 
-<!-- ── VM Import from Manifest Modal ─────────────────────────────── -->
+<!-- ── Import VMs from Datastore Modal ───────────────────────────── -->
 <div id="vmImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="vmImportBackdropClick(event)">
   <div style="max-width:860px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700">📋 VM Import from Manifest</div>
+      <div style="font-size:16px;font-weight:700">📥 Import VMs from Datastore</div>
       <button class="btn btn-ghost btn-sm" onclick="hideVmImportModal()" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px">

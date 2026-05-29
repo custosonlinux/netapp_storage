@@ -1,13 +1,16 @@
 """
-Settings API — SMTP / email notification configuration + DB export/import.
+Settings API — SMTP / email notification configuration + DB export/import + plugin updater.
 
   settings/smtp           GET   – load SMTP config (password omitted)
   settings/smtp/save      POST  – save SMTP config
   settings/smtp/test      POST  – test SMTP connection with stored config
   settings/export         GET   – download all netapp_* tables as JSON
   settings/import         POST  – restore from exported JSON (idempotent upsert)
+  settings/update/info    GET   – check GitHub for latest release / branch commits
+  settings/update/apply   POST  – download and apply a plugin update from GitHub
 """
 
+import os
 import smtplib
 import ssl
 import email.mime.text
@@ -15,6 +18,11 @@ import email.mime.multipart
 import json
 import logging
 from datetime import datetime, timezone
+
+# Plugin directory (two levels up from this file: api/ → netapp_storage/)
+_PLUGIN_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_GITHUB_REPO = "custosonlinux/netapp_storage"
+_GITHUB_API  = "https://api.github.com"
 
 from flask import request, jsonify, Response
 from pegaprox.core.db import get_db
@@ -578,6 +586,154 @@ def _db_import():
     return jsonify({'success': True, 'rows_imported': total, 'per_table': stats})
 
 
+# ── Plugin Updater ────────────────────────────────────────────────────────────
+
+def _get_current_version():
+    """Read version from manifest.json."""
+    manifest = os.path.join(_PLUGIN_DIR, 'manifest.json')
+    try:
+        with open(manifest) as f:
+            return json.load(f).get('version', 'unknown')
+    except Exception:
+        return 'unknown'
+
+
+def _gh_request(path):
+    """Make a GitHub API GET request, returns parsed JSON or raises."""
+    import urllib.request
+    url = f"{_GITHUB_API}{path}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'netapp-ontap-plugin/updater',
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
+def _update_info():
+    """GET — return current version + GitHub release/branch info."""
+    result = {
+        'current_version': _get_current_version(),
+        'release': None,
+        'branches': {},
+    }
+
+    # Latest release
+    try:
+        data = _gh_request(f"/repos/{_GITHUB_REPO}/releases/latest")
+        result['release'] = {
+            'tag':          data.get('tag_name', ''),
+            'name':         data.get('name', ''),
+            'published_at': data.get('published_at', ''),
+            'url':          data.get('html_url', ''),
+            'body':         (data.get('body') or '')[:600],
+        }
+    except Exception as exc:
+        result['release'] = {'error': str(exc)}
+
+    # Latest commit on main and dev branches
+    for branch in ('main', 'dev'):
+        try:
+            data = _gh_request(f"/repos/{_GITHUB_REPO}/commits/{branch}")
+            result['branches'][branch] = {
+                'sha':     data['sha'][:8],
+                'sha_full': data['sha'],
+                'date':    data['commit']['committer']['date'],
+                'message': data['commit']['message'].splitlines()[0][:120],
+            }
+        except Exception as exc:
+            result['branches'][branch] = {'error': str(exc)}
+
+    return jsonify(result)
+
+
+def _update_apply():
+    """POST {branch: 'main'|'dev'} — download ZIP from GitHub and overwrite plugin files."""
+    err = _require_admin()
+    if err:
+        return err
+
+    import urllib.request
+    import urllib.error
+    import zipfile
+    import tempfile
+    import shutil
+
+    data    = request.get_json() or {}
+    branch  = data.get('branch', 'main')
+    if branch not in ('main', 'dev'):
+        return jsonify({'error': 'Invalid branch — must be main or dev'}), 400
+
+    zip_url = f"https://github.com/{_GITHUB_REPO}/archive/refs/heads/{branch}.zip"
+    tmp_zip = None
+
+    try:
+        # ── 1. Download archive ──────────────────────────────────────────────
+        log.info(f"[netapp_storage] Downloading update from {zip_url}")
+        req = urllib.request.Request(zip_url, headers={'User-Agent': 'netapp-ontap-plugin/updater'})
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp:
+            tmp_zip = tmp.name
+            with urllib.request.urlopen(req, timeout=90) as r:
+                shutil.copyfileobj(r, tmp)
+
+        # ── 2. Extract + copy ────────────────────────────────────────────────
+        # Files / dirs that must never be overwritten (user data)
+        _SKIP_FILES = {'config.json'}
+        _SKIP_DIRS  = {'__pycache__'}
+
+        copied = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with zipfile.ZipFile(tmp_zip) as zf:
+                zf.extractall(tmp_dir)
+
+            # GitHub zips always have one top-level folder (repo-branch/)
+            entries = os.listdir(tmp_dir)
+            if not entries:
+                return jsonify({'error': 'Downloaded archive is empty'}), 500
+            src_root = os.path.join(tmp_dir, entries[0])
+
+            for root, dirs, files in os.walk(src_root):
+                # Prune dirs we don't want to recurse into
+                dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+
+                rel_root  = os.path.relpath(root, src_root)
+                dest_root = os.path.join(_PLUGIN_DIR, rel_root) if rel_root != '.' else _PLUGIN_DIR
+                os.makedirs(dest_root, exist_ok=True)
+
+                for fname in files:
+                    if fname in _SKIP_FILES or fname.endswith('.pyc'):
+                        continue
+                    src_f  = os.path.join(root, fname)
+                    dest_f = os.path.join(dest_root, fname)
+                    shutil.copy2(src_f, dest_f)
+                    rel_path = os.path.join(rel_root, fname) if rel_root != '.' else fname
+                    copied.append(rel_path)
+
+        log.info(f"[netapp_storage] Update applied from '{branch}': {len(copied)} files replaced")
+        return jsonify({
+            'success':       True,
+            'branch':        branch,
+            'files_updated': len(copied),
+            'message':       (
+                f'Plugin updated from branch \'{branch}\'. '
+                'Please restart PegaProx to activate the new version.'
+            ),
+        })
+
+    except Exception as exc:
+        log.error(f"[netapp_storage] Update apply failed: {exc}")
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        if tmp_zip and os.path.exists(tmp_zip):
+            try:
+                os.unlink(tmp_zip)
+            except Exception:
+                pass
+
+
 def register_routes():
     register_plugin_route(PLUGIN_ID, 'settings/smtp',           _smtp_get)
     register_plugin_route(PLUGIN_ID, 'settings/smtp/save',      _smtp_save)
@@ -585,3 +741,5 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, 'settings/notify-test',    _notify_test)
     register_plugin_route(PLUGIN_ID, 'settings/export',         _db_export)
     register_plugin_route(PLUGIN_ID, 'settings/import',         _db_import)
+    register_plugin_route(PLUGIN_ID, 'settings/update/info',    _update_info)
+    register_plugin_route(PLUGIN_ID, 'settings/update/apply',   _update_apply)
