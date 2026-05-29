@@ -674,7 +674,48 @@ def _import_pve_nodes():
         )
         imported.append(node)
 
-    return jsonify({"imported": imported, "skipped": skipped})
+    # ── Auto-push SSH key to all newly imported nodes ─────────────────────────
+    # The cluster password is the same for all nodes; admin user is root@pam → "root".
+    ssh_pushed, ssh_failed = [], []
+    if imported:
+        ssh_user = username.split("@")[0]   # "root@pam" → "root"
+        pubkey   = _read_ssh_pubkey()
+        has_sshpass = shutil.which("sshpass") is not None
+
+        if not pubkey:
+            ssh_failed = [{"node": n, "error": "No SSH public key found on PegaProx"} for n in imported]
+        elif not has_sshpass:
+            ssh_failed = [{"node": n, "error": "sshpass not installed (apt install sshpass)"} for n in imported]
+        else:
+            for node in imported:
+                try:
+                    result = subprocess.run(
+                        [
+                            "sshpass", "-p", password,
+                            "ssh-copy-id",
+                            "-o", "StrictHostKeyChecking=no",
+                            "-o", "ConnectTimeout=10",
+                            f"{ssh_user}@{node}",
+                        ],
+                        capture_output=True,
+                        timeout=20,
+                    )
+                    if result.returncode == 0:
+                        ssh_pushed.append(node)
+                    else:
+                        stderr = result.stderr.decode(errors="replace")[:200]
+                        ssh_failed.append({"node": node, "error": stderr or "ssh-copy-id failed"})
+                except subprocess.TimeoutExpired:
+                    ssh_failed.append({"node": node, "error": "Connection timed out"})
+                except Exception as exc:
+                    ssh_failed.append({"node": node, "error": str(exc)[:200]})
+
+    return jsonify({
+        "imported":   imported,
+        "skipped":    skipped,
+        "ssh_pushed": ssh_pushed,
+        "ssh_failed": ssh_failed,
+    })
 
 
 # ── Combined ONTAP setup (create user + register endpoint in one step) ─────────

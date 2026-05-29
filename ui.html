@@ -5084,22 +5084,27 @@ async function wizImportSelectedNodes() {
     return;
   }
 
-  var imported = [], skipped = [], errors = [];
+  var imported = [], skipped = [], sshPushed = [], sshFailed = [], errors = [];
   await Promise.all(Object.entries(byCluster).map(async function(entry) {
     var clusterId = entry[0], nodes = entry[1];
     try {
       var r = await apiPost('setup/import-pve-nodes', { cluster_id: clusterId, nodes: nodes });
-      imported = imported.concat(r.imported || []);
-      skipped  = skipped.concat(r.skipped || []);
+      imported  = imported.concat(r.imported   || []);
+      skipped   = skipped.concat(r.skipped     || []);
+      sshPushed = sshPushed.concat(r.ssh_pushed || []);
+      sshFailed = sshFailed.concat(r.ssh_failed || []);
     } catch(e) {
       errors.push(e.message || String(e));
     }
   }));
 
   var parts = [];
-  if (imported.length) parts.push('<span class="setup-ok">✅ Imported: ' + imported.map(esc).join(', ') + '</span>');
-  if (skipped.length)  parts.push('<span style="color:var(--muted)">Already present: ' + skipped.map(esc).join(', ') + '</span>');
-  if (errors.length)   parts.push('<span class="setup-err">❌ ' + errors.map(esc).join('; ') + '</span>');
+  if (imported.length)   parts.push('<span class="setup-ok">✅ Imported: '       + imported.map(esc).join(', ') + '</span>');
+  if (skipped.length)    parts.push('<span style="color:var(--muted)">Already present: ' + skipped.map(esc).join(', ') + '</span>');
+  if (sshPushed.length)  parts.push('<span class="setup-ok">🔑 SSH key pushed: ' + sshPushed.map(esc).join(', ') + '</span>');
+  if (sshFailed.length)  parts.push('<span class="setup-warn">⚠️ SSH key failed: ' +
+    sshFailed.map(function(f){ return esc(f.node || f) + (f.error ? ' (' + esc(f.error) + ')' : ''); }).join('; ') + '</span>');
+  if (errors.length)     parts.push('<span class="setup-err">❌ ' + errors.map(esc).join('; ') + '</span>');
   el.innerHTML = parts.join('<br>') || '<span class="setup-ok">✅ Done.</span>';
   sp.style.display = 'none';
   await wizRefreshPveHosts();
