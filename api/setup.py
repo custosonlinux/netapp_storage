@@ -786,7 +786,12 @@ def _add_ontap_system():
             user_created = True
             user_msg = f"User '{new_username}' created with role '{role_name}'."
         except OntapError as exc:
-            return jsonify({"error": f"Cannot create user: {exc}"}), 400
+            if exc.status_code == 409:
+                # duplicate entry — user exists in a different scope (e.g. SVM-level account);
+                # treat as already-present and continue
+                user_msg = f"User '{new_username}' already exists — will use existing account."
+            else:
+                return jsonify({"error": f"Cannot create user: {exc}"}), 400
 
     # ── Step C: verify new credentials work ───────────────────────────────────
     try:
