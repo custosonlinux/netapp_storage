@@ -551,6 +551,248 @@ def _run_pkg_install(job_id, host_row, packages):
         )
 
 
+# ── PegaProx cluster import ───────────────────────────────────────────────────
+
+def _get_pve_clusters():
+    """Returns PegaProx-managed Proxmox clusters with live node lists.
+
+    Reads the ``clusters`` table (PegaProx core), decrypts credentials,
+    then fetches ``GET /api2/json/nodes`` from each cluster so the wizard
+    can show the exact nodes the user already has in PegaProx.
+    """
+    import requests as _req
+
+    db   = get_db()
+    try:
+        rows = db.query(
+            "SELECT id, name, host, user, pass_encrypted, ssl_verification, api_port "
+            "FROM clusters ORDER BY sort_order, name"
+        )
+    except Exception as exc:
+        log.warning(f"[setup] Cannot read clusters table: {exc}")
+        return jsonify({"clusters": [], "warning": str(exc)})
+
+    clusters = []
+    for row in rows:
+        c        = dict(row)
+        password = db._decrypt(c.get("pass_encrypted") or "")
+        port     = int(c.get("api_port") or 8006)
+        username = c.get("user") or "root@pam"
+        ssl_v    = bool(c.get("ssl_verification", 1))
+        base     = f"https://{c['host']}:{port}/api2/json"
+
+        entry = {
+            "id":       c["id"],
+            "name":     c["name"],
+            "host":     c["host"],
+            "port":     port,
+            "username": username,
+            "ssl_verify": ssl_v,
+            "nodes":    [],
+            "error":    None,
+        }
+
+        try:
+            lr = _req.post(
+                f"{base}/access/ticket",
+                data={"username": username, "password": password},
+                verify=ssl_v, timeout=10,
+            )
+            if lr.status_code != 200:
+                entry["error"] = f"PVE login failed (HTTP {lr.status_code})"
+            else:
+                ld   = lr.json()["data"]
+                nr   = _req.get(
+                    f"{base}/nodes",
+                    cookies={"PVEAuthCookie": ld["ticket"]},
+                    headers={"CSRFPreventionToken": ld["CSRFPreventionToken"]},
+                    verify=ssl_v, timeout=10,
+                )
+                if nr.status_code == 200:
+                    entry["nodes"] = [
+                        {"node": n["node"], "status": n.get("status", "?")}
+                        for n in nr.json().get("data", [])
+                    ]
+                else:
+                    entry["error"] = f"Cannot fetch nodes (HTTP {nr.status_code})"
+        except Exception as exc:
+            entry["error"] = str(exc)[:200]
+
+        clusters.append(entry)
+
+    return jsonify({"clusters": clusters})
+
+
+def _import_pve_nodes():
+    """Imports selected PVE nodes from a PegaProx cluster into netapp_pve_hosts.
+
+    Body:
+      cluster_id  — id from the clusters table
+      nodes       — list of node names to import, e.g. ["pve1", "pve2"]
+
+    Uses the cluster's existing credentials so the user doesn't re-enter anything.
+    Skips nodes that are already in netapp_pve_hosts (by host or name).
+    Returns: {imported: [...], skipped: [...]}
+    """
+    data       = request.get_json() or {}
+    cluster_id = data.get("cluster_id", "").strip()
+    node_names = [n.strip() for n in data.get("nodes", []) if n.strip()]
+
+    if not cluster_id or not node_names:
+        return jsonify({"error": "cluster_id and nodes are required"}), 400
+
+    db  = get_db()
+    row = db.query_one(
+        "SELECT name, host, user, pass_encrypted, ssl_verification, api_port "
+        "FROM clusters WHERE id=?", (cluster_id,)
+    )
+    if not row:
+        return jsonify({"error": "Cluster not found"}), 404
+
+    c        = dict(row)
+    password = db._decrypt(c.get("pass_encrypted") or "")
+    port     = int(c.get("api_port") or 8006)
+    username = c.get("user") or "root@pam"
+    ssl_v    = bool(c.get("ssl_verification", 1))
+
+    imported, skipped = [], []
+    for node in node_names:
+        # Skip duplicates (same host OR same name)
+        existing = db.query_one(
+            "SELECT id FROM netapp_pve_hosts WHERE host=? OR name=?",
+            (node, node),
+        )
+        if existing:
+            skipped.append(node)
+            continue
+        host_id = str(_uuid.uuid4())
+        db.execute(
+            """INSERT INTO netapp_pve_hosts
+               (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (host_id, node, node, port, username, db._encrypt(password), ssl_v, ""),
+        )
+        imported.append(node)
+
+    return jsonify({"imported": imported, "skipped": skipped})
+
+
+# ── Combined ONTAP setup (create user + register endpoint in one step) ─────────
+
+def _add_ontap_system():
+    """Creates a dedicated ONTAP user and registers the endpoint in one operation.
+
+    Body:
+      name           — friendly name for the endpoint (required)
+      host           — cluster management IP / FQDN (required)
+      admin_user     — existing admin username (default: admin)
+      admin_password — admin password — NOT stored (required)
+      new_username   — username to create (default: pegaprox)
+      new_password   — password for the new user (required)
+      role           — 'admin' (default) or 'readonly'
+      ssl_verify     — bool (default false)
+
+    Flow:
+      1. Verify admin credentials reach the cluster
+      2. Create (or confirm) the new_username account
+      3. Register the endpoint using new_username / new_password
+      4. Return combined status
+    """
+    data           = request.get_json() or {}
+    name           = data.get("name", "").strip()
+    host           = data.get("host", "").strip()
+    admin_user     = data.get("admin_user", "admin").strip()
+    admin_password = data.get("admin_password", "").strip()
+    new_username   = data.get("new_username", "pegaprox").strip()
+    new_password   = data.get("new_password", "").strip()
+    role_name      = data.get("role", "admin")
+    ssl_verify     = bool(data.get("ssl_verify", False))
+
+    if not name or not host or not admin_password or not new_password:
+        return jsonify({"error": "name, host, admin_password and new_password are required"}), 400
+
+    from ..core.ontap_client import OntapClient, OntapError
+
+    # ── Step A: verify admin credentials ─────────────────────────────────────
+    try:
+        admin_client = OntapClient(
+            host=host, username=admin_user, password=admin_password,
+            ssl_verify=ssl_verify, timeout=20,
+        )
+        admin_client._get("cluster", params={"fields": "name,version"})
+    except OntapError as exc:
+        return jsonify({"error": f"Admin login failed: {exc}"}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Cannot reach cluster: {exc}"}), 400
+
+    # ── Step B: create / confirm ONTAP user ───────────────────────────────────
+    user_created = False
+    try:
+        admin_client._get(f"security/accounts/{new_username}")
+        user_msg = f"User '{new_username}' already exists — will use existing account."
+    except OntapError as exc:
+        if exc.status_code != 404:
+            return jsonify({"error": f"Cannot check user: {exc}"}), 400
+        # User does not exist → create
+        try:
+            admin_client._post("security/accounts", body={
+                "name": new_username,
+                "role": {"name": role_name},
+                "password": new_password,
+                "applications": [{"application": "http",
+                                  "authentication_methods": ["password"]}],
+            })
+            user_created = True
+            user_msg = f"User '{new_username}' created with role '{role_name}'."
+        except OntapError as exc:
+            return jsonify({"error": f"Cannot create user: {exc}"}), 400
+
+    # ── Step C: verify new credentials work ───────────────────────────────────
+    try:
+        new_client = OntapClient(
+            host=host, username=new_username, password=new_password,
+            ssl_verify=ssl_verify, timeout=15,
+        )
+        info = new_client._get("cluster", params={"fields": "name,version"})
+    except Exception as exc:
+        return jsonify({
+            "error": f"New user credentials did not authenticate: {exc}",
+            "user_created": user_created,
+        }), 400
+
+    # ── Step D: register endpoint ─────────────────────────────────────────────
+    db = get_db()
+    existing_ep = db.query_one("SELECT id FROM netapp_endpoints WHERE host=?", (host,))
+    ep_created  = False
+    if not existing_ep:
+        ep_id = str(_uuid.uuid4())
+        db.execute(
+            """INSERT INTO netapp_endpoints
+               (id, name, host, username, password_encrypted, ssl_verify, skip_nfs)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (ep_id, name, host, new_username, db._encrypt(new_password), ssl_verify, 0),
+        )
+        ep_created = True
+    else:
+        # Update credentials of existing endpoint
+        db.execute(
+            "UPDATE netapp_endpoints SET name=?, username=?, password_encrypted=?, ssl_verify=? WHERE host=?",
+            (name, new_username, db._encrypt(new_password), ssl_verify, host),
+        )
+
+    cluster_name = info.get("name", host)
+    version      = info.get("version", {}).get("full", "")
+
+    return jsonify({
+        "ok":           True,
+        "user_created": user_created,
+        "ep_created":   ep_created,
+        "user_msg":     user_msg,
+        "cluster_name": cluster_name,
+        "version":      version,
+    })
+
+
 # ── Route registration ────────────────────────────────────────────────────────
 
 def register_routes():
@@ -562,3 +804,6 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, "setup/check-packages",    _check_packages)
     register_plugin_route(PLUGIN_ID, "setup/install-packages",  _install_packages)
     register_plugin_route(PLUGIN_ID, "setup/create-ontap-user", _create_ontap_user)
+    register_plugin_route(PLUGIN_ID, "setup/pve-clusters",      _get_pve_clusters)
+    register_plugin_route(PLUGIN_ID, "setup/import-pve-nodes",  _import_pve_nodes)
+    register_plugin_route(PLUGIN_ID, "setup/add-ontap-system",  _add_ontap_system)

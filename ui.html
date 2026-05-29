@@ -5000,7 +5000,7 @@ async function setupWizardInit() {
 
 function setupShowStep(n) {
   _setupCurrentStep = n;
-  for (var i = 1; i <= 6; i++) {
+  for (var i = 1; i <= 5; i++) {
     var card = document.getElementById('setupStep' + i);
     var pill = document.getElementById('spill' + i);
     if (card) card.style.display = (i === n) ? '' : 'none';
@@ -5009,23 +5009,104 @@ function setupShowStep(n) {
       if (i === n) pill.classList.add('active');
     }
   }
-  // Refresh lists on step entry so they reflect any changes made in other tabs
-  if (n === 2) wizRefreshPveHosts();
+  if (n === 2) wizLoadClusters();
   if (n === 4) wizRefreshEndpoints();
 }
 
-// ── Step 2: PVE Hosts — inline add + SSH push ─────────────────────────────
+// ── Step 2: PVE Hosts — import from PegaProx ─────────────────────────────
 
-function wizShowAddPveBox() {
-  ['wiz_pve_name','wiz_pve_host','wiz_pve_pass','wiz_pve_nfs_ip'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.value = '';
-  });
-  document.getElementById('wiz_pve_port').value = '8006';
-  document.getElementById('wiz_pve_user').value = 'root@pam';
-  document.getElementById('wizAddPveResult').textContent = '';
-  document.getElementById('wizAddPveBox').style.display = '';
-  document.getElementById('wiz_pve_name').focus();
+async function wizLoadClusters() {
+  var el = document.getElementById('wizClusterList');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--muted);font-size:13px">Loading clusters from PegaProx…</span>';
+  try {
+    var r = await apiFetch('setup/pve-clusters');
+    var clusters = r.clusters || [];
+    if (!clusters.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px">No clusters configured in PegaProx yet.</div>';
+      return;
+    }
+    var html = '';
+    clusters.forEach(function(c) {
+      html += '<div style="margin-bottom:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px">';
+      html += '<div style="font-weight:600;font-size:13px;margin-bottom:6px">🖥️ ' + esc(c.name) + ' <span style="font-weight:400;color:var(--muted);font-size:11px">(' + esc(c.host) + ':' + c.port + ')</span>';
+      if (c.error) html += ' <span class="setup-err" style="font-size:11px">⚠️ ' + esc(c.error) + '</span>';
+      html += '</div>';
+      if (c.nodes && c.nodes.length) {
+        html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        c.nodes.forEach(function(n) {
+          var online = n.status === 'online';
+          var nodeId = 'wizNode_' + c.id + '_' + n.node;
+          html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;' +
+                  'padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card)">' +
+                  '<input type="checkbox" class="wiz-node-cb" ' +
+                  'data-cluster-id="' + esc(c.id) + '" ' +
+                  'data-node="' + esc(n.node) + '" ' +
+                  (online ? 'checked' : '') + ' ' +
+                  'id="' + nodeId + '">' +
+                  '<span>' + esc(n.node) + '</span>' +
+                  (online ? '<span style="color:var(--success);font-size:10px">●</span>'
+                           : '<span style="color:var(--muted);font-size:10px">○ offline</span>') +
+                  '</label>';
+        });
+        html += '</div>';
+      } else if (!c.error) {
+        html += '<span style="color:var(--muted);font-size:12px">No nodes returned</span>';
+      }
+      html += '</div>';
+    });
+    el.innerHTML = html;
+    // Refresh already-imported list too
+    wizRefreshPveHosts();
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  }
 }
+
+async function wizImportSelectedNodes() {
+  var sp = document.getElementById('wizImportSpinner');
+  var el = document.getElementById('wizImportResult');
+  sp.style.display = '';
+  el.textContent   = '';
+
+  // Group checked nodes by cluster
+  var byCluster = {};
+  document.querySelectorAll('.wiz-node-cb:checked').forEach(function(cb) {
+    var cid  = cb.dataset.clusterId;
+    var node = cb.dataset.node;
+    if (!byCluster[cid]) byCluster[cid] = [];
+    byCluster[cid].push(node);
+  });
+
+  if (!Object.keys(byCluster).length) {
+    el.innerHTML = '<span class="setup-warn">⚠️ No nodes selected.</span>';
+    sp.style.display = 'none';
+    return;
+  }
+
+  var imported = [], skipped = [], errors = [];
+  await Promise.all(Object.entries(byCluster).map(async function(entry) {
+    var clusterId = entry[0], nodes = entry[1];
+    try {
+      var r = await apiPost('setup/import-pve-nodes', { cluster_id: clusterId, nodes: nodes });
+      imported = imported.concat(r.imported || []);
+      skipped  = skipped.concat(r.skipped || []);
+    } catch(e) {
+      errors.push(e.message || String(e));
+    }
+  }));
+
+  var parts = [];
+  if (imported.length) parts.push('<span class="setup-ok">✅ Imported: ' + imported.map(esc).join(', ') + '</span>');
+  if (skipped.length)  parts.push('<span style="color:var(--muted)">Already present: ' + skipped.map(esc).join(', ') + '</span>');
+  if (errors.length)   parts.push('<span class="setup-err">❌ ' + errors.map(esc).join('; ') + '</span>');
+  el.innerHTML = parts.join('<br>') || '<span class="setup-ok">✅ Done.</span>';
+  sp.style.display = 'none';
+  await wizRefreshPveHosts();
+  loadPveHosts();
+}
+
+function wizShowAddPveBox() { /* kept for manual fallback — not used in main flow */ }
 
 async function wizRefreshPveHosts() {
   try {
@@ -5040,123 +5121,103 @@ async function wizRefreshPveHosts() {
       opt.textContent = h.name + ' (' + h.host + ')';
       sel.appendChild(opt);
     });
-    // Render list in wizard step
+    // Render already-imported host list
     var el = document.getElementById('wizPveList');
     if (!el) return;
     if (!rows.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">No PVE hosts configured yet — click <strong>+ Add PVE Host</strong> below.</div>';
+      el.innerHTML = '';
       return;
     }
-    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:2px"><tbody>';
+    var html = '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">Imported Hosts</div>';
+    html += '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:8px"><tbody>';
     rows.forEach(function(h) {
       html += '<tr style="border-bottom:1px solid var(--border)">' +
-        '<td style="padding:6px 10px 6px 0"><strong>' + esc(h.name) + '</strong>' +
+        '<td style="padding:5px 10px 5px 0"><strong>' + esc(h.name) + '</strong>' +
         '<br><span style="color:var(--muted);font-size:11px">' + esc(h.host) + ':' + (h.port||8006) + ' · ' + esc(h.username) + '</span></td>' +
-        '<td id="wizPveSsh_' + h.id + '" style="font-size:12px;color:var(--muted);padding:6px">—</td>' +
+        '<td id="wizPveSsh_' + h.id + '" style="font-size:12px;color:var(--muted);padding:5px 6px">—</td>' +
         '</tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch(e) {
-    var el = document.getElementById('wizPveList');
-    if (el) el.innerHTML = '<span class="setup-err">Failed to load hosts: ' + esc(e.message) + '</span>';
+    var el2 = document.getElementById('wizPveList');
+    if (el2) el2.innerHTML = '<span class="setup-err">Failed to load hosts: ' + esc(e.message) + '</span>';
   }
 }
 
-async function wizAddPveHost() {
-  var sp       = document.getElementById('wizAddPveSpinner');
-  var el       = document.getElementById('wizAddPveResult');
-  var name     = document.getElementById('wiz_pve_name').value.trim();
-  var host     = document.getElementById('wiz_pve_host').value.trim();
-  var port     = parseInt(document.getElementById('wiz_pve_port').value) || 8006;
-  var username = document.getElementById('wiz_pve_user').value.trim();
-  var password = document.getElementById('wiz_pve_pass').value;
-  var nfs_ip   = document.getElementById('wiz_pve_nfs_ip').value.trim();
-  if (!name || !host || !username || !password) {
-    el.innerHTML = '<span class="setup-err">❌ Name, host, username and password are required.</span>';
-    return;
-  }
-  sp.style.display = '';
-  el.textContent   = '';
-  try {
-    await apiPost('pve-hosts/add', {name, host, port, username, password, ssl_verify: false, nfs_ip});
-    el.innerHTML = '<span class="setup-ok">✅ Host added.</span>';
-    document.getElementById('wizAddPveBox').style.display = 'none';
-    await wizRefreshPveHosts();
-    loadPveHosts();  // refresh Settings tab list too
-  } catch(e) {
-    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
-  } finally {
-    sp.style.display = 'none';
-  }
-}
-
-// ── Step 4: NetApp Systems — inline add + test ────────────────────────────
-
-function wizShowAddEpBox() {
-  ['wiz_ep_name','wiz_ep_host','wiz_ep_pass'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.value = '';
-  });
-  document.getElementById('wiz_ep_user').value  = 'admin';
-  document.getElementById('wiz_ep_ssl').checked = false;
-  document.getElementById('wizAddEpResult').textContent = '';
-  document.getElementById('wizAddEpBox').style.display  = '';
-  document.getElementById('wiz_ep_name').focus();
-}
+// ── Step 4: NetApp Systems — combined add + create user ───────────────────
 
 async function wizRefreshEndpoints() {
   try {
     var rows = await apiFetch('endpoints');
-    var el = document.getElementById('wizEpList');
+    var el   = document.getElementById('wizEpList');
     if (!el) return;
     if (!rows.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">No ONTAP endpoints configured yet — click <strong>+ Add NetApp System</strong> below.</div>';
+      el.innerHTML = '';
       return;
     }
-    // Prefill host in ONTAP User step from first endpoint
-    var hostEl = document.getElementById('setupOntapHost');
-    if (hostEl && !hostEl.value && rows.length > 0) hostEl.value = rows[0].host || '';
-    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:2px"><tbody>';
+    var html = '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">Registered Systems</div>';
+    html += '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:10px"><tbody>';
     rows.forEach(function(ep) {
       html += '<tr style="border-bottom:1px solid var(--border)">' +
-        '<td style="padding:6px 10px 6px 0"><strong>' + esc(ep.name) + '</strong>' +
+        '<td style="padding:5px 10px 5px 0"><strong>' + esc(ep.name) + '</strong>' +
         '<br><span style="color:var(--muted);font-size:11px">' + esc(ep.host) + ' · ' + esc(ep.username) + '</span></td>' +
-        '<td id="wizEpStatus_' + ep.id + '" style="font-size:12px;color:var(--muted);padding:6px">—</td>' +
+        '<td id="wizEpStatus_' + ep.id + '" style="font-size:12px;color:var(--muted);padding:5px 6px">—</td>' +
         '</tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch(e) {
-    var el = document.getElementById('wizEpList');
-    if (el) el.innerHTML = '<span class="setup-err">Failed to load endpoints: ' + esc(e.message) + '</span>';
+    var el2 = document.getElementById('wizEpList');
+    if (el2) el2.innerHTML = '<span class="setup-err">Failed to load endpoints: ' + esc(e.message) + '</span>';
   }
 }
 
-async function wizAddEndpoint() {
-  var sp         = document.getElementById('wizAddEpSpinner');
-  var el         = document.getElementById('wizAddEpResult');
+async function wizAddOntapSystem() {
+  var sp = document.getElementById('wizAddEpSpinner');
+  var el = document.getElementById('wizAddEpResult');
   var name       = document.getElementById('wiz_ep_name').value.trim();
   var host       = document.getElementById('wiz_ep_host').value.trim();
-  var username   = document.getElementById('wiz_ep_user').value.trim();
-  var password   = document.getElementById('wiz_ep_pass').value;
+  var adminUser  = document.getElementById('wiz_ep_admin_user').value.trim();
+  var adminPass  = document.getElementById('wiz_ep_admin_pass').value;
+  var newUser    = document.getElementById('wiz_ep_user').value.trim();
+  var newPass    = document.getElementById('wiz_ep_pass').value;
+  var role       = document.getElementById('wiz_ep_role').value;
   var ssl_verify = document.getElementById('wiz_ep_ssl').checked;
-  if (!name || !host || !username || !password) {
-    el.innerHTML = '<span class="setup-err">❌ All fields are required.</span>';
+
+  if (!name || !host || !adminPass || !newPass) {
+    el.innerHTML = '<span class="setup-err">❌ Name, host, admin password and plugin password are required.</span>';
     return;
   }
   sp.style.display = '';
-  el.innerHTML     = 'Saving…';
+  el.innerHTML = '<span style="color:var(--muted)">Connecting to ONTAP…</span>';
   try {
-    await apiPost('endpoints/add', {name, host, username, password, ssl_verify, skip_nfs: false});
-    el.innerHTML = '<span class="setup-ok">✅ Endpoint saved — testing connectivity…</span>';
-    document.getElementById('wizAddEpBox').style.display = 'none';
-    await wizRefreshEndpoints();
-    loadEndpoints();  // refresh Settings tab too
-    // Prefill host in ONTAP User step
-    var hostEl = document.getElementById('setupOntapHost');
-    if (hostEl && !hostEl.value) hostEl.value = host;
-    // Auto-run connectivity test so results appear immediately
-    setupTestEndpoints();
+    var r = await apiPost('setup/add-ontap-system', {
+      name, host,
+      admin_user:     adminUser,
+      admin_password: adminPass,
+      new_username:   newUser,
+      new_password:   newPass,
+      role,
+      ssl_verify,
+    });
+    if (r.ok) {
+      var lines = [];
+      lines.push('✅ <strong>' + esc(r.cluster_name || host) + '</strong>' +
+                 (r.version ? ' · ONTAP ' + esc(r.version) : ''));
+      lines.push(r.user_created
+        ? '🔑 User <code>' + esc(newUser) + '</code> created with role <em>' + esc(role) + '</em>'
+        : '🔑 User <code>' + esc(newUser) + '</code> already existed — endpoint updated');
+      lines.push(r.ep_created ? '📝 Endpoint registered.' : '📝 Endpoint credentials updated.');
+      el.innerHTML = '<span class="setup-ok">' + lines.join('<br>') + '</span>';
+      // Clear sensitive fields
+      document.getElementById('wiz_ep_admin_pass').value = '';
+      await wizRefreshEndpoints();
+      loadEndpoints();
+      setupTestEndpoints();
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Unknown error') + '</span>';
+    }
   } catch(e) {
     el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
   } finally {
@@ -5667,8 +5728,7 @@ loadSnapshots();
         <div class="setup-step-pill" id="spill2" onclick="setupShowStep(2)">② PVE Hosts</div>
         <div class="setup-step-pill" id="spill3" onclick="setupShowStep(3)">③ Packages</div>
         <div class="setup-step-pill" id="spill4" onclick="setupShowStep(4)">④ NetApp</div>
-        <div class="setup-step-pill" id="spill5" onclick="setupShowStep(5)">⑤ ONTAP User</div>
-        <div class="setup-step-pill" id="spill6" onclick="setupShowStep(6)">⑥ Ready</div>
+        <div class="setup-step-pill" id="spill5" onclick="setupShowStep(5)">⑤ Ready</div>
       </div>
 
       <!-- ── Step 1: PegaProx System Check ── -->
@@ -5697,36 +5757,28 @@ loadSnapshots();
       <div class="card setup-step-card" id="setupStep2" style="display:none">
         <div class="card-title">② Proxmox VE Hosts</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Add your Proxmox VE cluster nodes, then push the SSH public key so PegaProx can reach them without a password.
+          Your Proxmox nodes are imported from PegaProx — no need to enter them again.
+          Select the nodes to add to this plugin, then push the SSH key for passwordless access.
         </p>
 
-        <!-- Host list -->
-        <div id="wizPveList" style="margin-bottom:10px"></div>
-
-        <!-- Inline add form -->
-        <div id="wizAddPveBox" style="display:none;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Add PVE Host</div>
-          <div class="form-grid">
-            <div class="form-group"><label>Name</label><input class="form-control" id="wiz_pve_name" placeholder="pve-node1"></div>
-            <div class="form-group"><label>Host / IP</label><input class="form-control" id="wiz_pve_host" placeholder="192.168.1.10"></div>
-            <div class="form-group"><label>Port</label><input class="form-control" id="wiz_pve_port" value="8006" type="number"></div>
-            <div class="form-group"><label>Username</label><input class="form-control" id="wiz_pve_user" value="root@pam"></div>
-            <div class="form-group"><label>Password</label><input class="form-control" id="wiz_pve_pass" type="password" placeholder="root password"></div>
-            <div class="form-group"><label>NFS / Storage IP <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input class="form-control" id="wiz_pve_nfs_ip" placeholder="10.0.0.10"></div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn btn-primary btn-sm" onclick="wizAddPveHost()">
-              Add Host <span id="wizAddPveSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-            </button>
-            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wizAddPveBox').style.display='none'">Cancel</button>
-          </div>
-          <div id="wizAddPveResult" style="font-size:12px;margin-top:6px"></div>
+        <!-- Cluster + node list (loaded from PegaProx) -->
+        <div id="wizClusterList" style="margin-bottom:12px">
+          <span style="color:var(--muted);font-size:13px">Loading clusters from PegaProx…</span>
         </div>
 
-        <!-- Actions -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <button class="btn btn-secondary btn-sm" onclick="wizShowAddPveBox()">+ Add PVE Host</button>
-          <button class="btn btn-primary" onclick="setupTestSsh()">
+        <!-- Import button -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" onclick="wizImportSelectedNodes()">
+            ↓ Import Selected Nodes <span id="wizImportSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="wizLoadClusters()">↻ Refresh</button>
+        </div>
+        <div id="wizImportResult" style="font-size:12px;margin-bottom:10px"></div>
+
+        <!-- Already-imported hosts + SSH test -->
+        <div id="wizPveList" style="margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button class="btn btn-secondary" onclick="setupTestSsh()">
             Test SSH to All <span id="setupSshSpinner" class="spinner" style="display:none;margin-left:4px"></span>
           </button>
         </div>
@@ -5775,42 +5827,75 @@ loadSnapshots();
         </div>
       </div>
 
-      <!-- ── Step 4: NetApp Systems ── -->
+      <!-- ── Step 4: NetApp ONTAP (add + create user in one go) ── -->
       <div class="card setup-step-card" id="setupStep4" style="display:none">
         <div class="card-title">④ NetApp ONTAP Systems</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Add your ONTAP cluster management endpoints and verify REST API connectivity.
+          Enter the cluster management IP and your admin credentials. The wizard will
+          create a dedicated <code>pegaprox</code> account on ONTAP and register
+          the system — the admin password is only used for this step and never stored.
         </p>
 
-        <!-- Endpoint list -->
+        <!-- Already-registered endpoints -->
         <div id="wizEpList" style="margin-bottom:10px"></div>
 
-        <!-- Inline add form -->
-        <div id="wizAddEpBox" style="display:none;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Add NetApp System</div>
+        <!-- Combined add + user form -->
+        <div id="wizAddEpBox" style="padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:12px">Add NetApp System</div>
           <div class="form-grid">
-            <div class="form-group"><label>Name</label><input class="form-control" id="wiz_ep_name" placeholder="ontap-cluster1"></div>
-            <div class="form-group"><label>Cluster Mgmt IP / FQDN</label><input class="form-control" id="wiz_ep_host" placeholder="10.0.0.1"></div>
-            <div class="form-group"><label>Username</label><input class="form-control" id="wiz_ep_user" value="admin"></div>
-            <div class="form-group"><label>Password</label><input class="form-control" id="wiz_ep_pass" type="password" placeholder="password"></div>
+            <div class="form-group">
+              <label>Name <span style="font-weight:400;color:var(--muted)">(friendly label)</span></label>
+              <input class="form-control" id="wiz_ep_name" placeholder="ontap-cluster1">
+            </div>
+            <div class="form-group">
+              <label>Cluster Mgmt IP / FQDN</label>
+              <input class="form-control" id="wiz_ep_host" placeholder="10.0.0.1">
+            </div>
           </div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0 10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400">
+          <div style="margin:10px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Admin credentials <span style="font-weight:400;text-transform:none;letter-spacing:0">(temporary — not stored)</span></div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Admin Username</label>
+              <input class="form-control" id="wiz_ep_admin_user" value="admin">
+            </div>
+            <div class="form-group">
+              <label>Admin Password</label>
+              <input class="form-control" id="wiz_ep_admin_pass" type="password" placeholder="admin password">
+            </div>
+          </div>
+          <div style="margin:10px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Plugin account to create on ONTAP</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Username</label>
+              <input class="form-control" id="wiz_ep_user" value="pegaprox">
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input class="form-control" id="wiz_ep_pass" type="password" placeholder="strong password">
+            </div>
+            <div class="form-group">
+              <label>Role</label>
+              <select class="form-control" id="wiz_ep_role">
+                <option value="admin">admin (full REST API, HTTP only)</option>
+                <option value="readonly">readonly (monitoring only)</option>
+              </select>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0 12px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400">
             <input type="checkbox" id="wiz_ep_ssl"> Verify SSL certificate
           </label>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm" onclick="wizAddEndpoint()">
-              Add &amp; Test <span id="wizAddEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="wizAddOntapSystem()">
+              Create User &amp; Register System <span id="wizAddEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
             </button>
-            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wizAddEpBox').style.display='none'">Cancel</button>
           </div>
-          <div id="wizAddEpResult" style="font-size:12px;margin-top:6px"></div>
+          <div id="wizAddEpResult" style="font-size:12px;margin-top:8px"></div>
         </div>
 
-        <!-- Actions -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <button class="btn btn-secondary btn-sm" onclick="wizShowAddEpBox()">+ Add NetApp System</button>
-          <button class="btn btn-primary" onclick="setupTestEndpoints()">
-            Test All <span id="setupEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+        <!-- Test already-registered endpoints -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button class="btn btn-secondary" onclick="setupTestEndpoints()">
+            Test All Registered Systems <span id="setupEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
           </button>
         </div>
         <div id="setupEpResult" style="margin-bottom:4px"></div>
@@ -5821,62 +5906,9 @@ loadSnapshots();
         </div>
       </div>
 
-      <!-- ── Step 5: Dedicated ONTAP User ── -->
+      <!-- ── Step 5: Ready ── -->
       <div class="card setup-step-card" id="setupStep5" style="display:none">
-        <div class="card-title">⑤ Dedicated ONTAP User (recommended)</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Creates a dedicated <code>pegaprox</code> account on the ONTAP cluster with
-          <strong>HTTP-only access</strong> — no CLI or SSH.
-          Use this instead of the cluster <code>admin</code> account for day-to-day plugin operations.
-        </p>
-        <div class="form-grid" style="margin-bottom:12px">
-          <div class="form-group">
-            <label>Cluster IP / FQDN</label>
-            <input class="form-control" id="setupOntapHost" placeholder="10.0.0.1">
-          </div>
-          <div class="form-group">
-            <label>Admin Username <span style="font-weight:400;color:var(--muted)">(temporary, for user creation)</span></label>
-            <input class="form-control" id="setupAdminUser" value="admin">
-          </div>
-          <div class="form-group">
-            <label>Admin Password</label>
-            <input class="form-control" id="setupAdminPass" type="password" placeholder="admin password">
-          </div>
-          <div class="form-group">
-            <label>New Username</label>
-            <input class="form-control" id="setupNewUser" value="pegaprox">
-          </div>
-          <div class="form-group">
-            <label>New Password</label>
-            <input class="form-control" id="setupNewPass" type="password" placeholder="strong password">
-          </div>
-          <div class="form-group">
-            <label>Role</label>
-            <select class="form-control" id="setupOntapRole">
-              <option value="admin">admin (full REST API access, HTTP only)</option>
-              <option value="readonly">readonly (monitoring only — no create/delete)</option>
-            </select>
-          </div>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400">
-          <input type="checkbox" id="setupSslVerify"> Verify SSL certificate
-        </label>
-        <div id="setupUserResult" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" onclick="setupCreateOntapUser()">
-            Create User <span id="setupUserSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-          <button class="btn btn-ghost" onclick="setupShowStep(6)" style="color:var(--muted);font-size:12px">Skip (use existing account)</button>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(4)">← Back</button>
-          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(6)">Next →</button>
-        </div>
-      </div>
-
-      <!-- ── Step 6: Ready ── -->
-      <div class="card setup-step-card" id="setupStep6" style="display:none">
-        <div class="card-title">⑥ Ready — Run Initial Discovery</div>
+        <div class="card-title">⑤ Ready — Run Initial Discovery</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
           Everything is configured. Run Auto-Discovery to detect datastores already present on your PVE cluster.
         </p>
@@ -5888,7 +5920,7 @@ loadSnapshots();
           <button class="btn btn-ghost" onclick="setupWizardClose()">Close</button>
         </div>
         <div style="display:flex;justify-content:flex-start;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(5)">← Back</button>
+          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(4)">← Back</button>
         </div>
       </div>
 
