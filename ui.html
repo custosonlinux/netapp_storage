@@ -1879,7 +1879,12 @@ function hideForm(id) { document.getElementById(id).style.display = 'none'; docu
 // ═══════════════════════════ ENDPOINTS ════════════════════════════════════
 
 function showAddEndpointForm() {
-  ['ep_name','ep_host','ep_user','ep_pass'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['ep_name','ep_host','ep_admin_pass','ep_pass'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('ep_admin_user').value = 'admin';
+  document.getElementById('ep_user').value = 'pegaprox';
+  document.getElementById('ep_ssl').checked = false;
+  document.getElementById('ep_skip_nfs').checked = false;
+  document.getElementById('addEpResult').textContent = '';
   document.getElementById('addEndpointForm').style.display = '';
   document.body.style.overflow = 'hidden';
 }
@@ -1908,19 +1913,44 @@ async function loadEndpoints() {
 }
 
 async function addEndpoint() {
-  var name       = document.getElementById('ep_name').value.trim();
-  var host       = document.getElementById('ep_host').value.trim();
-  var username   = document.getElementById('ep_user').value.trim();
-  var password   = document.getElementById('ep_pass').value;
-  var ssl_verify = document.getElementById('ep_ssl').value === '1';
-  var skip_nfs   = !!(document.getElementById('ep_skip_nfs') && document.getElementById('ep_skip_nfs').checked);
-  if (!name||!host||!username||!password) { toast(t('msg_all_fields'),'error'); return; }
+  var name        = document.getElementById('ep_name').value.trim();
+  var host        = document.getElementById('ep_host').value.trim();
+  var adminUser   = document.getElementById('ep_admin_user').value.trim();
+  var adminPass   = document.getElementById('ep_admin_pass').value;
+  var newUser     = document.getElementById('ep_user').value.trim() || 'pegaprox';
+  var newPass     = document.getElementById('ep_pass').value;
+  var role        = document.getElementById('ep_role').value;
+  var ssl_verify  = document.getElementById('ep_ssl').checked;
+  var skip_nfs    = document.getElementById('ep_skip_nfs').checked;
+
+  if (!name || !host || !adminPass || !newPass) {
+    toast('Please fill in all required fields.', 'error'); return;
+  }
+
+  var sp  = document.getElementById('addEpSpinner');
+  var res = document.getElementById('addEpResult');
+  sp.style.display = '';
+  res.textContent  = '';
+
   try {
-    await apiPost('endpoints/add', {name,host,username,password,ssl_verify,skip_nfs});
-    toast(t('msg_ep_saved'),'success');
-    hideForm('addEndpointForm');
+    var r = await apiPost('setup/add-ontap-system', {
+      name, host,
+      admin_user: adminUser, admin_password: adminPass,
+      new_username: newUser, new_password: newPass,
+      role, ssl_verify, skip_nfs
+    });
+    sp.style.display = 'none';
+    document.getElementById('ep_admin_pass').value = '';  // clear admin password
+    var steps = (r.steps || []).map(function(s){ return (s.ok ? '✅' : '⚠️') + ' ' + esc(s.msg); }).join('<br>');
+    res.innerHTML = steps;
+    toast('✅ System registered: ' + esc(name), 'success');
+    setTimeout(function(){ hideForm('addEndpointForm'); }, 1200);
     loadEndpoints();
-  } catch(e) { toast(e.message,'error'); }
+  } catch(e) {
+    sp.style.display = 'none';
+    res.innerHTML = '<span style="color:var(--danger)">❌ ' + esc(e.message) + '</span>';
+    toast(e.message, 'error');
+  }
 }
 
 async function testEndpoint(id, name) {
@@ -5763,7 +5793,7 @@ loadSnapshots();
         <div class="card-title">② Proxmox VE Hosts</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
           Your Proxmox nodes are imported from PegaProx — no need to enter them again.
-          Select the nodes to add to this plugin, then push the SSH key for passwordless access.
+          Select the nodes to import; the SSH key is pushed automatically.
         </p>
 
         <!-- Cluster + node list (loaded from PegaProx) -->
@@ -5788,21 +5818,6 @@ loadSnapshots();
           </button>
         </div>
         <div id="setupSshResult" style="margin-bottom:8px"></div>
-
-        <!-- SSH key push widget -->
-        <div style="padding:10px 14px;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Push SSH Key to Host</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select class="form-control" id="setupPushKeyHost" style="max-width:220px">
-              <option value="">— select host —</option>
-            </select>
-            <input class="form-control" id="setupPushKeyPass" type="password" placeholder="root password (one-time)" style="max-width:200px">
-            <button class="btn btn-secondary" onclick="setupPushSshKey()">
-              Push Key <span id="setupPushSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-            </button>
-            <span id="setupPushResult" style="font-size:12px"></span>
-          </div>
-        </div>
 
         <div style="display:flex;justify-content:space-between;margin-top:12px">
           <button class="btn btn-ghost btn-sm" onclick="setupShowStep(1)">← Back</button>
@@ -6650,42 +6665,77 @@ loadSnapshots();
 <div id="addEndpointForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addEndpointBackdropClick(event)">
   <div style="max-width:640px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700" data-i18n="ct_new_endpoint">New ONTAP Endpoint</div>
+      <div style="font-size:16px;font-weight:700">➕ Add NetApp System</div>
       <button class="btn btn-ghost btn-sm" onclick="hideForm('addEndpointForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">
+        Enter admin credentials to create a dedicated plugin account on ONTAP and register the system.
+        The admin password is used only for this step and is never stored.
+      </p>
+      <!-- System -->
       <div class="form-grid">
         <div class="form-group">
-          <label data-i18n="lbl_display_name">Display name</label>
+          <label>Name <span style="font-weight:400;color:var(--muted)">(friendly label)</span></label>
           <input id="ep_name" placeholder="prod-cluster">
         </div>
         <div class="form-group">
-          <label data-i18n="lbl_mgmt_ip">Cluster-Management-IP / FQDN</label>
+          <label>Cluster Mgmt IP / FQDN</label>
           <input id="ep_host" placeholder="192.168.1.100">
         </div>
+      </div>
+      <!-- Admin creds (not stored) -->
+      <div style="margin:12px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">
+        Admin credentials <span style="font-weight:400;text-transform:none;letter-spacing:0">(temporary — not stored)</span>
+      </div>
+      <div class="form-grid">
         <div class="form-group">
-          <label data-i18n="lbl_username">Username</label>
-          <input id="ep_user" placeholder="admin">
+          <label>Admin Username</label>
+          <input id="ep_admin_user" value="admin">
         </div>
         <div class="form-group">
-          <label data-i18n="lbl_password">Password</label>
-          <input id="ep_pass" type="password">
+          <label>Admin Password</label>
+          <input id="ep_admin_pass" type="password" placeholder="admin password">
+        </div>
+      </div>
+      <!-- Plugin account -->
+      <div style="margin:12px 0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">
+        Plugin account to create on ONTAP
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Username</label>
+          <input id="ep_user" value="pegaprox">
         </div>
         <div class="form-group">
-          <label data-i18n="lbl_ssl_verify">Verify SSL certificate</label>
-          <select id="ep_ssl">
-            <option value="1" data-i18n="opt_ssl_yes">Yes (recommended)</option>
-            <option value="0" data-i18n="opt_ssl_no">No (self-signed)</option>
+          <label>Password</label>
+          <input id="ep_pass" type="password" placeholder="strong password">
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select id="ep_role">
+            <option value="admin">admin (full REST API)</option>
+            <option value="readonly">readonly (monitoring only)</option>
           </select>
         </div>
       </div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:20px">
-        <input type="checkbox" id="ep_skip_nfs">
-        <span>SAN-only system — skip NFS scan (e.g. NetApp ASA)</span>
-      </label>
+      <!-- Options -->
+      <div style="display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 18px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="ep_ssl">
+          Verify SSL certificate
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="ep_skip_nfs">
+          SAN-only (skip NFS scan, e.g. ASA)
+        </label>
+      </div>
+      <div id="addEpResult" style="font-size:12px;margin-bottom:10px"></div>
       <div class="form-actions">
-        <button class="btn btn-primary" onclick="addEndpoint()" data-i18n="btn_save">Save</button>
-        <button class="btn btn-ghost"   onclick="hideForm('addEndpointForm')" data-i18n="btn_cancel">Cancel</button>
+        <button class="btn btn-primary" onclick="addEndpoint()">
+          Create User &amp; Register System <span id="addEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+        </button>
+        <button class="btn btn-ghost" onclick="hideForm('addEndpointForm')">Cancel</button>
       </div>
     </div>
   </div>
