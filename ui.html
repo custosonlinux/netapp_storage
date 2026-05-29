@@ -1590,128 +1590,10 @@ function applyI18n() {
 
       <!-- ── VM Import from Manifest ──────────────────────────────────── -->
       <div class="sub-header" style="margin-top:28px">
-        <span class="sub-header-title">VM Import from Manifest</span>
-        <span class="section-hint" style="margin-left:8px">
-          Import VM configs from a snapshot manifest into this Proxmox cluster —
-          disk data stays on the NetApp datastore unchanged.
-        </span>
+        <span class="sub-header-title">📋 VM Import from Manifest</span>
+        <button class="btn btn-primary btn-sm" onclick="showVmImportModal()">+ Import VMs</button>
       </div>
 
-      <!-- Step 1: Datastore + Snapshot -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-title">1 · Select Datastore &amp; Snapshot</div>
-        <div class="form-grid" style="margin-bottom:14px">
-          <div class="form-group">
-            <label>Datastore</label>
-            <select class="form-control" id="impDs" onchange="impOnDsChange()">
-              <option value="">— select —</option>
-            </select>
-          </div>
-          <div class="form-group" id="impSnapRow" style="display:none">
-            <label>
-              Snapshot Manifest
-              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
-                Only VM configuration files (.conf) are read from this snapshot — disk data stays on the NetApp datastore unchanged.
-              </span>
-            </label>
-            <select class="form-control" id="impSnap">
-              <option value="">— loading… —</option>
-            </select>
-          </div>
-          <div class="form-group" id="impSnapSanRow" style="display:none">
-            <label>
-              Snapshot Manifest
-              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
-                Only VM configuration files (.conf) are read from the manifest — disk data stays on the NetApp datastore unchanged.
-              </span>
-            </label>
-            <div style="padding:8px 0;font-size:13px;color:var(--muted)">
-              SAN: using latest manifest from live VG
-            </div>
-          </div>
-          <div class="form-group" id="impHostRow" style="display:none">
-            <label>
-              Target PVE Host
-              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
-                Host that receives the VM config files. In a cluster, pmxcfs syncs them automatically.
-              </span>
-            </label>
-            <select class="form-control" id="impHostSel">
-              <option value="">— Auto (first available) —</option>
-            </select>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn btn-primary" onclick="impLoadVms()">
-            Load VMs <span id="impLoadSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-          <span id="impLoadErr" style="color:var(--error);font-size:12px"></span>
-        </div>
-      </div>
-
-      <!-- Step 2: VM selection + VMID config -->
-      <div class="card" id="impVmsCard" style="display:none;margin-bottom:12px">
-        <div class="card-title">2 · Select VMs &amp; VMID Assignment</div>
-
-        <!-- VMID mode -->
-        <div style="margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:6px">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">VMID Assignment</div>
-          <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
-              <input type="radio" name="impVmidMode" value="keep" checked onchange="impUpdateVmidPreview()"> Keep original IDs
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
-              <input type="radio" name="impVmidMode" value="offset" onchange="impUpdateVmidPreview()">
-              Fixed offset &nbsp;<input type="number" id="impVmidOffset" value="0" min="0" style="width:70px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)" oninput="impUpdateVmidPreview()">
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
-              <input type="radio" name="impVmidMode" value="auto" onchange="impUpdateVmidPreview()">
-              Auto-assign <span style="color:var(--muted);font-size:11px">(next free IDs)</span>
-              <button class="btn btn-ghost btn-sm" onclick="impFetchUsedVmids()" style="margin-left:4px;font-size:11px">
-                Refresh free IDs <span id="impUsedSpinner" class="spinner" style="display:none;margin-left:2px"></span>
-              </button>
-            </label>
-          </div>
-          <div id="impUsedVmidsInfo" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
-        </div>
-
-        <!-- VM table -->
-        <div class="table-scroll" style="margin-bottom:14px">
-          <table>
-            <thead><tr>
-              <th style="width:32px">
-                <input type="checkbox" id="impSelectAll" onchange="impToggleAll(this.checked)" title="Select all">
-              </th>
-              <th>Original VMID</th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>New VMID</th>
-            </tr></thead>
-            <tbody id="impVmsTbody"></tbody>
-          </table>
-        </div>
-
-        <!-- Datastore Name Rewrite -->
-        <div id="impStorageRewSection" style="margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:6px;display:none">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Datastore Name Rewrite</div>
-          <div id="impStorageRewInfo" style="font-size:12px;margin-bottom:8px;line-height:1.5"></div>
-          <div id="impStorageRewFields" style="display:flex;align-items:center;gap:8px;font-size:13px">
-            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">From:</label>
-            <input class="form-control" id="impStorageOld" style="max-width:180px" placeholder="(auto-detected)">
-            <span style="color:var(--muted);font-size:13px">→</span>
-            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">To:</label>
-            <input class="form-control" id="impStorageNew" style="max-width:180px;opacity:.7;cursor:default" readonly tabindex="-1" placeholder="(current datastore)">
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Edit <em>From</em> only if the manifest uses a different name than auto-detected.</div>
-        </div>
-
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn btn-primary" id="impImportBtn" onclick="impDoImport()">
-            Import VMs <span id="impImportSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-          <span id="impImportErr" style="color:var(--error);font-size:12px"></span>
-          <span id="impImportOk" style="color:var(--success);font-size:12px"></span>
-        </div>
       </div>
 
     </div>
@@ -2177,7 +2059,7 @@ document.querySelectorAll('.subtab').forEach(function(t) {
     var loaders = {
       snapshots: loadSnapshots,
       schedules: loadSchedules,
-      restore:   function(){ loadSnapshotsForRestore(); loadDrRelationshipSelector(); impLoadDatastores(); },
+      restore:   function(){ loadSnapshotsForRestore(); loadDrRelationshipSelector(); },
       clone:     function(){ loadCloneSnapshots(); loadDrCloneRelationshipSelector(); },
       storage:   loadStorageUnified,
       jobs:      loadAllJobs,
@@ -5216,7 +5098,7 @@ function impResetWizard() {
   if (old) old.remove();
   // Reset state & wizard
   _impState = { ds: null, snapName: null };
-  var dsSel = document.getElementById('impDsSel');
+  var dsSel = document.getElementById('impDs');
   if (dsSel) dsSel.value = '';
   document.getElementById('impVmsCard').style.display = 'none';
   // Re-enable import button in case it's still disabled
@@ -5256,6 +5138,18 @@ function provWizBackdropClick(e) {
 function bindWizBackdropClick(e) {
   if (e.target === document.getElementById('bindWizModal')) hideBindWizard();
 }
+function showVmImportModal() {
+  document.getElementById('vmImportModal').style.display = '';
+  document.body.style.overflow = 'hidden';
+  impLoadDatastores();
+}
+function hideVmImportModal() {
+  document.getElementById('vmImportModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+function vmImportBackdropClick(e) {
+  if (e.target === document.getElementById('vmImportModal')) hideVmImportModal();
+}
 
 // Escape key closes any open modal
 document.addEventListener('keydown', function(e) {
@@ -5263,6 +5157,7 @@ document.addEventListener('keydown', function(e) {
   if (document.getElementById('setupWizardModal').style.display !== 'none') { setupWizardClose(); }
   else if (document.getElementById('provWizModal').style.display !== 'none') { hideProvWizard(); }
   else if (document.getElementById('bindWizModal').style.display !== 'none') { hideBindWizard(); }
+  else if (document.getElementById('vmImportModal').style.display !== 'none') { hideVmImportModal(); }
 });
 
 async function setupWizardInit() {
@@ -6148,6 +6043,136 @@ loadSnapshots();
     </div><!-- /modal body -->
   </div><!-- /modal box -->
 </div><!-- /bindWizModal -->
+
+<!-- ── VM Import from Manifest Modal ─────────────────────────────── -->
+<div id="vmImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="vmImportBackdropClick(event)">
+  <div style="max-width:860px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">📋 VM Import from Manifest</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideVmImportModal()" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+
+      <!-- Step 1: Datastore + Snapshot -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">1 · Select Datastore &amp; Snapshot</div>
+        <div class="form-grid" style="margin-bottom:14px">
+          <div class="form-group">
+            <label>Datastore</label>
+            <select class="form-control" id="impDs" onchange="impOnDsChange()">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <div class="form-group" id="impSnapRow" style="display:none">
+            <label>
+              Snapshot Manifest
+              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+                Only VM configuration files (.conf) are read from this snapshot — disk data stays on the NetApp datastore unchanged.
+              </span>
+            </label>
+            <select class="form-control" id="impSnap">
+              <option value="">— loading… —</option>
+            </select>
+          </div>
+          <div class="form-group" id="impSnapSanRow" style="display:none">
+            <label>
+              Snapshot Manifest
+              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+                Only VM configuration files (.conf) are read from the manifest — disk data stays on the NetApp datastore unchanged.
+              </span>
+            </label>
+            <div style="padding:8px 0;font-size:13px;color:var(--muted)">
+              SAN: using latest manifest from live VG
+            </div>
+          </div>
+          <div class="form-group" id="impHostRow" style="display:none">
+            <label>
+              Target PVE Host
+              <span style="display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px">
+                Host that receives the VM config files. In a cluster, pmxcfs syncs them automatically.
+              </span>
+            </label>
+            <select class="form-control" id="impHostSel">
+              <option value="">— Auto (first available) —</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-primary" onclick="impLoadVms()">
+            Load VMs <span id="impLoadSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+          <span id="impLoadErr" style="color:var(--error);font-size:12px"></span>
+        </div>
+      </div>
+
+      <!-- Step 2: VM selection + VMID config -->
+      <div class="card" id="impVmsCard" style="display:none;margin-bottom:12px">
+        <div class="card-title">2 · Select VMs &amp; VMID Assignment</div>
+
+        <!-- VMID mode -->
+        <div style="margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:6px">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">VMID Assignment</div>
+          <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
+              <input type="radio" name="impVmidMode" value="keep" checked onchange="impUpdateVmidPreview()"> Keep original IDs
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
+              <input type="radio" name="impVmidMode" value="offset" onchange="impUpdateVmidPreview()">
+              Fixed offset &nbsp;<input type="number" id="impVmidOffset" value="0" min="0" style="width:70px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text)" oninput="impUpdateVmidPreview()">
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
+              <input type="radio" name="impVmidMode" value="auto" onchange="impUpdateVmidPreview()">
+              Auto-assign <span style="color:var(--muted);font-size:11px">(next free IDs)</span>
+              <button class="btn btn-ghost btn-sm" onclick="impFetchUsedVmids()" style="margin-left:4px;font-size:11px">
+                Refresh free IDs <span id="impUsedSpinner" class="spinner" style="display:none;margin-left:2px"></span>
+              </button>
+            </label>
+          </div>
+          <div id="impUsedVmidsInfo" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+        </div>
+
+        <!-- VM table -->
+        <div class="table-scroll" style="margin-bottom:14px">
+          <table>
+            <thead><tr>
+              <th style="width:32px">
+                <input type="checkbox" id="impSelectAll" onchange="impToggleAll(this.checked)" title="Select all">
+              </th>
+              <th>Original VMID</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>New VMID</th>
+            </tr></thead>
+            <tbody id="impVmsTbody"></tbody>
+          </table>
+        </div>
+
+        <!-- Datastore Name Rewrite -->
+        <div id="impStorageRewSection" style="margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:6px;display:none">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Datastore Name Rewrite</div>
+          <div id="impStorageRewInfo" style="font-size:12px;margin-bottom:8px;line-height:1.5"></div>
+          <div id="impStorageRewFields" style="display:flex;align-items:center;gap:8px;font-size:13px">
+            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">From:</label>
+            <input class="form-control" id="impStorageOld" style="max-width:180px" placeholder="(auto-detected)">
+            <span style="color:var(--muted);font-size:13px">→</span>
+            <label style="color:var(--muted);white-space:nowrap;font-size:12px;text-transform:none;letter-spacing:0;font-weight:400">To:</label>
+            <input class="form-control" id="impStorageNew" style="max-width:180px;opacity:.7;cursor:default" readonly tabindex="-1" placeholder="(current datastore)">
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Edit <em>From</em> only if the manifest uses a different name than auto-detected.</div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-primary" id="impImportBtn" onclick="impDoImport()">
+            Import VMs <span id="impImportSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+          <span id="impImportErr" style="color:var(--error);font-size:12px"></span>
+          <span id="impImportOk" style="color:var(--success);font-size:12px"></span>
+        </div>
+      </div>
+
+    </div><!-- /modal body -->
+  </div><!-- /modal box -->
+</div><!-- /vmImportModal -->
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
