@@ -1829,362 +1829,7 @@ function applyI18n() {
         <button class="btn btn-ghost" onclick="loadStorageUnified()">⟳ Refresh</button>
       </div>
 
-      <!-- ── Bind Wizard (moved from Recovery tab) ─────────────────── -->
-      <div id="bindWizCard" class="card" style="display:none;margin-bottom:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div class="card-title" style="margin:0">Mount existing Datastore</div>
-          <button class="btn btn-ghost btn-sm" onclick="hideBindWizard()">✕ Close</button>
-        </div>
 
-        <!-- Step indicator -->
-        <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px">
-          <div id="rcvStepTab1" style="flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--primary);padding:4px 0">1 · Select Volume</div>
-          <div id="rcvStepTab2" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">2 · PVE Target</div>
-          <div id="rcvStepTab3" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">3 · Confirm</div>
-        </div>
-
-        <!-- ── Step 1 ── -->
-        <div id="rcvStep1">
-          <div class="form-grid" style="margin-bottom:14px">
-            <div class="form-group">
-              <label>ONTAP Endpoint</label>
-              <select class="form-control" id="rcvEndpoint" onchange="rcvLoadSvms()">
-                <option value="">— select —</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>SVM</label>
-              <select class="form-control" id="rcvSvm" onchange="rcvOnSvmChange()">
-                <option value="">— select endpoint first —</option>
-              </select>
-            </div>
-            <div class="form-group" id="rcvNfsLifRow" style="display:none">
-              <label>NFS LIF <span style="color:var(--muted);font-weight:400">(storage network interface)</span></label>
-              <select class="form-control" id="rcvNfsLif">
-                <option value="">— loading… —</option>
-              </select>
-              <span id="rcvNfsLifErr" style="color:var(--error);font-size:12px;margin-top:4px;display:block"></span>
-            </div>
-            <div class="form-group">
-              <label>Protocol</label>
-              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="rcvProto" value="nfs" checked onchange="rcvOnSvmChange()"> NFS
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="rcvProto" value="iscsi" onchange="rcvOnSvmChange()"> iSCSI
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="rcvProto" value="nvme" onchange="rcvOnSvmChange()"> NVMe-oF
-                </label>
-              </div>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <button class="btn btn-primary" onclick="rcvScanVolumes()">
-              Scan Volumes <span id="rcvScanSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-            </button>
-            <span id="rcvScanErr" style="color:var(--error);font-size:12px"></span>
-          </div>
-          <div id="rcvVolumeTableWrap" style="display:none;margin-top:16px">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Select the volume to bind:</div>
-            <div class="table-scroll">
-              <table>
-                <thead><tr><th>Volume</th><th>Type</th><th>Size</th><th>SnapMirror®</th><th></th></tr></thead>
-                <tbody id="rcvVolumesTbody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Step 2 ── -->
-        <div id="rcvStep2" style="display:none">
-          <div style="margin-bottom:12px;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:13px">
-            Volume: <strong id="rcvSelVolumeName"></strong>
-            <span id="rcvSelVolumeBadge" style="margin-left:8px"></span>
-          </div>
-          <div class="form-grid" style="margin-bottom:14px">
-            <div class="form-group">
-              <label>Storage Name <span style="color:var(--muted);font-weight:400">(PVE storage ID)</span></label>
-              <input class="form-control" id="rcvStorageId" placeholder="e.g. netapp-prod">
-            </div>
-            <div class="form-group" id="rcvVgRow">
-              <label>VG Name <span style="color:var(--muted);font-weight:400">(optional — auto-detected if empty)</span></label>
-              <input class="form-control" id="rcvVgName" placeholder="auto-detect from device">
-            </div>
-            <div class="form-group" id="rcvLvmTypeRow">
-              <label>LVM Type</label>
-              <select class="form-control" id="rcvLvmType" onchange="rcvLvmTypeChange()">
-                <option value="linear">Linear (LVM)</option>
-                <option value="thin">Thin (LVM-Thin)</option>
-              </select>
-            </div>
-            <div class="form-group" id="rcvPoolRow" style="display:none">
-              <label>Thin Pool Name</label>
-              <input class="form-control" id="rcvPoolName" value="data">
-            </div>
-            <div class="form-group" id="rcvJunctionRow" style="display:none">
-              <label>Junction Path Override <span style="color:var(--muted);font-weight:400">(optional)</span></label>
-              <input class="form-control" id="rcvJunctionPath" placeholder="leave empty to use original">
-            </div>
-          </div>
-          <div class="form-group" style="margin-bottom:14px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-              <label style="margin:0">PVE Hosts</label>
-              <span style="font-size:12px">
-                <a href="#" onclick="rcvSelectAllHosts(true);return false;" style="color:var(--primary);text-decoration:none">All</a>
-                &nbsp;/&nbsp;
-                <a href="#" onclick="rcvSelectAllHosts(false);return false;" style="color:var(--muted);text-decoration:none">None</a>
-              </span>
-            </div>
-            <div id="rcvHostCheckboxes" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px"></div>
-          </div>
-          <div id="rcvSmBreakRow" style="display:none;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-left:3px solid var(--warning);border-radius:4px">
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
-              <input type="checkbox" id="rcvSmBreak" checked>
-              Break SnapMirror® relationship before mounting
-              <span style="color:var(--muted);font-size:11px">(required to make volume writable)</span>
-            </label>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost" onclick="rcvShowStep(1)">← Back</button>
-            <button class="btn btn-primary" onclick="rcvNext2()">Next →</button>
-          </div>
-        </div>
-
-        <!-- ── Step 3 ── -->
-        <div id="rcvStep3" style="display:none">
-          <div style="margin-bottom:16px">
-            <div style="font-size:13px;font-weight:600;margin-bottom:8px">Summary</div>
-            <div id="rcvSummary" style="font-size:13px;line-height:1.8;background:var(--bg);padding:10px 14px;border-radius:6px"></div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost" onclick="rcvShowStep(2)">← Back</button>
-            <button class="btn btn-primary" onclick="rcvBind()">
-              Bind Volume <span id="rcvBindSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-            </button>
-          </div>
-          <div id="rcvBindErr" style="color:var(--error);font-size:12px;margin-top:6px"></div>
-        </div>
-      </div><!-- /bindWizCard -->
-
-      <!-- ── Wizard ────────────────────────────────────────────── -->
-      <div id="provWizCard" class="card" style="display:none;margin-bottom:12px">
-
-        <!-- Step indicator -->
-        <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px">
-          <div id="provWizStepTab1" style="flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--primary);padding:4px 0">1 · Protocol</div>
-          <div id="provWizStepTab2" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">2 · Resource</div>
-          <div id="provWizStepTab3" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">3 · Hosts &amp; Name</div>
-        </div>
-
-        <!-- Step 1: Protocol + Endpoint + SVM + Datastore name -->
-        <div id="provWizStep1">
-          <div class="form-grid" style="margin-bottom:14px">
-            <div class="form-group">
-              <label>Protocol</label>
-              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="provProto" value="iscsi" checked onchange="provProtoChange()"> iSCSI
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="provProto" value="nvme" onchange="provProtoChange()"> NVMe-oF
-                </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
-                  <input type="radio" name="provProto" value="nfs" onchange="provProtoChange()"> NFS
-                </label>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Datastore Name</label>
-              <input class="form-control" id="provWizName" placeholder="e.g. san-prod">
-            </div>
-            <div class="form-group">
-              <label>ONTAP Endpoint</label>
-              <select class="form-control" id="provWizEndpoint" onchange="loadProvSvms()"><option value="">— select —</option></select>
-            </div>
-            <div class="form-group">
-              <label>SVM</label>
-              <select class="form-control" id="provWizSvm"><option value="">— select endpoint first —</option></select>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <button class="btn btn-primary" onclick="provWizNext1()">
-              Next <span id="provOntapLoading" class="spinner" style="display:none;margin-left:4px"></span>
-            </button>
-            <button class="btn btn-ghost" onclick="hideProvWizard()">Cancel</button>
-            <span id="provOntapLoadErr" style="color:var(--error);font-size:12px"></span>
-          </div>
-        </div>
-
-        <!-- Step 2: ONTAP resource — protocol-specific sections -->
-        <div id="provWizStep2" style="display:none">
-
-          <!-- Common: Volume selector -->
-          <div class="form-grid" style="margin-bottom:6px">
-            <div class="form-group">
-              <label>Volume</label>
-              <select class="form-control" id="provWizVolume" onchange="provWizVolumeChange()">
-                <option value="__new__">— create new volume —</option>
-              </select>
-            </div>
-            <div class="form-group" id="provWizNewVolRow" style="display:none">
-              <label>New Volume Name</label>
-              <input class="form-control" id="provWizVolName" placeholder="e.g. ucnlabprox_san01">
-            </div>
-            <div class="form-group" id="provWizAggRow">
-              <label>Aggregate <span style="font-weight:400;color:var(--muted)">(for new volume, optional)</span></label>
-              <select class="form-control" id="provWizAggregate">
-                <option value="">— loading… —</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- iSCSI: LUN + iGroup -->
-          <div id="provWizIscsiSection">
-            <div class="form-grid" style="margin-bottom:6px">
-              <div class="form-group">
-                <label>LUN</label>
-                <select class="form-control" id="provWizLun" onchange="provWizLunChange()">
-                  <option value="__new__">— create new —</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-grid" id="provWizNewLunRow" style="margin-bottom:14px">
-              <div class="form-group">
-                <label>New LUN Name</label>
-                <input class="form-control" id="provWizLunName" placeholder="e.g. proxmox-lun-01">
-              </div>
-              <div class="form-group">
-                <label>LUN Size</label>
-                <div style="display:flex;gap:6px">
-                  <input class="form-control" id="provWizLunSize" type="number" min="1" value="100" style="width:90px"
-                         oninput="provWizUpdateSanVolHint('provWizLunSize','provWizLunSizeUnit','provWizLunVolHint','LUN')"
-                         onchange="provWizUpdateSanVolHint('provWizLunSize','provWizLunSizeUnit','provWizLunVolHint','LUN')">
-                  <select class="form-control" id="provWizLunSizeUnit" style="width:80px"
-                          onchange="provWizUpdateSanVolHint('provWizLunSize','provWizLunSizeUnit','provWizLunVolHint','LUN')">
-                    <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
-                  </select>
-                </div>
-                <div id="provWizLunVolHint" class="hint" style="margin-top:4px"></div>
-              </div>
-              <div class="form-group">
-                <label>iGroup</label>
-                <select class="form-control" id="provWizIgroup" onchange="provWizIgroupChange()">
-                  <option value="__new__">— create new —</option>
-                </select>
-              </div>
-              <div class="form-group" id="provWizNewIgroupRow" style="display:none">
-                <label>New iGroup Name</label>
-                <input class="form-control" id="provWizIgroupName" placeholder="auto-generated if blank">
-              </div>
-            </div>
-          </div>
-
-          <!-- NVMe: Namespace + Subsystem -->
-          <div id="provWizNvmeSection" style="display:none">
-            <div class="form-grid" style="margin-bottom:6px">
-              <div class="form-group">
-                <label>Namespace</label>
-                <select class="form-control" id="provWizNs" onchange="provWizNsChange()">
-                  <option value="__new__">— create new —</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-grid" id="provWizNewNsRow" style="margin-bottom:14px">
-              <div class="form-group">
-                <label>New Namespace Name</label>
-                <input class="form-control" id="provWizNsName" placeholder="e.g. proxmox-ns-01">
-              </div>
-              <div class="form-group">
-                <label>Namespace Size</label>
-                <div style="display:flex;gap:6px">
-                  <input class="form-control" id="provWizNsSize" type="number" min="1" value="100" style="width:90px"
-                         oninput="provWizUpdateSanVolHint('provWizNsSize','provWizNsSizeUnit','provWizNsVolHint','namespace')"
-                         onchange="provWizUpdateSanVolHint('provWizNsSize','provWizNsSizeUnit','provWizNsVolHint','namespace')">
-                  <select class="form-control" id="provWizNsSizeUnit" style="width:80px"
-                          onchange="provWizUpdateSanVolHint('provWizNsSize','provWizNsSizeUnit','provWizNsVolHint','namespace')">
-                    <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
-                  </select>
-                </div>
-                <div id="provWizNsVolHint" class="hint" style="margin-top:4px"></div>
-              </div>
-              <div class="form-group">
-                <label>NVMe Subsystem</label>
-                <select class="form-control" id="provWizSubsystem" onchange="provWizSubsystemChange()">
-                  <option value="__new__">— create new —</option>
-                </select>
-              </div>
-              <div class="form-group" id="provWizNewSubsystemRow" style="display:none">
-                <label>New Subsystem Name</label>
-                <input class="form-control" id="provWizSubsystemName" placeholder="auto-generated if blank">
-              </div>
-            </div>
-          </div>
-
-          <!-- NFS: LIF + Junction Path + Volume Size -->
-          <div id="provWizNfsSection" style="display:none">
-            <div class="form-grid" style="margin-bottom:14px">
-              <div class="form-group">
-                <label>NFS LIF <span style="font-weight:400;color:var(--muted)">(storage network interface)</span></label>
-                <select class="form-control" id="provWizNfsLif" onchange="provWizNfsLifChange()">
-                  <option value="">— loading… —</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Junction Path</label>
-                <input class="form-control" id="provWizNfsJunction" placeholder="e.g. /nfs-prod">
-              </div>
-              <div class="form-group" id="provWizNfsSizeRow">
-                <label>Volume Size <span style="font-weight:400;color:var(--muted)">(for new volume)</span></label>
-                <div style="display:flex;gap:6px">
-                  <input class="form-control" id="provWizNfsSize" type="number" min="1" value="500" style="width:90px">
-                  <select class="form-control" id="provWizNfsSizeUnit" style="width:80px">
-                    <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost" onclick="provWizShowStep(1)">← Back</button>
-            <button class="btn btn-primary" onclick="provWizNext2()">Next →</button>
-            <button class="btn btn-ghost" onclick="hideProvWizard()">Cancel</button>
-          </div>
-        </div>
-
-        <!-- Step 3: Hosts + Names + LVM type (LVM hidden for NFS) -->
-        <div id="provWizStep3" style="display:none">
-          <div class="form-grid" style="margin-bottom:14px">
-            <div class="form-group" style="grid-column:1/-1">
-              <label>PVE Hosts</label>
-              <div id="provWizHostList" style="margin-top:4px"></div>
-            </div>
-            <div class="form-group">
-              <label>PVE Storage ID</label>
-              <input class="form-control" id="provWizStorageId" placeholder="e.g. san-prod">
-            </div>
-            <div class="form-group prov-san-only">
-              <label>LVM VG Name</label>
-              <input class="form-control" id="provWizVgName" placeholder="e.g. vgsanprod">
-            </div>
-            <div class="form-group prov-san-only">
-              <label>LVM Type</label>
-              <select class="form-control" id="provWizLvmType">
-                <option value="linear">Linear (thick)</option>
-                <option value="thin">Thin-provisioned</option>
-              </select>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost" onclick="provWizShowStep(2)">← Back</button>
-            <button class="btn btn-primary" id="provSubmitBtn" onclick="submitProvWizard()">Create Datastore</button>
-            <button class="btn btn-ghost" onclick="hideProvWizard()">Cancel</button>
-          </div>
-        </div>
-
-      </div><!-- /provWizCard -->
 
       <!-- ── All Datastores table ──────────────────────────────── -->
       <div class="card table-scroll">
@@ -4442,7 +4087,8 @@ function showProvWizard() {
   var r=document.querySelector('input[name="provProto"][value="iscsi"]');
   if(r) r.checked=true;
   provProtoChange();
-  document.getElementById('provWizCard').style.display='block';
+  document.getElementById('provWizModal').style.display = '';
+  document.body.style.overflow = 'hidden';
   loadProvEndpoints();
 }
 
@@ -4458,7 +4104,8 @@ function provProtoChange() {
 }
 
 function hideProvWizard() {
-  document.getElementById('provWizCard').style.display='none';
+  document.getElementById('provWizModal').style.display = 'none';
+  document.body.style.overflow = '';
 }
 
 function provWizShowStep(n) {
@@ -5192,12 +4839,13 @@ async function rcvBind() {
 // ── Provisioning Tab — Bind Wizard toggle ────────────────────────────────────
 
 function showBindWizard() {
-  document.getElementById('bindWizCard').style.display = '';
-  document.getElementById('bindWizCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+  document.getElementById('bindWizModal').style.display = '';
+  document.body.style.overflow = 'hidden';
   rcvLoadEndpoints();
 }
 function hideBindWizard() {
-  document.getElementById('bindWizCard').style.display = 'none';
+  document.getElementById('bindWizModal').style.display = 'none';
+  document.body.style.overflow = '';
 }
 
 // ── Recovery Tab — VM Import ──────────────────────────────────────────────────
@@ -5602,12 +5250,19 @@ function setupWizardClose() {
 function setupWizardBackdropClick(e) {
   if (e.target === document.getElementById('setupWizardModal')) setupWizardClose();
 }
+function provWizBackdropClick(e) {
+  if (e.target === document.getElementById('provWizModal')) hideProvWizard();
+}
+function bindWizBackdropClick(e) {
+  if (e.target === document.getElementById('bindWizModal')) hideBindWizard();
+}
 
-// Escape key closes the modal
+// Escape key closes any open modal
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && document.getElementById('setupWizardModal').style.display !== 'none') {
-    setupWizardClose();
-  }
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('setupWizardModal').style.display !== 'none') { setupWizardClose(); }
+  else if (document.getElementById('provWizModal').style.display !== 'none') { hideProvWizard(); }
+  else if (document.getElementById('bindWizModal').style.display !== 'none') { hideBindWizard(); }
 });
 
 async function setupWizardInit() {
@@ -6123,6 +5778,376 @@ loadSnapshots();
     </div><!-- /modal body -->
   </div><!-- /modal box -->
 </div><!-- /setupWizardModal -->
+
+<!-- ── Provision New Datastore Modal ─────────────────────────────── -->
+<div id="provWizModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="provWizBackdropClick(event)">
+  <div style="max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">📦 Provision New Datastore</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideProvWizard()" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+
+      <!-- Step indicator -->
+      <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px">
+        <div id="provWizStepTab1" style="flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--primary);padding:4px 0">1 · Protocol</div>
+        <div id="provWizStepTab2" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">2 · Resource</div>
+        <div id="provWizStepTab3" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">3 · Hosts &amp; Name</div>
+      </div>
+
+      <!-- Step 1: Protocol + Endpoint + SVM + Datastore name -->
+      <div id="provWizStep1">
+        <div class="form-grid" style="margin-bottom:14px">
+          <div class="form-group">
+            <label>Protocol</label>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="radio" name="provProto" value="iscsi" checked onchange="provProtoChange()"> iSCSI
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="radio" name="provProto" value="nvme" onchange="provProtoChange()"> NVMe-oF
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="radio" name="provProto" value="nfs" onchange="provProtoChange()"> NFS
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Datastore Name</label>
+            <input class="form-control" id="provWizName" placeholder="e.g. san-prod">
+          </div>
+          <div class="form-group">
+            <label>ONTAP Endpoint</label>
+            <select class="form-control" id="provWizEndpoint" onchange="loadProvSvms()"><option value="">— select —</option></select>
+          </div>
+          <div class="form-group">
+            <label>SVM</label>
+            <select class="form-control" id="provWizSvm"><option value="">— select endpoint first —</option></select>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-primary" onclick="provWizNext1()">
+            Next <span id="provOntapLoading" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+          <button class="btn btn-ghost" onclick="hideProvWizard()">Cancel</button>
+          <span id="provOntapLoadErr" style="color:var(--error);font-size:12px"></span>
+        </div>
+      </div>
+
+      <!-- Step 2: ONTAP resource — protocol-specific sections -->
+      <div id="provWizStep2" style="display:none">
+
+        <!-- Common: Volume selector -->
+        <div class="form-grid" style="margin-bottom:6px">
+          <div class="form-group">
+            <label>Volume</label>
+            <select class="form-control" id="provWizVolume" onchange="provWizVolumeChange()">
+              <option value="__new__">— create new volume —</option>
+            </select>
+          </div>
+          <div class="form-group" id="provWizNewVolRow" style="display:none">
+            <label>New Volume Name</label>
+            <input class="form-control" id="provWizVolName" placeholder="e.g. ucnlabprox_san01">
+          </div>
+          <div class="form-group" id="provWizAggRow">
+            <label>Aggregate <span style="font-weight:400;color:var(--muted)">(for new volume, optional)</span></label>
+            <select class="form-control" id="provWizAggregate">
+              <option value="">— loading… —</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- iSCSI: LUN + iGroup -->
+        <div id="provWizIscsiSection">
+          <div class="form-grid" style="margin-bottom:6px">
+            <div class="form-group">
+              <label>LUN</label>
+              <select class="form-control" id="provWizLun" onchange="provWizLunChange()">
+                <option value="__new__">— create new —</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid" id="provWizNewLunRow" style="margin-bottom:14px">
+            <div class="form-group">
+              <label>New LUN Name</label>
+              <input class="form-control" id="provWizLunName" placeholder="e.g. proxmox-lun-01">
+            </div>
+            <div class="form-group">
+              <label>LUN Size</label>
+              <div style="display:flex;gap:6px">
+                <input class="form-control" id="provWizLunSize" type="number" min="1" value="100" style="width:90px"
+                       oninput="provWizUpdateSanVolHint('provWizLunSize','provWizLunSizeUnit','provWizLunVolHint','LUN')"
+                       onchange="provWizUpdateSanVolHint('provWizLunSize','provWizLunSizeUnit','provWizLunVolHint','LUN')">
+                <select class="form-control" id="provWizLunSizeUnit" style="width:80px"
+                        onchange="provWizUpdateSanVolHint('provWizLunSize','provWizLunSizeUnit','provWizLunVolHint','LUN')">
+                  <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
+                </select>
+              </div>
+              <div id="provWizLunVolHint" class="hint" style="margin-top:4px"></div>
+            </div>
+            <div class="form-group">
+              <label>iGroup</label>
+              <select class="form-control" id="provWizIgroup" onchange="provWizIgroupChange()">
+                <option value="__new__">— create new —</option>
+              </select>
+            </div>
+            <div class="form-group" id="provWizNewIgroupRow" style="display:none">
+              <label>New iGroup Name</label>
+              <input class="form-control" id="provWizIgroupName" placeholder="auto-generated if blank">
+            </div>
+          </div>
+        </div>
+
+        <!-- NVMe: Namespace + Subsystem -->
+        <div id="provWizNvmeSection" style="display:none">
+          <div class="form-grid" style="margin-bottom:6px">
+            <div class="form-group">
+              <label>Namespace</label>
+              <select class="form-control" id="provWizNs" onchange="provWizNsChange()">
+                <option value="__new__">— create new —</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid" id="provWizNewNsRow" style="margin-bottom:14px">
+            <div class="form-group">
+              <label>New Namespace Name</label>
+              <input class="form-control" id="provWizNsName" placeholder="e.g. proxmox-ns-01">
+            </div>
+            <div class="form-group">
+              <label>Namespace Size</label>
+              <div style="display:flex;gap:6px">
+                <input class="form-control" id="provWizNsSize" type="number" min="1" value="100" style="width:90px"
+                       oninput="provWizUpdateSanVolHint('provWizNsSize','provWizNsSizeUnit','provWizNsVolHint','namespace')"
+                       onchange="provWizUpdateSanVolHint('provWizNsSize','provWizNsSizeUnit','provWizNsVolHint','namespace')">
+                <select class="form-control" id="provWizNsSizeUnit" style="width:80px"
+                        onchange="provWizUpdateSanVolHint('provWizNsSize','provWizNsSizeUnit','provWizNsVolHint','namespace')">
+                  <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
+                </select>
+              </div>
+              <div id="provWizNsVolHint" class="hint" style="margin-top:4px"></div>
+            </div>
+            <div class="form-group">
+              <label>NVMe Subsystem</label>
+              <select class="form-control" id="provWizSubsystem" onchange="provWizSubsystemChange()">
+                <option value="__new__">— create new —</option>
+              </select>
+            </div>
+            <div class="form-group" id="provWizNewSubsystemRow" style="display:none">
+              <label>New Subsystem Name</label>
+              <input class="form-control" id="provWizSubsystemName" placeholder="auto-generated if blank">
+            </div>
+          </div>
+        </div>
+
+        <!-- NFS: LIF + Junction Path + Volume Size -->
+        <div id="provWizNfsSection" style="display:none">
+          <div class="form-grid" style="margin-bottom:14px">
+            <div class="form-group">
+              <label>NFS LIF <span style="font-weight:400;color:var(--muted)">(storage network interface)</span></label>
+              <select class="form-control" id="provWizNfsLif" onchange="provWizNfsLifChange()">
+                <option value="">— loading… —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Junction Path</label>
+              <input class="form-control" id="provWizNfsJunction" placeholder="e.g. /nfs-prod">
+            </div>
+            <div class="form-group" id="provWizNfsSizeRow">
+              <label>Volume Size <span style="font-weight:400;color:var(--muted)">(for new volume)</span></label>
+              <div style="display:flex;gap:6px">
+                <input class="form-control" id="provWizNfsSize" type="number" min="1" value="500" style="width:90px">
+                <select class="form-control" id="provWizNfsSizeUnit" style="width:80px">
+                  <option value="GiB">GiB</option><option value="TiB">TiB</option><option value="MiB">MiB</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="provWizShowStep(1)">← Back</button>
+          <button class="btn btn-primary" onclick="provWizNext2()">Next →</button>
+          <button class="btn btn-ghost" onclick="hideProvWizard()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Hosts + Names + LVM type (LVM hidden for NFS) -->
+      <div id="provWizStep3" style="display:none">
+        <div class="form-grid" style="margin-bottom:14px">
+          <div class="form-group" style="grid-column:1/-1">
+            <label>PVE Hosts</label>
+            <div id="provWizHostList" style="margin-top:4px"></div>
+          </div>
+          <div class="form-group">
+            <label>PVE Storage ID</label>
+            <input class="form-control" id="provWizStorageId" placeholder="e.g. san-prod">
+          </div>
+          <div class="form-group prov-san-only">
+            <label>LVM VG Name</label>
+            <input class="form-control" id="provWizVgName" placeholder="e.g. vgsanprod">
+          </div>
+          <div class="form-group prov-san-only">
+            <label>LVM Type</label>
+            <select class="form-control" id="provWizLvmType">
+              <option value="linear">Linear (thick)</option>
+              <option value="thin">Thin-provisioned</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="provWizShowStep(2)">← Back</button>
+          <button class="btn btn-primary" id="provSubmitBtn" onclick="submitProvWizard()">Create Datastore</button>
+          <button class="btn btn-ghost" onclick="hideProvWizard()">Cancel</button>
+        </div>
+      </div>
+
+    </div><!-- /modal body -->
+  </div><!-- /modal box -->
+</div><!-- /provWizModal -->
+
+<!-- ── Mount existing Datastore Modal ─────────────────────────────── -->
+<div id="bindWizModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="bindWizBackdropClick(event)">
+  <div style="max-width:700px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">⇢ Mount existing Datastore</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideBindWizard()" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+
+      <!-- Step indicator -->
+      <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px">
+        <div id="rcvStepTab1" style="flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--primary);padding:4px 0">1 · Select Volume</div>
+        <div id="rcvStepTab2" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">2 · PVE Target</div>
+        <div id="rcvStepTab3" style="flex:1;text-align:center;font-size:12px;color:var(--muted);padding:4px 0">3 · Confirm</div>
+      </div>
+
+      <!-- ── Step 1 ── -->
+      <div id="rcvStep1">
+        <div class="form-grid" style="margin-bottom:14px">
+          <div class="form-group">
+            <label>ONTAP Endpoint</label>
+            <select class="form-control" id="rcvEndpoint" onchange="rcvLoadSvms()">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>SVM</label>
+            <select class="form-control" id="rcvSvm" onchange="rcvOnSvmChange()">
+              <option value="">— select endpoint first —</option>
+            </select>
+          </div>
+          <div class="form-group" id="rcvNfsLifRow" style="display:none">
+            <label>NFS LIF <span style="color:var(--muted);font-weight:400">(storage network interface)</span></label>
+            <select class="form-control" id="rcvNfsLif">
+              <option value="">— loading… —</option>
+            </select>
+            <span id="rcvNfsLifErr" style="color:var(--error);font-size:12px;margin-top:4px;display:block"></span>
+          </div>
+          <div class="form-group">
+            <label>Protocol</label>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="radio" name="rcvProto" value="nfs" checked onchange="rcvOnSvmChange()"> NFS
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="radio" name="rcvProto" value="iscsi" onchange="rcvOnSvmChange()"> iSCSI
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="radio" name="rcvProto" value="nvme" onchange="rcvOnSvmChange()"> NVMe-oF
+              </label>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-primary" onclick="rcvScanVolumes()">
+            Scan Volumes <span id="rcvScanSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+          <span id="rcvScanErr" style="color:var(--error);font-size:12px"></span>
+        </div>
+        <div id="rcvVolumeTableWrap" style="display:none;margin-top:16px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Select the volume to bind:</div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Volume</th><th>Type</th><th>Size</th><th>SnapMirror®</th><th></th></tr></thead>
+              <tbody id="rcvVolumesTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Step 2 ── -->
+      <div id="rcvStep2" style="display:none">
+        <div style="margin-bottom:12px;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:13px">
+          Volume: <strong id="rcvSelVolumeName"></strong>
+          <span id="rcvSelVolumeBadge" style="margin-left:8px"></span>
+        </div>
+        <div class="form-grid" style="margin-bottom:14px">
+          <div class="form-group">
+            <label>Storage Name <span style="color:var(--muted);font-weight:400">(PVE storage ID)</span></label>
+            <input class="form-control" id="rcvStorageId" placeholder="e.g. netapp-prod">
+          </div>
+          <div class="form-group" id="rcvVgRow">
+            <label>VG Name <span style="color:var(--muted);font-weight:400">(optional — auto-detected if empty)</span></label>
+            <input class="form-control" id="rcvVgName" placeholder="auto-detect from device">
+          </div>
+          <div class="form-group" id="rcvLvmTypeRow">
+            <label>LVM Type</label>
+            <select class="form-control" id="rcvLvmType" onchange="rcvLvmTypeChange()">
+              <option value="linear">Linear (LVM)</option>
+              <option value="thin">Thin (LVM-Thin)</option>
+            </select>
+          </div>
+          <div class="form-group" id="rcvPoolRow" style="display:none">
+            <label>Thin Pool Name</label>
+            <input class="form-control" id="rcvPoolName" value="data">
+          </div>
+          <div class="form-group" id="rcvJunctionRow" style="display:none">
+            <label>Junction Path Override <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <input class="form-control" id="rcvJunctionPath" placeholder="leave empty to use original">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <label style="margin:0">PVE Hosts</label>
+            <span style="font-size:12px">
+              <a href="#" onclick="rcvSelectAllHosts(true);return false;" style="color:var(--primary);text-decoration:none">All</a>
+              &nbsp;/&nbsp;
+              <a href="#" onclick="rcvSelectAllHosts(false);return false;" style="color:var(--muted);text-decoration:none">None</a>
+            </span>
+          </div>
+          <div id="rcvHostCheckboxes" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px"></div>
+        </div>
+        <div id="rcvSmBreakRow" style="display:none;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-left:3px solid var(--warning);border-radius:4px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="rcvSmBreak" checked>
+            Break SnapMirror® relationship before mounting
+            <span style="color:var(--muted);font-size:11px">(required to make volume writable)</span>
+          </label>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="rcvShowStep(1)">← Back</button>
+          <button class="btn btn-primary" onclick="rcvNext2()">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 3 ── -->
+      <div id="rcvStep3" style="display:none">
+        <div style="margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px">Summary</div>
+          <div id="rcvSummary" style="font-size:13px;line-height:1.8;background:var(--bg);padding:10px 14px;border-radius:6px"></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="rcvShowStep(2)">← Back</button>
+          <button class="btn btn-primary" onclick="rcvBind()">
+            Bind Volume <span id="rcvBindSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+        </div>
+        <div id="rcvBindErr" style="color:var(--error);font-size:12px;margin-top:6px"></div>
+      </div>
+
+    </div><!-- /modal body -->
+  </div><!-- /modal box -->
+</div><!-- /bindWizModal -->
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
