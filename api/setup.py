@@ -199,14 +199,14 @@ def _get_ssh_pubkey():
     if pubkey:
         return jsonify({"pubkey": pubkey, "generated": False})
 
-    # Generate a new ed25519 keypair
-    home  = os.path.expanduser("~")
-    ssh_dir = os.path.join(home, ".ssh")
-    os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
-    priv_path = os.path.join(ssh_dir, "id_ed25519")
-    pub_path  = priv_path + ".pub"
-
+    # Generate a new ed25519 keypair — wrap everything so Flask never sees a raw exception
     try:
+        home      = os.path.expanduser("~")
+        ssh_dir   = os.path.join(home, ".ssh")
+        os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
+        priv_path = os.path.join(ssh_dir, "id_ed25519")
+        pub_path  = priv_path + ".pub"
+
         subprocess.run(
             ["ssh-keygen", "-t", "ed25519", "-N", "", "-f", priv_path],
             check=True,
@@ -217,8 +217,22 @@ def _get_ssh_pubkey():
             pubkey = f.read().strip()
         return jsonify({"pubkey": pubkey, "generated": True})
     except subprocess.CalledProcessError as exc:
-        return jsonify({"error": f"ssh-keygen failed: {exc.stderr.decode()[:200]}"}), 500
+        stderr = exc.stderr.decode(errors="replace")[:300]
+        log.warning(f"[setup] ssh-keygen failed: {stderr}")
+        return jsonify({"error": f"ssh-keygen failed: {stderr}",
+                        "hint": "Make sure openssh-client is installed on the PegaProx host."}), 500
+    except PermissionError as exc:
+        log.warning(f"[setup] Cannot create ~/.ssh: {exc}")
+        home = os.path.expanduser("~")
+        return jsonify({
+            "error": f"Cannot create {home}/.ssh: {exc}",
+            "hint": (
+                "The PegaProx service user's home directory does not exist or is not writable. "
+                f"Run on the server: mkdir -p {home} && chown pegaprox:pegaprox {home}"
+            ),
+        }), 500
     except Exception as exc:
+        log.warning(f"[setup] ssh-pubkey generation failed: {exc}")
         return jsonify({"error": str(exc)}), 500
 
 

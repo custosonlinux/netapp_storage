@@ -5028,11 +5028,25 @@ async function setupRunSystemCheck() {
   sp.style.display = '';
   el.textContent = '';
   try {
-    var key = await apiFetch('setup/ssh-pubkey');
-    if (key.pubkey) {
-      document.getElementById('setupSshPubKey').textContent = key.pubkey;
+    // SSH key fetch is non-fatal — show warning in key box if it fails
+    var keyHint = '';
+    try {
+      var key = await apiFetch('setup/ssh-pubkey');
+      if (key.pubkey) {
+        document.getElementById('setupSshPubKey').textContent = key.pubkey;
+        document.getElementById('setupSshKeyBox').style.display = '';
+      }
+    } catch(keyErr) {
+      var errMsg  = (keyErr.data && keyErr.data.error)  ? keyErr.data.error  : keyErr.message;
+      var hintMsg = (keyErr.data && keyErr.data.hint)   ? keyErr.data.hint   : '';
       document.getElementById('setupSshKeyBox').style.display = '';
+      document.getElementById('setupSshPubKey').textContent   = '';
+      keyHint = '<tr><td colspan="3" style="padding:6px 0"><span class="setup-err">⚠️ SSH key: ' +
+                esc(errMsg) + '</span>' +
+                (hintMsg ? '<br><span style="font-size:11px;color:var(--muted)">' + esc(hintMsg) + '</span>' : '') +
+                '</td></tr>';
     }
+
     var s    = await apiFetch('setup/status');
     var deps = s.deps || {};
     var items = [
@@ -5047,12 +5061,13 @@ async function setupRunSystemCheck() {
       var cls = ok ? 'setup-ok' : (required ? 'setup-err' : 'setup-warn');
       var ico = ok ? '✅' : (required ? '❌' : '⚠️');
       var hint = !ok ? (key === 'requests' ? '<code>pip3 install requests</code>' :
+                        key === 'ssh'      ? '<code>apt-get install openssh-client</code>' :
                         key === 'sshpass'  ? '<code>apt-get install sshpass</code>' : '') : '';
       html += '<tr><td style="padding:3px 8px 3px 0;width:200px">' + label + '</td>';
       html += '<td class="' + cls + '">' + ico + ' ' + (ok ? 'OK' : 'Missing') + '</td>';
       html += '<td style="color:var(--muted);font-size:11px">' + hint + '</td></tr>';
     });
-    html += '</tbody></table>';
+    html += keyHint + '</tbody></table>';
     el.innerHTML = html;
   } catch(e) {
     el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';

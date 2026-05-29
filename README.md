@@ -155,6 +155,19 @@ git clone --branch v1.1.0 --depth 1 \
 chown -R pegaprox:pegaprox /opt/PegaProx/plugins/netapp_storage
 ```
 
+**Required: create a writable home directory for the PegaProx service user**
+
+The plugin generates an SSH keypair for PVE host access. It needs a writable home directory to store `~/.ssh/`:
+
+```bash
+mkdir -p /home/pegaprox
+chown pegaprox:pegaprox /home/pegaprox
+chmod 750 /home/pegaprox
+usermod -d /home/pegaprox pegaprox
+```
+
+> Without this, the Initial Setup Wizard's SSH key generation step will fail with a permission error. The plugin itself still loads — you will see a clear error message in the wizard if this is missing.
+
 > **Note:** The GitHub repository root *is* the plugin directory — it contains `manifest.json`, `__init__.py`, `api/`, `core/`, etc. directly.
 
 **Update an existing installation:**
