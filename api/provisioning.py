@@ -542,6 +542,34 @@ def _prov_import():
     ds_id   = str(_uuid.uuid4())
     ds_name = name or pve_storage_id
 
+    # ── Detect existing snapmanifest before committing ────────────────────────
+    # For SAN: SSH to any known PVE host and check if the LV already exists.
+    # This avoids a misleading "not initialized" badge after +Manage.
+    snapinfo_initialized = 0
+    if protocol in ("iscsi", "nvme") and vg_name and pve_host_ids:
+        try:
+            pve_row = db.query_one(
+                "SELECT * FROM netapp_pve_hosts WHERE id=?", (pve_host_ids[0],))
+            if pve_row:
+                ph = dict(pve_row)
+                ph_host = ph["host"]
+                ph_user = (ph.get("username") or "root@pam").split("@")[0]
+                ph_pass = db._decrypt(ph.get("password_encrypted") or "")
+                from ..core._helpers import ssh_run as _ssh_run
+                chk = _ssh_run(
+                    ph_host, ph_user, ph_pass,
+                    f"lvs {vg_name}/netapp_snapmanifest 2>/dev/null && echo EXISTS || true",
+                    capture=True, key_material="",
+                )
+                if "EXISTS" in chk:
+                    snapinfo_initialized = 1
+                    log.info(
+                        f"[netapp_storage] import '{pve_storage_id}': "
+                        "snapmanifest LV detected → snapinfo_initialized=1"
+                    )
+        except Exception as exc:
+            log.warning(f"[netapp_storage] import: snapmanifest check failed: {exc}")
+
     db.execute(
         """INSERT INTO netapp_provisioned_datastores
            (id, name, endpoint_id, svm_name, volume_uuid, volume_name,
@@ -549,8 +577,8 @@ def _prov_import():
             ns_uuid, subsystem_uuid, subsystem_name,
             vg_name, lvm_type, lvm_pool_name, nfs_junction_path,
             pve_storage_id, pve_host_ids, size_bytes, status, error_message,
-            created_by, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            created_by, created_at, updated_at, snapinfo_initialized)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             ds_id, ds_name, mapping["endpoint_id"],
             svm_name, volume_uuid, mapping.get("volume_name", ""),
@@ -561,7 +589,7 @@ def _prov_import():
             vg_name, lvm_type, lvm_pool_name, nfs_jpath,
             pve_storage_id, json.dumps(pve_host_ids),
             int(size_bytes), "active", "",
-            username, now, now,
+            username, now, now, snapinfo_initialized,
         ),
     )
     return {"success": True, "id": ds_id, "name": ds_name}

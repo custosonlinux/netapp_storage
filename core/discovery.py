@@ -381,6 +381,18 @@ def _get_pve_lvm_storages(pve_host):
             log.warning(f"[netapp_storage] pvs auf {pve_host['host']} fehlgeschlagen: {exc}")
             return lvm_storages, f"pvs fehlgeschlagen: {exc}"
 
+        # SSH: which VGs already have a netapp_snapmanifest LV?
+        try:
+            snap_out = ssh_run(
+                h, u, p,
+                "lvs --noheadings -o lv_name,vg_name 2>/dev/null "
+                "| awk '$1==\"netapp_snapmanifest\"{print $2}'",
+                capture=True, key_material=k,
+            )
+            snap_vgs = {line.strip() for line in snap_out.splitlines() if line.strip()}
+        except Exception:
+            snap_vgs = set()
+
         # SSH: Device-Basename → SCSI-Seriennummer
         # Multipath (/dev/mapper/mpathX) und direkte Devices (/dev/sdX, /dev/nvmeXnY)
         # erscheinen beide in lsblk OUTPUT mit ihrem Basename.
@@ -481,6 +493,9 @@ def _get_pve_lvm_storages(pve_host):
                 else:
                     serial = serial_map.get(dev_base, "").upper()
                 stor["pv_serial"] = serial
+
+            # Flag whether snapmanifest LV already exists on this VG
+            stor["snapmanifest_exists"] = stor["vg_name"] in snap_vgs
 
         return lvm_storages, None
 
@@ -657,6 +672,7 @@ def _san_upsert(db, ep, location, svm_obj, lun_uuid, lun_path,
         )
         return
 
+    snap_initialized = 1 if stor.get("snapmanifest_exists") else 0
     mid = str(_uuid.uuid4())
     try:
         _db_execute_retry(
@@ -666,8 +682,8 @@ def _san_upsert(db, ep, location, svm_obj, lun_uuid, lun_path,
             "volume_uuid, volume_name, junction_path, nfs_export_ip, "
             "nfs_mount_path, discovered_at, created_at, "
             "storage_protocol, lun_uuid, lun_path, "
-            "lvm_vg_name, lvm_type, lvm_pool_name) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "lvm_vg_name, lvm_type, lvm_pool_name, snapinfo_initialized) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(pve_cluster_id, pve_storage_id) DO UPDATE SET "
             "endpoint_id=excluded.endpoint_id, svm_name=excluded.svm_name, "
             "volume_uuid=excluded.volume_uuid, volume_name=excluded.volume_name, "
@@ -675,12 +691,14 @@ def _san_upsert(db, ep, location, svm_obj, lun_uuid, lun_path,
             "lvm_vg_name=excluded.lvm_vg_name, lvm_type=excluded.lvm_type, "
             "lvm_pool_name=excluded.lvm_pool_name, "
             "storage_protocol=excluded.storage_protocol, "
+            "snapinfo_initialized=max(snapinfo_initialized, excluded.snapinfo_initialized), "
             "discovered_at=excluded.discovered_at",
             (mid, ep["id"], stor["pve_host_id"], stor["storage_id"],
              svm_name, vol_uuid, vol_name, "", "", "",
              now, now,
              stor["protocol"], lun_uuid, lun_path,
-             stor["vg_name"], stor["lvm_type"], stor.get("pool_name", "")),
+             stor["vg_name"], stor["lvm_type"], stor.get("pool_name", ""),
+             snap_initialized),
         )
         row = db.query_one(
             "SELECT * FROM netapp_volume_mapping "
