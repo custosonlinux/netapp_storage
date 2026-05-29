@@ -668,9 +668,9 @@ def _import_pve_nodes():
         host_id = str(_uuid.uuid4())
         db.execute(
             """INSERT INTO netapp_pve_hosts
-               (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (host_id, node, node, port, username, db._encrypt(password), ssl_v, ""),
+               (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (host_id, node, node, port, username, db._encrypt(password), ssl_v, "", _now()),
         )
         imported.append(node)
 
@@ -766,18 +766,19 @@ def _add_ontap_system():
     ep_created  = False
     if not existing_ep:
         ep_id = str(_uuid.uuid4())
+        now   = _now()
         db.execute(
             """INSERT INTO netapp_endpoints
-               (id, name, host, username, password_encrypted, ssl_verify, skip_nfs)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (ep_id, name, host, new_username, db._encrypt(new_password), ssl_verify, 0),
+               (id, name, host, username, password_encrypted, ssl_verify, skip_nfs, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ep_id, name, host, new_username, db._encrypt(new_password), ssl_verify, 0, now, now),
         )
         ep_created = True
     else:
         # Update credentials of existing endpoint
         db.execute(
-            "UPDATE netapp_endpoints SET name=?, username=?, password_encrypted=?, ssl_verify=? WHERE host=?",
-            (name, new_username, db._encrypt(new_password), ssl_verify, host),
+            "UPDATE netapp_endpoints SET name=?, username=?, password_encrypted=?, ssl_verify=?, updated_at=? WHERE host=?",
+            (name, new_username, db._encrypt(new_password), ssl_verify, _now(), host),
         )
 
     cluster_name = info.get("name", host)
