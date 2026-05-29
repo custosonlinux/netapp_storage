@@ -96,10 +96,29 @@ def _delete_endpoint():
     if err:
         return err
     data = request.get_json() or {}
-    eid = data.get("id")
+    eid   = data.get("id")
+    force = bool(data.get("force", False))
     if not eid:
         return {"error": "id required"}, 400
     db = get_db()
+
+    # Check for managed datastores that block the delete (ON DELETE RESTRICT)
+    ds_rows = db.query(
+        "SELECT id, name FROM netapp_provisioned_datastores WHERE endpoint_id=?", (eid,))
+    if ds_rows and not force:
+        names = ", ".join(dict(r).get("name", "?") for r in ds_rows)
+        return {
+            "error": f"Cannot delete: {len(ds_rows)} managed datastore(s) use this endpoint "
+                     f"({names}). Remove them first, or confirm force-delete.",
+            "has_datastores": True,
+            "datastore_count": len(ds_rows),
+        }, 409
+
+    # Force: remove dependent datastores first, then endpoint
+    # (volume_mappings cascade automatically)
+    if force and ds_rows:
+        db.execute("DELETE FROM netapp_provisioned_datastores WHERE endpoint_id=?", (eid,))
+
     db.execute("DELETE FROM netapp_endpoints WHERE id=?", (eid,))
     return {"success": True}
 

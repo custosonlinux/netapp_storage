@@ -1973,10 +1973,23 @@ async function discoverOne(id) {
 async function deleteEndpoint(id, name) {
   if (!await uiConfirm(tf('confirm_delete_ep', name))) return;
   try {
-    await apiPost('endpoints/delete', {id:id});
-    toast(t('msg_ep_deleted'),'success');
+    await apiPost('endpoints/delete', {id: id});
+    toast(t('msg_ep_deleted'), 'success');
     loadEndpoints();
-  } catch(e) { toast(e.message,'error'); }
+  } catch(e) {
+    var d = e.data || {};
+    if (d.has_datastores) {
+      var msg = esc(e.message) + '\n\n⚠️ Force-delete will also remove ' + d.datastore_count + ' managed datastore record(s) from the plugin database (ONTAP data is NOT deleted).';
+      if (!await uiConfirm(msg, 'Force Delete', 'btn-danger')) return;
+      try {
+        await apiPost('endpoints/delete', {id: id, force: true});
+        toast(t('msg_ep_deleted'), 'success');
+        loadEndpoints(); loadStorageUnified();
+      } catch(e2) { toast(e2.message, 'error'); }
+    } else {
+      toast(e.message, 'error');
+    }
+  }
 }
 
 // ═══════════════════════════ PVE-HOSTS ════════════════════════════════════
