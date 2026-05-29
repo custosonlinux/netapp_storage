@@ -133,56 +133,9 @@ PegaProx  →  SMTP server         TCP 25/465/587  (optional, for email notifica
 
 ## Installation
 
-### 1. Prerequisites on the PegaProx host
+> **🚀 After the plugin is installed and enabled, the built-in [Initial Setup Wizard](#setup) guides you through every remaining step interactively — ONTAP connectivity check, dedicated user creation, SSH key setup, host package installation, and first discovery. The only thing the wizard cannot do is the initial `git clone` below.**
 
-Install required OS packages:
-
-```bash
-# Required for password-based SSH (not needed with SSH key auth)
-apt install sshpass           # Debian / Ubuntu
-# dnf install sshpass         # RHEL / Rocky
-
-# Required for NFS restore/clone operations
-mkdir -p /mnt/pegaprox-clone
-```
-
-### 2. Create a home directory for the pegaprox user
-
-The PegaProx service runs as the `pegaprox` system user. By default its home is `/usr/lib/pegaprox` (the application directory), which is not suitable for SSH keys. Create a proper home directory:
-
-```bash
-# Create home directory
-mkdir -p /home/pegaprox
-chown pegaprox:pegaprox /home/pegaprox
-chmod 750 /home/pegaprox
-
-# Update the user's home path
-usermod -d /home/pegaprox pegaprox
-```
-
-### 3. Set up SSH authentication for PVE nodes
-
-The plugin connects to each Proxmox VE node via SSH to run LVM, iSCSI, NVMe, and pvesm commands. Choose one of:
-
-**Option A — SSH key (recommended):**
-```bash
-# Generate a key for the pegaprox user
-sudo -u pegaprox ssh-keygen -t ed25519 -N '' -f /home/pegaprox/.ssh/id_ed25519
-
-# Display the public key
-cat /home/pegaprox/.ssh/id_ed25519.pub
-
-# Add it to root's authorized_keys on every PVE node:
-ssh-copy-id -i /home/pegaprox/.ssh/id_ed25519.pub root@<pve-node>
-# Repeat for each node
-```
-
-The plugin automatically picks up `~/.ssh/id_ed25519` (or `id_ecdsa` / `id_rsa`) when no explicit key is stored in the host settings.
-
-**Option B — Password auth:**  
-Enter the root password in Settings → Proxmox Hosts → Add. `sshpass` must be installed (step 1).
-
-### 4. Install the plugin
+### 1. Install the plugin
 
 The plugin directory must be placed inside the `plugins/` subdirectory of your PegaProx installation:
 
@@ -191,41 +144,58 @@ The plugin directory must be placed inside the `plugins/` subdirectory of your P
 | Source (default) | `/opt/PegaProx` | `/opt/PegaProx/plugins/netapp_storage` |
 | APT package | `/var/lib/pegaprox` | `/var/lib/pegaprox/plugins/netapp_storage` |
 
-**From GitHub (recommended):**
+**Clone the latest stable release from GitHub:**
 ```bash
 # Adjust the path to match your PegaProx installation
-git clone https://github.com/custosonlinux/netapp_storage \
+git clone --branch v1.1.0 --depth 1 \
+    https://github.com/custosonlinux/netapp_storage \
     /opt/PegaProx/plugins/netapp_storage
 
 # Fix ownership (only needed for package/service installs running as pegaprox)
 chown -R pegaprox:pegaprox /opt/PegaProx/plugins/netapp_storage
 ```
 
+> **Note:** The GitHub repository root *is* the plugin directory — it contains `manifest.json`, `__init__.py`, `api/`, `core/`, etc. directly.
+
 **Update an existing installation:**
 ```bash
 cd /opt/PegaProx/plugins/netapp_storage
-git pull
+git fetch --tags
+git checkout v1.1.0   # replace with the latest tag
 ```
 
 Alternatively, use the built-in updater in the plugin UI: **Settings → ⬆️ Plugin Update → Check for Update → Update Now**. No shell access required; PegaProx must be restarted after the update.
 
-> **Note:** The GitHub repository root *is* the plugin directory — it contains `manifest.json`, `__init__.py`, `api/`, `core/`, etc. directly.
-
-### 5. Restart PegaProx
+### 2. Restart PegaProx
 
 ```bash
 systemctl restart pegaprox
 ```
 
-### 6. Enable the plugin
+### 3. Enable the plugin
 
 In the PegaProx UI: **Settings → Plugins → NetApp Storage → Enable**.
+
+### 4. Run the Initial Setup Wizard
+
+Open the plugin UI and click **🚀 Initial Setup** in the Settings tab. The wizard walks you through:
+
+1. **PegaProx system check** — verifies `sshpass`, SSH key availability, and the clone mount directory.
+2. **ONTAP connectivity** — tests the API connection to your NetApp cluster.
+3. **Dedicated ONTAP user** — optional: creates a `pegaprox` user with the correct role.
+4. **PVE host SSH access** — verifies SSH connectivity to each Proxmox node; generates and deploys SSH keys if needed.
+5. **PVE host packages** — installs `open-iscsi`, `multipath-tools`, `nvme-cli`, and `lvm2` on each node as required for the selected protocol.
+6. **Initial Discovery** — scans your Proxmox hosts for existing NFS, iSCSI, and NVMe-oF datastores and registers them automatically.
+
+After the wizard completes, the plugin is fully operational.
 
 The plugin adds its tables to the central PegaProx database on first load (`/opt/PegaProx/config/pegaprox.db`).
 
 ---
 
 ## Setup
+
+> The **🚀 Initial Setup Wizard** (Settings tab) automates steps 2–4 below interactively. Manual setup is only needed for advanced configurations or if you prefer CLI control.
 
 ### 1. ONTAP user
 
