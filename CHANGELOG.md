@@ -12,6 +12,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **NVMe-oF DR clone** — clone VMs directly from a SnapMirror secondary using NVMe-oF, with `dd` progress output to the job log.
 - **Plugin self-update** *(Settings → ⬆️ Plugin Update)* — check GitHub for the latest stable release or latest dev/main branch commit; apply updates with one click (downloads ZIP, replaces plugin files, preserves `config.json`). Displays release tag, publish date, and release notes excerpt.
 - **Deploy Wizard** — integrated as a floating modal in Settings for first-time setup.
+  Guides through 5 steps: System check → PVE Hosts → Packages → NetApp → Ready.
+  - PVE nodes imported directly from PegaProx cluster configuration — no re-entry required.
+  - SSH public key pushed automatically to every imported node using the cluster password.
+  - Combined ONTAP setup: enter admin credentials → plugin creates a dedicated `pegaprox` account
+    on ONTAP and registers the endpoint in one step; admin password is never stored.
+  - Auto-creates PegaProx service user home directory if missing (direct mkdir → sudo fallback).
 - **Live ONTAP volume size hint** — shows current ONTAP volume size in the resize and provisioning dialogs for iSCSI and NVMe-oF.
 - **NFS provisioning** — snapmanifest directory (`.netapp-snapmanifest/`) created automatically after NFS provisioning.
 - **pvscan --cache -aay** — used consistently across provisioning and bind for reliable VG activation on all cluster nodes.
@@ -23,6 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Emoji icons** on all section headings (tabs, card-titles, sub-headers) for visual orientation; i18n-safe implementation using separate `<span>` elements.
 - **Renamed** "VM Import from Manifest" → "📥 Import VMs from Datastore".
 - **NVMe bind** — idempotent rebind: detects and reuses existing subsystem/iGroup by name on repeated bind attempts; disconnects stale controllers before reconnecting.
+- **Add NetApp System** — Settings dialog now uses the same flow as the Deploy Wizard: enter admin credentials, plugin creates the ONTAP account and registers the endpoint in one step; admin password never stored.
 
 ### Fixed
 - NVMe bind: sysfs-based device detection for zombie controllers (`nvme list` JSON parsing, baseline-diff tracking).
@@ -34,6 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tab icons stripped by `applyI18n()` — fixed by separating emoji into `<span aria-hidden="true">` and applying `data-i18n` only to the text `<span>`.
 - NFS recovery: dedicated NFS LIF endpoint, automatic LIF selector update on SVM change, default-all host selection.
 - Capacity display for imported (bound) datastores in the Storage tab.
+- Deploy Wizard: ONTAP user creation now treats HTTP 409 (duplicate entry) as "already exists" — system can be registered even if the account was created outside the plugin.
+- Deploy Wizard: `created_at` / `updated_at` NOT NULL constraint for `netapp_pve_hosts` and `netapp_endpoints` filled correctly on insert.
 
 ## [0.9.8] – 2026-05-13
 
