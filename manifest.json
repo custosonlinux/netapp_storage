@@ -1,7 +1,7 @@
 {
     "id": "netapp_storage",
     "name": "NetApp Storage",
-    "version": "1.1.0-dev",
+    "version": "1.1.0",
     "author": "Birger Peer Küpper",
     "author_email": "kuepper@dg6eu.de",
     "description": "VM-consistent ONTAP snapshots, restore, clone and SnapMirror® DR for NFS, iSCSI and NVMe-oF datastores. Scheduled snapshots with email notifications, end-to-end SAN provisioning wizard, Import VMs from Datastore (Beta), and built-in plugin updater.",
