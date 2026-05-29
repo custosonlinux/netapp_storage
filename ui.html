@@ -4987,22 +4987,13 @@ document.addEventListener('keydown', function(e) {
 async function setupWizardInit() {
   try {
     var r = await apiFetch('setup/status');
-    _setupPveHosts = r.pve_hosts || [];
-    var sel = document.getElementById('setupPushKeyHost');
-    while (sel.options.length > 1) sel.remove(1);
-    _setupPveHosts.forEach(function(h) {
-      var opt = document.createElement('option');
-      opt.value = h.id;
-      opt.textContent = h.name + ' (' + h.host + ')';
-      sel.appendChild(opt);
-    });
-    if (r.endpoints && r.endpoints.length > 0) {
-      document.getElementById('setupOntapHost').value = r.endpoints[0].host || '';
-    }
     if (r.ssh_pubkey) {
       document.getElementById('setupSshPubKey').textContent = r.ssh_pubkey;
       document.getElementById('setupSshKeyBox').style.display = '';
     }
+    // Pre-load lists so steps 2+4 feel instant when navigated to
+    wizRefreshPveHosts();
+    wizRefreshEndpoints();
   } catch(e) { /* silent */ }
   setupShowStep(1);
 }
@@ -5017,6 +5008,159 @@ function setupShowStep(n) {
       pill.classList.remove('active');
       if (i === n) pill.classList.add('active');
     }
+  }
+  // Refresh lists on step entry so they reflect any changes made in other tabs
+  if (n === 2) wizRefreshPveHosts();
+  if (n === 4) wizRefreshEndpoints();
+}
+
+// ── Step 2: PVE Hosts — inline add + SSH push ─────────────────────────────
+
+function wizShowAddPveBox() {
+  ['wiz_pve_name','wiz_pve_host','wiz_pve_pass','wiz_pve_nfs_ip'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('wiz_pve_port').value = '8006';
+  document.getElementById('wiz_pve_user').value = 'root@pam';
+  document.getElementById('wizAddPveResult').textContent = '';
+  document.getElementById('wizAddPveBox').style.display = '';
+  document.getElementById('wiz_pve_name').focus();
+}
+
+async function wizRefreshPveHosts() {
+  try {
+    var rows = await apiFetch('pve-hosts');
+    _setupPveHosts = rows;
+    // Update push-key dropdown
+    var sel = document.getElementById('setupPushKeyHost');
+    while (sel.options.length > 1) sel.remove(1);
+    rows.forEach(function(h) {
+      var opt = document.createElement('option');
+      opt.value       = h.id;
+      opt.textContent = h.name + ' (' + h.host + ')';
+      sel.appendChild(opt);
+    });
+    // Render list in wizard step
+    var el = document.getElementById('wizPveList');
+    if (!el) return;
+    if (!rows.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">No PVE hosts configured yet — click <strong>+ Add PVE Host</strong> below.</div>';
+      return;
+    }
+    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:2px"><tbody>';
+    rows.forEach(function(h) {
+      html += '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:6px 10px 6px 0"><strong>' + esc(h.name) + '</strong>' +
+        '<br><span style="color:var(--muted);font-size:11px">' + esc(h.host) + ':' + (h.port||8006) + ' · ' + esc(h.username) + '</span></td>' +
+        '<td id="wizPveSsh_' + h.id + '" style="font-size:12px;color:var(--muted);padding:6px">—</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) {
+    var el = document.getElementById('wizPveList');
+    if (el) el.innerHTML = '<span class="setup-err">Failed to load hosts: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function wizAddPveHost() {
+  var sp       = document.getElementById('wizAddPveSpinner');
+  var el       = document.getElementById('wizAddPveResult');
+  var name     = document.getElementById('wiz_pve_name').value.trim();
+  var host     = document.getElementById('wiz_pve_host').value.trim();
+  var port     = parseInt(document.getElementById('wiz_pve_port').value) || 8006;
+  var username = document.getElementById('wiz_pve_user').value.trim();
+  var password = document.getElementById('wiz_pve_pass').value;
+  var nfs_ip   = document.getElementById('wiz_pve_nfs_ip').value.trim();
+  if (!name || !host || !username || !password) {
+    el.innerHTML = '<span class="setup-err">❌ Name, host, username and password are required.</span>';
+    return;
+  }
+  sp.style.display = '';
+  el.textContent   = '';
+  try {
+    await apiPost('pve-hosts/add', {name, host, port, username, password, ssl_verify: false, nfs_ip});
+    el.innerHTML = '<span class="setup-ok">✅ Host added.</span>';
+    document.getElementById('wizAddPveBox').style.display = 'none';
+    await wizRefreshPveHosts();
+    loadPveHosts();  // refresh Settings tab list too
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+// ── Step 4: NetApp Systems — inline add + test ────────────────────────────
+
+function wizShowAddEpBox() {
+  ['wiz_ep_name','wiz_ep_host','wiz_ep_pass'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('wiz_ep_user').value  = 'admin';
+  document.getElementById('wiz_ep_ssl').checked = false;
+  document.getElementById('wizAddEpResult').textContent = '';
+  document.getElementById('wizAddEpBox').style.display  = '';
+  document.getElementById('wiz_ep_name').focus();
+}
+
+async function wizRefreshEndpoints() {
+  try {
+    var rows = await apiFetch('endpoints');
+    var el = document.getElementById('wizEpList');
+    if (!el) return;
+    if (!rows.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">No ONTAP endpoints configured yet — click <strong>+ Add NetApp System</strong> below.</div>';
+      return;
+    }
+    // Prefill host in ONTAP User step from first endpoint
+    var hostEl = document.getElementById('setupOntapHost');
+    if (hostEl && !hostEl.value && rows.length > 0) hostEl.value = rows[0].host || '';
+    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:2px"><tbody>';
+    rows.forEach(function(ep) {
+      html += '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:6px 10px 6px 0"><strong>' + esc(ep.name) + '</strong>' +
+        '<br><span style="color:var(--muted);font-size:11px">' + esc(ep.host) + ' · ' + esc(ep.username) + '</span></td>' +
+        '<td id="wizEpStatus_' + ep.id + '" style="font-size:12px;color:var(--muted);padding:6px">—</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) {
+    var el = document.getElementById('wizEpList');
+    if (el) el.innerHTML = '<span class="setup-err">Failed to load endpoints: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function wizAddEndpoint() {
+  var sp         = document.getElementById('wizAddEpSpinner');
+  var el         = document.getElementById('wizAddEpResult');
+  var name       = document.getElementById('wiz_ep_name').value.trim();
+  var host       = document.getElementById('wiz_ep_host').value.trim();
+  var username   = document.getElementById('wiz_ep_user').value.trim();
+  var password   = document.getElementById('wiz_ep_pass').value;
+  var ssl_verify = document.getElementById('wiz_ep_ssl').checked;
+  if (!name || !host || !username || !password) {
+    el.innerHTML = '<span class="setup-err">❌ All fields are required.</span>';
+    return;
+  }
+  sp.style.display = '';
+  el.innerHTML     = 'Saving…';
+  try {
+    await apiPost('endpoints/add', {name, host, username, password, ssl_verify, skip_nfs: false});
+    el.innerHTML = '<span class="setup-ok">✅ Endpoint saved — testing connectivity…</span>';
+    document.getElementById('wizAddEpBox').style.display = 'none';
+    await wizRefreshEndpoints();
+    loadEndpoints();  // refresh Settings tab too
+    // Prefill host in ONTAP User step
+    var hostEl = document.getElementById('setupOntapHost');
+    if (hostEl && !hostEl.value) hostEl.value = host;
+    // Auto-run connectivity test so results appear immediately
+    setupTestEndpoints();
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
   }
 }
 
@@ -5113,7 +5257,7 @@ async function setupTestEndpoints() {
     var r       = await apiPost('setup/test-endpoints', {});
     var results = r.results || [];
     if (!results.length) {
-      el.innerHTML = '<span class="setup-warn">⚠️ No endpoints configured. Add one in <em>NetApp Systems</em> below.</span>';
+      el.innerHTML = '<span class="setup-warn">⚠️ No endpoints configured. Use <em>+ Add NetApp System</em> above.</span>';
       return;
     }
     var html = '<table style="border-collapse:collapse;width:100%;font-size:13px"><tbody>';
@@ -5520,10 +5664,10 @@ loadSnapshots();
       <!-- Progress strip -->
       <div style="display:flex;gap:0;margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
         <div class="setup-step-pill" id="spill1" onclick="setupShowStep(1)">① System</div>
-        <div class="setup-step-pill" id="spill2" onclick="setupShowStep(2)">② ONTAP</div>
-        <div class="setup-step-pill" id="spill3" onclick="setupShowStep(3)">③ ONTAP User</div>
-        <div class="setup-step-pill" id="spill4" onclick="setupShowStep(4)">④ PVE SSH</div>
-        <div class="setup-step-pill" id="spill5" onclick="setupShowStep(5)">⑤ Packages</div>
+        <div class="setup-step-pill" id="spill2" onclick="setupShowStep(2)">② PVE Hosts</div>
+        <div class="setup-step-pill" id="spill3" onclick="setupShowStep(3)">③ Packages</div>
+        <div class="setup-step-pill" id="spill4" onclick="setupShowStep(4)">④ NetApp</div>
+        <div class="setup-step-pill" id="spill5" onclick="setupShowStep(5)">⑤ ONTAP User</div>
         <div class="setup-step-pill" id="spill6" onclick="setupShowStep(6)">⑥ Ready</div>
       </div>
 
@@ -5549,28 +5693,137 @@ loadSnapshots();
         </div>
       </div>
 
-      <!-- ── Step 2: ONTAP Connectivity ── -->
+      <!-- ── Step 2: PVE Hosts ── -->
       <div class="card setup-step-card" id="setupStep2" style="display:none">
-        <div class="card-title">② ONTAP Connectivity</div>
+        <div class="card-title">② Proxmox VE Hosts</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Tests the REST API connection to all configured ONTAP endpoints.
-          If no endpoints exist, add one in the <em>NetApp Systems</em> section — then reopen this wizard.
+          Add your Proxmox VE cluster nodes, then push the SSH public key so PegaProx can reach them without a password.
         </p>
-        <div id="setupEpResult" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" onclick="setupTestEndpoints()">
-            Test All Endpoints <span id="setupEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+
+        <!-- Host list -->
+        <div id="wizPveList" style="margin-bottom:10px"></div>
+
+        <!-- Inline add form -->
+        <div id="wizAddPveBox" style="display:none;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Add PVE Host</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Name</label><input class="form-control" id="wiz_pve_name" placeholder="pve-node1"></div>
+            <div class="form-group"><label>Host / IP</label><input class="form-control" id="wiz_pve_host" placeholder="192.168.1.10"></div>
+            <div class="form-group"><label>Port</label><input class="form-control" id="wiz_pve_port" value="8006" type="number"></div>
+            <div class="form-group"><label>Username</label><input class="form-control" id="wiz_pve_user" value="root@pam"></div>
+            <div class="form-group"><label>Password</label><input class="form-control" id="wiz_pve_pass" type="password" placeholder="root password"></div>
+            <div class="form-group"><label>NFS / Storage IP <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input class="form-control" id="wiz_pve_nfs_ip" placeholder="10.0.0.10"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary btn-sm" onclick="wizAddPveHost()">
+              Add Host <span id="wizAddPveSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wizAddPveBox').style.display='none'">Cancel</button>
+          </div>
+          <div id="wizAddPveResult" style="font-size:12px;margin-top:6px"></div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn btn-secondary btn-sm" onclick="wizShowAddPveBox()">+ Add PVE Host</button>
+          <button class="btn btn-primary" onclick="setupTestSsh()">
+            Test SSH to All <span id="setupSshSpinner" class="spinner" style="display:none;margin-left:4px"></span>
           </button>
         </div>
+        <div id="setupSshResult" style="margin-bottom:8px"></div>
+
+        <!-- SSH key push widget -->
+        <div style="padding:10px 14px;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Push SSH Key to Host</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select class="form-control" id="setupPushKeyHost" style="max-width:220px">
+              <option value="">— select host —</option>
+            </select>
+            <input class="form-control" id="setupPushKeyPass" type="password" placeholder="root password (one-time)" style="max-width:200px">
+            <button class="btn btn-secondary" onclick="setupPushSshKey()">
+              Push Key <span id="setupPushSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <span id="setupPushResult" style="font-size:12px"></span>
+          </div>
+        </div>
+
         <div style="display:flex;justify-content:space-between;margin-top:12px">
           <button class="btn btn-ghost btn-sm" onclick="setupShowStep(1)">← Back</button>
           <button class="btn btn-secondary btn-sm" onclick="setupShowStep(3)">Next →</button>
         </div>
       </div>
 
-      <!-- ── Step 3: Create ONTAP User ── -->
+      <!-- ── Step 3: PVE Packages ── -->
       <div class="card setup-step-card" id="setupStep3" style="display:none">
-        <div class="card-title">③ Dedicated ONTAP User (recommended)</div>
+        <div class="card-title">③ PVE Host Packages</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+          Installs the required packages for each storage protocol on every PVE host.
+        </p>
+        <div id="setupPkgTable" style="margin-bottom:12px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="setupCheckAllPackages()">
+            Check All Hosts <span id="setupPkgCheckSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+          <button class="btn btn-secondary" onclick="setupInstallSelected()">
+            Install Selected Packages
+          </button>
+        </div>
+        <div id="setupPkgInstallResult" style="margin-top:8px;font-size:12px"></div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px">
+          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(2)">← Back</button>
+          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(4)">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 4: NetApp Systems ── -->
+      <div class="card setup-step-card" id="setupStep4" style="display:none">
+        <div class="card-title">④ NetApp ONTAP Systems</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+          Add your ONTAP cluster management endpoints and verify REST API connectivity.
+        </p>
+
+        <!-- Endpoint list -->
+        <div id="wizEpList" style="margin-bottom:10px"></div>
+
+        <!-- Inline add form -->
+        <div id="wizAddEpBox" style="display:none;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px">Add NetApp System</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Name</label><input class="form-control" id="wiz_ep_name" placeholder="ontap-cluster1"></div>
+            <div class="form-group"><label>Cluster Mgmt IP / FQDN</label><input class="form-control" id="wiz_ep_host" placeholder="10.0.0.1"></div>
+            <div class="form-group"><label>Username</label><input class="form-control" id="wiz_ep_user" value="admin"></div>
+            <div class="form-group"><label>Password</label><input class="form-control" id="wiz_ep_pass" type="password" placeholder="password"></div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0 10px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:400">
+            <input type="checkbox" id="wiz_ep_ssl"> Verify SSL certificate
+          </label>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="wizAddEndpoint()">
+              Add &amp; Test <span id="wizAddEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wizAddEpBox').style.display='none'">Cancel</button>
+          </div>
+          <div id="wizAddEpResult" style="font-size:12px;margin-top:6px"></div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn btn-secondary btn-sm" onclick="wizShowAddEpBox()">+ Add NetApp System</button>
+          <button class="btn btn-primary" onclick="setupTestEndpoints()">
+            Test All <span id="setupEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+          </button>
+        </div>
+        <div id="setupEpResult" style="margin-bottom:4px"></div>
+
+        <div style="display:flex;justify-content:space-between;margin-top:12px">
+          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(3)">← Back</button>
+          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(5)">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 5: Dedicated ONTAP User ── -->
+      <div class="card setup-step-card" id="setupStep5" style="display:none">
+        <div class="card-title">⑤ Dedicated ONTAP User (recommended)</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
           Creates a dedicated <code>pegaprox</code> account on the ONTAP cluster with
           <strong>HTTP-only access</strong> — no CLI or SSH.
@@ -5613,62 +5866,8 @@ loadSnapshots();
           <button class="btn btn-primary" onclick="setupCreateOntapUser()">
             Create User <span id="setupUserSpinner" class="spinner" style="display:none;margin-left:4px"></span>
           </button>
-          <button class="btn btn-ghost" onclick="setupShowStep(4)" style="color:var(--muted);font-size:12px">Skip (use existing account)</button>
+          <button class="btn btn-ghost" onclick="setupShowStep(6)" style="color:var(--muted);font-size:12px">Skip (use existing account)</button>
         </div>
-        <div style="display:flex;justify-content:space-between;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(2)">← Back</button>
-          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(4)">Next →</button>
-        </div>
-      </div>
-
-      <!-- ── Step 4: PVE SSH ── -->
-      <div class="card setup-step-card" id="setupStep4" style="display:none">
-        <div class="card-title">④ PVE Host SSH Access</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Tests SSH connectivity to all configured PVE hosts.
-          Use <em>Push SSH Key</em> to install the PegaProx public key on a host for passwordless access.
-        </p>
-        <div id="setupSshResult" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-          <button class="btn btn-primary" onclick="setupTestSsh()">
-            Test SSH to All Hosts <span id="setupSshSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-        </div>
-        <div style="padding:10px 14px;background:var(--bg);border-radius:6px;margin-top:8px">
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Push SSH Key to Host</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select class="form-control" id="setupPushKeyHost" style="max-width:220px">
-              <option value="">— select host —</option>
-            </select>
-            <input class="form-control" id="setupPushKeyPass" type="password" placeholder="root password (one-time)" style="max-width:200px">
-            <button class="btn btn-secondary" onclick="setupPushSshKey()">
-              Push Key <span id="setupPushSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-            </button>
-            <span id="setupPushResult" style="font-size:12px"></span>
-          </div>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(3)">← Back</button>
-          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(5)">Next →</button>
-        </div>
-      </div>
-
-      <!-- ── Step 5: PVE Packages ── -->
-      <div class="card setup-step-card" id="setupStep5" style="display:none">
-        <div class="card-title">⑤ PVE Host Packages</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Installs the required packages for each storage protocol on every PVE host.
-        </p>
-        <div id="setupPkgTable" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" onclick="setupCheckAllPackages()">
-            Check All Hosts <span id="setupPkgCheckSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-          <button class="btn btn-secondary" onclick="setupInstallSelected()">
-            Install Selected Packages
-          </button>
-        </div>
-        <div id="setupPkgInstallResult" style="margin-top:8px;font-size:12px"></div>
         <div style="display:flex;justify-content:space-between;margin-top:12px">
           <button class="btn btn-ghost btn-sm" onclick="setupShowStep(4)">← Back</button>
           <button class="btn btn-secondary btn-sm" onclick="setupShowStep(6)">Next →</button>
