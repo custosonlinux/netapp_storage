@@ -2,6 +2,8 @@
 
 A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that adds VM-consistent NetApp® ONTAP® snapshot management directly to the PegaProx UI — for **NFS**, **iSCSI**, and **NVMe-oF** (NVMe/TCP, NVMe/FC) datastores.
 
+**Current version: 1.1.0** · [Changelog](CHANGELOG.md) · [Known Issues](KNOWN_ISSUES.md)
+
 ---
 
 ## What this plugin does
@@ -14,6 +16,8 @@ This plugin connects PegaProx to one or more NetApp ONTAP systems and gives you 
 - **Schedule** automatic snapshots with retention policies, pre/post hooks, and email notifications.
 - **Replicate** snapshots to a secondary ONTAP cluster via SnapMirror® and restore or clone directly from the replica — without touching the primary.
 - **Provision** new SAN datastores end-to-end (iSCSI and NVMe-oF): ONTAP volume + LUN/namespace + iGroup/subsystem creation, host-side iSCSI/NVMe setup, LVM VG creation, and PVE storage registration — in a single wizard.
+- **Import VMs from Datastore** *(Beta)* — adopt an existing ONTAP volume with live VMs into the plugin without reprovisioning. Reads the snapmanifest from the volume, reconstructs VM inventory, reassigns VMIDs on conflicts, and registers the datastore. Covers cluster migrations, storage takeovers, and SnapMirror DR failover scenarios.
+- **Self-update** — check for new releases or dev builds directly from the Settings tab and apply updates with one click.
 
 All operations run as background jobs with live log streaming. Every snapshot embeds a manifest (VM inventory + configs) that travels inside the ONTAP snapshot, making restores self-contained.
 
@@ -39,7 +43,8 @@ All operations run as background jobs with live log streaming. Every snapshot em
 | Storage Provisioning (auto-setup) | ✅ | 🟡 Beta | 🟡 Beta |
 | Storage Resize | ✅ grow & shrink | 🟡 Beta grow only | 🟡 Beta grow only |
 | Job cancellation | ✅ | 🟡 Beta | 🟡 Beta |
-| Datastore Recovery — Import existing datastores with VMs | 🔵 Dev | 🔵 Dev | 🔵 Dev |
+| Import VMs from Datastore (adopt existing volumes with VMs) | 🟡 Beta | 🟡 Beta | 🟡 Beta |
+| Plugin self-update (from GitHub, release or dev) | ✅ | ✅ | ✅ |
 | Full DR Scenario — Failover, Test-DR, Failback | 🔄 Planned | 🔄 Planned | 🔄 Planned |
 
 Legend: ✅ Stable · 🟡 Beta · 🟠 Alpha · 🔵 In Development · 🔄 Planned · ❌ N/A
@@ -201,6 +206,8 @@ chown -R pegaprox:pegaprox /opt/PegaProx/plugins/netapp_storage
 cd /opt/PegaProx/plugins/netapp_storage
 git pull
 ```
+
+Alternatively, use the built-in updater in the plugin UI: **Settings → ⬆️ Plugin Update → Check for Update → Update Now**. No shell access required; PegaProx must be restarted after the update.
 
 > **Note:** The GitHub repository root *is* the plugin directory — it contains `manifest.json`, `__init__.py`, `api/`, `core/`, etc. directly.
 
@@ -754,32 +761,22 @@ All routes are relative to `/api/plugins/netapp_storage/api/`.
 | POST | `settings/smtp/save` | Save SMTP configuration |
 | POST | `settings/smtp/test` | Test SMTP connection |
 | POST | `settings/notify-test` | Send a test notification email |
+| GET | `settings/export` | Export all plugin config as JSON |
+| POST | `settings/import` | Restore plugin config from JSON |
+| GET | `settings/update/info` | Check GitHub for latest release / branch info |
+| POST | `settings/update/apply` | Download and apply a plugin update from GitHub |
+| GET | `provisioning/recovery/scan-volumes` | Scan ONTAP volumes for existing datastores |
+| GET | `provisioning/recovery/manifests` | Read snapmanifest from an existing volume |
+| POST | `provisioning/recovery/bind` | Bind (adopt) an existing volume as a plugin datastore |
+| POST | `provisioning/recovery/restore-vms` | Import VM configs from a bound datastore |
+| GET | `provisioning/recovery/used-vmids` | List VMIDs in use on the target cluster |
 | GET | `ui` | Plugin management UI |
 
 ---
 
 ## Roadmap
 
-### Datastore Recovery — Import existing datastores with VMs *(v1.1 — `dev` branch)*
-
-Sometimes a datastore already has a VG and VMs on it but is not yet registered in the plugin — after a cluster migration, a storage takeover, or a scenario where the plugin database was lost. The Datastore Recovery feature handles this without reprovisioning:
-
-**Use cases covered:**
-
-- **Cluster migration / storage takeover:** An existing iSCSI or NVMe-oF datastore with live VMs needs to be adopted by a new PegaProx/Proxmox installation. The plugin scans the ONTAP volume, rediscovers the LUN/namespace and VG, and re-registers everything — including the snapmanifest — without touching the VMs.
-- **DR recovery from storage data:** After a DR failover (SnapMirror break-off), a secondary volume containing VMs needs to be imported as an active datastore on the DR site. The plugin reads the snapmanifest from inside the volume, reconstructs the VM inventory, and allows VMID assignment and PVE registration in one step.
-
-**Workflow:**
-
-1. Select ONTAP endpoint and SVM → browse existing volumes
-2. Scan for LUNs / namespaces and auto-detect VG name
-3. Read snapmanifest from the VG → display VM inventory (VMIDs, names, disk layout)
-4. (Optional) Reassign VMIDs in case of conflicts with the target cluster
-5. Bind the datastore (iSCSI login / NVMe connect, VG activate, pvesm register) and import VM configs
-
----
-
-### Full DR Scenario *(Roadmap)*
+### Full DR Scenario *(Planned)*
 
 Building on SnapMirror DR restore/clone and Datastore Recovery, the planned Full DR Scenario adds orchestrated failover and failback:
 

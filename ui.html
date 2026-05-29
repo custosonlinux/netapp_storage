@@ -1236,12 +1236,12 @@ function applyI18n() {
   <!-- Sub-tabs -->
   <div class="subtabs">
     <div class="subtab active" data-tab="snapshots">📸 Snapshots</div>
-    <div class="subtab" data-tab="schedules" data-i18n="tab_schedules">🗓️ Schedules</div>
-    <div class="subtab" data-tab="restore" data-i18n="tab_restore">🔙 Restore</div>
-    <div class="subtab" data-tab="clone" data-i18n="tab_clone">📋 Clone</div>
-    <div class="subtab" data-tab="storage" data-i18n="tab_storage">🗄️ Storage</div>
-    <div class="subtab" data-tab="jobs" data-i18n="tab_jobs">📜 Jobs &amp; Logs</div>
-    <div class="subtab" data-tab="settings" data-i18n="tab_settings">⚙️ Settings</div>
+    <div class="subtab" data-tab="schedules"><span aria-hidden="true">🗓️</span> <span data-i18n="tab_schedules">Schedules</span></div>
+    <div class="subtab" data-tab="restore"><span aria-hidden="true">🔙</span> <span data-i18n="tab_restore">Restore</span></div>
+    <div class="subtab" data-tab="clone"><span aria-hidden="true">📋</span> <span data-i18n="tab_clone">Clone</span></div>
+    <div class="subtab" data-tab="storage"><span aria-hidden="true">🗄️</span> <span data-i18n="tab_storage">Storage</span></div>
+    <div class="subtab" data-tab="jobs"><span aria-hidden="true">📜</span> <span data-i18n="tab_jobs">Jobs &amp; Logs</span></div>
+    <div class="subtab" data-tab="settings"><span aria-hidden="true">⚙️</span> <span data-i18n="tab_settings">Settings</span></div>
   </div>
 
   <!-- Scrollable content -->
@@ -1323,7 +1323,7 @@ function applyI18n() {
     <!-- ═══════════════════════ VM-RESTORE ══════════════════════ -->
     <div id="tab-restore" class="tab-panel" style="display:none">
       <div class="card">
-        <div class="card-title" data-i18n="ct_start_restore">🔄 Single VM Restore</div>
+        <div class="card-title"><span aria-hidden="true">🔄</span> <span data-i18n="ct_start_restore">Single VM Restore</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label>Datastore</label>
@@ -1363,7 +1363,7 @@ function applyI18n() {
 
       <!-- DR Restore from SnapMirror® secondary -->
       <div class="card" style="margin-top:16px">
-        <div class="card-title" data-i18n="sm_dr_title">🌐 Restore from SnapMirror® Secondary System</div>
+        <div class="card-title"><span aria-hidden="true">🌐</span> <span data-i18n="sm_dr_title">Restore from SnapMirror® Secondary System</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">SnapMirror® Relationship</label>
@@ -1402,7 +1402,7 @@ function applyI18n() {
     <!-- ════════════════════════ VM-CLONE ════════════════════════ -->
     <div id="tab-clone" class="tab-panel" style="display:none">
       <div class="card">
-        <div class="card-title" data-i18n="ct_clone_vm">📋 Clone VM</div>
+        <div class="card-title"><span aria-hidden="true">📋</span> <span data-i18n="ct_clone_vm">Clone VM</span></div>
         <div class="form-grid" style="margin-bottom:10px">
           <div class="form-group">
             <label>Datastore</label>
@@ -1457,7 +1457,7 @@ function applyI18n() {
 
       <!-- DR-Clone vom Sekundärsystem -->
       <div class="card" style="margin-top:16px">
-        <div class="card-title" data-i18n="ct_dr_clone">🌐 DR Clone from Secondary System</div>
+        <div class="card-title"><span aria-hidden="true">🌐</span> <span data-i18n="ct_dr_clone">DR Clone from Secondary System</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">Select relationship</label>
@@ -1563,7 +1563,7 @@ function applyI18n() {
       </div>
 
       <div class="sub-header">
-        <span class="sub-header-title" data-i18n="sect_netapp">🔷 NetApp Systems</span>
+        <span class="sub-header-title"><span aria-hidden="true">🔷</span> <span data-i18n="sect_netapp">NetApp Systems</span></span>
         <button class="btn btn-primary btn-sm" onclick="showAddEndpointForm()" data-i18n="btn_add_netapp">+ Add NetApp System</button>
       </div>
 
@@ -1579,7 +1579,7 @@ function applyI18n() {
       </div>
 
       <div class="sub-header">
-        <span class="sub-header-title" data-i18n="sect_pve">🖥️ Proxmox VE Hosts</span>
+        <span class="sub-header-title"><span aria-hidden="true">🖥️</span> <span data-i18n="sect_pve">Proxmox VE Hosts</span></span>
         <button class="btn btn-primary btn-sm" onclick="showAddPveHostForm()" data-i18n="btn_add_pve">+ Add PVE Host</button>
       </div>
 
@@ -1596,7 +1596,7 @@ function applyI18n() {
 
       <!-- ═══════════════ EMAIL / SMTP ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title" data-i18n="sect_smtp">✉️ Email Notifications (SMTP)</span>
+        <span class="sub-header-title"><span aria-hidden="true">✉️</span> <span data-i18n="sect_smtp">Email Notifications (SMTP)</span></span>
       </div>
       <div class="card">
         <div class="form-grid">
