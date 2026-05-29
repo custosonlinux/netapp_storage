@@ -1269,57 +1269,6 @@ function applyI18n() {
         </div>
       </div>
 
-      <div id="createSnapshotForm" class="card" style="display:none">
-        <div class="card-title" data-i18n="ct_create_snapshot">Create Snapshot</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="lbl_volume_mapping">Volume Mapping</label>
-            <select id="snap_mapping" onchange="updateSnapCluster()"></select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_pve_cluster">PVE Cluster</label>
-            <input id="snap_cluster" data-i18n-placeholder="ph_cluster_auto" placeholder="Determined from mapping" readonly>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_node">Node</span> <span style="opacity:.6" data-i18n="lbl_node_hint">(empty = automatic)</span></label>
-            <input id="snap_node" placeholder="pve01">
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_vms">VMs</span> &nbsp;<button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="selectAllVms()" data-i18n="btn_all">All</button></label>
-            <select id="snap_vmids_select" multiple size="8" style="min-height:160px">
-              <option disabled data-i18n="hint_mapping_first">Select mapping …</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_name">Name</span> <span style="opacity:.6" data-i18n-html="lbl_name_hint">(snapshot will be named NPP_<em>Name</em>)</span></label>
-            <input id="snap_name" placeholder="e.g. before-update, test-migration">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_consistency">Consistency</label>
-            <select id="snap_consistency">
-              <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
-              <option value="app" data-i18n="opt_app_qemu">App-consistent (QEMU guest-agent)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional, for vault/replication)</span></label>
-            <input id="snap_label" placeholder="e.g. daily, weekly, monthly">
-          </div>
-          <div class="form-group">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="snap_sm_update">
-              <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
-            </label>
-          </div>
-          <p class="hint" style="margin-top:6px">
-            ⚠️ All disks of a VM must reside on the <strong>same datastore</strong> to be included in a consistent snapshot.
-            VMs with disks spread across multiple datastores are not snapshotted consistently.
-          </p>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="createSnapshot()" data-i18n="btn_start_snapshot">Start Snapshot</button>
-          <button class="btn btn-ghost"   onclick="hideForm('createSnapshotForm')" data-i18n="btn_cancel">Cancel</button>
-        </div>
       </div>
 
       <div class="card table-scroll">
@@ -1359,148 +1308,6 @@ function applyI18n() {
         <button class="btn btn-primary" onclick="showAddScheduleForm()" data-i18n="btn_add_schedule">+ Add Schedule</button>
       </div>
 
-      <div id="addScheduleForm" class="card" style="display:none">
-        <input type="hidden" id="sched_edit_id" value="">
-        <div class="card-title" id="sched_form_title" data-i18n="ct_new_schedule">New Schedule</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="lbl_name">Name</label>
-            <input id="sched_name" placeholder="Nightly Backup">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_volume_mapping">Volume Mapping</label>
-            <select id="sched_mapping" onchange="loadVmsForSchedule(this.value)"></select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_retention">Retention (keep snapshots)</label>
-            <input id="sched_retention" type="number" value="7" min="1" max="99">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_consistency">Consistency</label>
-            <select id="sched_consistency">
-              <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
-              <option value="app" data-i18n="opt_app_sched">App-consistent (QEMU with Guest Agent)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional, for vault/replication)</span></label>
-            <input id="sched_label" placeholder="e.g. daily, weekly, monthly">
-          </div>
-        </div>
-
-        <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_sched_builder">Schedule</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="flex:0 0 auto">
-            <label data-i18n="lbl_frequency">Frequency</label>
-            <select id="sched_freq" onchange="updateSchedCron()">
-              <option value="hourly" data-i18n="opt_hourly">Hourly</option>
-              <option value="daily" selected data-i18n="opt_daily">Daily</option>
-              <option value="weekly" data-i18n="opt_weekly">Weekly</option>
-              <option value="monthly" data-i18n="opt_monthly">Monthly</option>
-              <option value="interval" data-i18n="opt_every_n_h">Every N Hours</option>
-            </select>
-          </div>
-          <div id="sched_time_group" class="form-group" style="flex:0 0 auto">
-            <label data-i18n="lbl_at_time">At time</label>
-            <input id="sched_time" type="time" value="02:00" style="width:110px" onchange="updateSchedCron()">
-          </div>
-          <div id="sched_dow_group" class="form-group" style="flex:0 0 auto;display:none">
-            <label data-i18n="lbl_weekday">Weekday</label>
-            <select id="sched_dow" onchange="updateSchedCron()">
-              <option value="1" data-i18n="day_mon">Monday</option><option value="2" data-i18n="day_tue">Tuesday</option>
-              <option value="3" data-i18n="day_wed">Wednesday</option><option value="4" data-i18n="day_thu">Thursday</option>
-              <option value="5" data-i18n="day_fri">Friday</option><option value="6" data-i18n="day_sat">Saturday</option>
-              <option value="0" data-i18n="day_sun">Sunday</option>
-            </select>
-          </div>
-          <div id="sched_dom_group" class="form-group" style="flex:0 0 auto;display:none">
-            <label data-i18n="lbl_day_of_month">Day of month</label>
-            <select id="sched_dom" onchange="updateSchedCron()"></select>
-          </div>
-          <div id="sched_interval_group" class="form-group" style="flex:0 0 auto;display:none">
-            <label data-i18n="lbl_interval">Interval</label>
-            <select id="sched_interval_val" onchange="updateSchedCron()">
-              <option value="1" data-i18n="opt_int_1h">every hour</option><option value="2" data-i18n="opt_int_2h">every 2 hours</option>
-              <option value="3" data-i18n="opt_int_3h">every 3 hours</option><option value="4" data-i18n="opt_int_4h">every 4 hours</option>
-              <option value="6" data-i18n="opt_int_6h">every 6 hours</option><option value="8" data-i18n="opt_int_8h">every 8 hours</option>
-              <option value="12" data-i18n="opt_int_12h">every 12 hours</option>
-            </select>
-          </div>
-        </div>
-        <p class="hint" style="margin-top:6px">
-          <span data-i18n="hint_cron_prefix">Schedule:</span> <strong id="sched_cron_human" style="color:var(--text)">Daily at 02:00</strong>
-          <input id="sched_cron" type="hidden" value="0 2 * * *">
-        </p>
-
-        <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_vms_include">Include VMs</div>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:10px">
-          <input type="checkbox" id="sched_sync_vmids" onchange="toggleSchedSyncVmids()">
-          <span>Automatically include all VMs in this datastore</span>
-        </label>
-        <div id="sched_vmids_manual">
-          <select id="sched_vmids_select" multiple size="6" style="width:100%;min-height:120px;margin-bottom:4px">
-            <option disabled data-i18n="hint_select_mapping">← Select mapping first</option>
-          </select>
-          <div style="display:flex;gap:6px;margin-bottom:4px">
-            <button class="btn btn-ghost btn-sm" onclick="schedSelectAll()" data-i18n="btn_all">All</button>
-            <button class="btn btn-ghost btn-sm" onclick="schedSelectNone()" data-i18n="btn_none">None</button>
-          </div>
-          <p class="hint" data-i18n="hint_no_select">No selection = all VMs of the datastore are included.</p>
-        </div>
-
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
-          <input type="checkbox" id="sched_sm_update">
-          <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
-        </label>
-
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:8px">
-          <input type="checkbox" id="sched_notify_enabled" onchange="toggleNotifyFields()">
-          <span data-i18n="lbl_notify_enabled">Send email notifications</span>
-        </label>
-
-        <div id="sched_notify_fields" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
-          <div class="form-grid" style="margin-bottom:10px">
-            <div class="form-group" style="margin:0">
-              <label data-i18n="lbl_notify_on">Notify on</label>
-              <select id="sched_notify_on">
-                <option value="all"     data-i18n="opt_notify_all">All events (success &amp; failure)</option>
-                <option value="failed"  data-i18n="opt_notify_failed">Failures only</option>
-                <option value="success" data-i18n="opt_notify_success">Success only</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin:0">
-              <label data-i18n="lbl_notify_recipients">Recipients (comma-separated)</label>
-              <input id="sched_notify_recipients" type="text" placeholder="admin@example.com, ops@example.com">
-            </div>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="testScheduleNotification()" data-i18n="btn_notify_test">Send test email</button>
-        </div>
-
-        <details style="margin-bottom:12px">
-          <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;user-select:none">
-            Pre/Post-Scripts (Hooks)
-          </summary>
-          <div style="margin-top:10px;display:grid;gap:10px">
-            <div class="form-group" style="margin:0">
-              <label style="font-size:12px">Pre-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, before freeze)</span></label>
-              <textarea id="sched_pre_script" rows="2"
-                style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
-                placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-flush.sh"></textarea>
-            </div>
-            <div class="form-group" style="margin:0">
-              <label style="font-size:12px">Post-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, after thaw)</span></label>
-              <textarea id="sched_post_script" rows="2"
-                style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
-                placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-unlock.sh"></textarea>
-            </div>
-            <p class="hint" style="margin:0">Available variables: <code>$PEGAPROX_VMIDS</code> (space-separated), <code>$PEGAPROX_SNAP</code>, <code>$PEGAPROX_NODE</code></p>
-          </div>
-        </details>
-
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="saveSchedule()" data-i18n="btn_save">Save</button>
-          <button class="btn btn-ghost"   onclick="hideForm('addScheduleForm')" data-i18n="btn_cancel">Cancel</button>
-        </div>
       </div>
 
       <div class="card table-scroll">
@@ -2069,7 +1876,7 @@ document.querySelectorAll('.subtab').forEach(function(t) {
   });
 });
 
-function hideForm(id) { document.getElementById(id).style.display = 'none'; }
+function hideForm(id) { document.getElementById(id).style.display = 'none'; document.body.style.overflow = ''; }
 
 // ═══════════════════════════ ENDPOINTS ════════════════════════════════════
 
@@ -2377,7 +2184,8 @@ async function populateMappingSelect(selId) {
 }
 
 async function showCreateSnapshotForm() {
-  document.getElementById('createSnapshotForm').style.display = 'block';
+  document.getElementById('createSnapshotForm').style.display = '';
+  document.body.style.overflow = 'hidden';
   await populateMappingSelect('snap_mapping');
   updateSnapCluster();
 }
@@ -2978,7 +2786,8 @@ async function showAddScheduleForm() {
   document.getElementById('sched_freq').value = 'daily';
   document.getElementById('sched_time').value = '02:00';
   updateSchedCron();
-  document.getElementById('addScheduleForm').style.display = 'block';
+  document.getElementById('addScheduleForm').style.display = '';
+  document.body.style.overflow = 'hidden';
   await populateMappingSelect('sched_mapping');
   var mid = document.getElementById('sched_mapping').value;
   if (mid) await loadVmsForSchedule(mid);
@@ -3016,9 +2825,8 @@ async function showEditScheduleForm(s) {
     document.getElementById('sched_notify_fields').style.display = notifyOn ? 'block' : 'none';
   }
   parseCronToForm(s.cron_expr);
-  document.getElementById('addScheduleForm').style.display = 'block';
-  var _c = document.querySelector('.content');
-  if (_c) { var _f = document.getElementById('addScheduleForm'); _c.scrollTop = _f ? Math.max(0, _f.offsetTop - _c.offsetTop - 12) : 0; }
+  document.getElementById('addScheduleForm').style.display = '';
+  document.body.style.overflow = 'hidden';
   await populateMappingSelect('sched_mapping');
   document.getElementById('sched_mapping').value = s.mapping_id;
   if (s.mapping_id) await loadVmsForSchedule(s.mapping_id, s.vmids || []);
@@ -5150,6 +4958,12 @@ function hideVmImportModal() {
 function vmImportBackdropClick(e) {
   if (e.target === document.getElementById('vmImportModal')) hideVmImportModal();
 }
+function createSnapshotBackdropClick(e) {
+  if (e.target === document.getElementById('createSnapshotForm')) hideForm('createSnapshotForm');
+}
+function addScheduleBackdropClick(e) {
+  if (e.target === document.getElementById('addScheduleForm')) hideForm('addScheduleForm');
+}
 
 // Escape key closes any open modal
 document.addEventListener('keydown', function(e) {
@@ -5158,6 +4972,8 @@ document.addEventListener('keydown', function(e) {
   else if (document.getElementById('provWizModal').style.display !== 'none') { hideProvWizard(); }
   else if (document.getElementById('bindWizModal').style.display !== 'none') { hideBindWizard(); }
   else if (document.getElementById('vmImportModal').style.display !== 'none') { hideVmImportModal(); }
+  else if (document.getElementById('createSnapshotForm').style.display !== 'none') { hideForm('createSnapshotForm'); }
+  else if (document.getElementById('addScheduleForm').style.display !== 'none') { hideForm('addScheduleForm'); }
 });
 
 async function setupWizardInit() {
@@ -6173,6 +5989,219 @@ loadSnapshots();
     </div><!-- /modal body -->
   </div><!-- /modal box -->
 </div><!-- /vmImportModal -->
+
+<!-- ── Create Snapshot Modal ─────────────────────────────────────── -->
+<div id="createSnapshotForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="createSnapshotBackdropClick(event)">
+  <div style="max-width:700px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700" data-i18n="ct_create_snapshot">Create Snapshot</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideForm('createSnapshotForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label data-i18n="lbl_volume_mapping">Volume Mapping</label>
+          <select id="snap_mapping" onchange="updateSnapCluster()"></select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_pve_cluster">PVE Cluster</label>
+          <input id="snap_cluster" data-i18n-placeholder="ph_cluster_auto" placeholder="Determined from mapping" readonly>
+        </div>
+        <div class="form-group">
+          <label><span data-i18n="lbl_node">Node</span> <span style="opacity:.6" data-i18n="lbl_node_hint">(empty = automatic)</span></label>
+          <input id="snap_node" placeholder="pve01">
+        </div>
+        <div class="form-group">
+          <label><span data-i18n="lbl_vms">VMs</span> &nbsp;<button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="selectAllVms()" data-i18n="btn_all">All</button></label>
+          <select id="snap_vmids_select" multiple size="8" style="min-height:160px">
+            <option disabled data-i18n="hint_mapping_first">Select mapping …</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label><span data-i18n="lbl_name">Name</span> <span style="opacity:.6" data-i18n-html="lbl_name_hint">(snapshot will be named NPP_<em>Name</em>)</span></label>
+          <input id="snap_name" placeholder="e.g. before-update, test-migration">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_consistency">Consistency</label>
+          <select id="snap_consistency">
+            <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
+            <option value="app" data-i18n="opt_app_qemu">App-consistent (QEMU guest-agent)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional, for vault/replication)</span></label>
+          <input id="snap_label" placeholder="e.g. daily, weekly, monthly">
+        </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="snap_sm_update">
+            <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
+          </label>
+        </div>
+        <p class="hint" style="margin-top:6px">
+          ⚠️ All disks of a VM must reside on the <strong>same datastore</strong> to be included in a consistent snapshot.
+          VMs with disks spread across multiple datastores are not snapshotted consistently.
+        </p>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="createSnapshot()" data-i18n="btn_start_snapshot">Start Snapshot</button>
+        <button class="btn btn-ghost"   onclick="hideForm('createSnapshotForm')" data-i18n="btn_cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div><!-- /createSnapshotForm -->
+
+<!-- ── Add/Edit Schedule Modal ───────────────────────────────────── -->
+<div id="addScheduleForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addScheduleBackdropClick(event)">
+  <div style="max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div id="sched_form_title" style="font-size:16px;font-weight:700" data-i18n="ct_new_schedule">New Schedule</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideForm('addScheduleForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+      <input type="hidden" id="sched_edit_id" value="">
+      <div class="form-grid">
+        <div class="form-group">
+          <label data-i18n="lbl_name">Name</label>
+          <input id="sched_name" placeholder="Nightly Backup">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_volume_mapping">Volume Mapping</label>
+          <select id="sched_mapping" onchange="loadVmsForSchedule(this.value)"></select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_retention">Retention (keep snapshots)</label>
+          <input id="sched_retention" type="number" value="7" min="1" max="99">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_consistency">Consistency</label>
+          <select id="sched_consistency">
+            <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
+            <option value="app" data-i18n="opt_app_sched">App-consistent (QEMU with Guest Agent)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional, for vault/replication)</span></label>
+          <input id="sched_label" placeholder="e.g. daily, weekly, monthly">
+        </div>
+      </div>
+
+      <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_sched_builder">Schedule</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="flex:0 0 auto">
+          <label data-i18n="lbl_frequency">Frequency</label>
+          <select id="sched_freq" onchange="updateSchedCron()">
+            <option value="hourly" data-i18n="opt_hourly">Hourly</option>
+            <option value="daily" selected data-i18n="opt_daily">Daily</option>
+            <option value="weekly" data-i18n="opt_weekly">Weekly</option>
+            <option value="monthly" data-i18n="opt_monthly">Monthly</option>
+            <option value="interval" data-i18n="opt_every_n_h">Every N Hours</option>
+          </select>
+        </div>
+        <div id="sched_time_group" class="form-group" style="flex:0 0 auto">
+          <label data-i18n="lbl_at_time">At time</label>
+          <input id="sched_time" type="time" value="02:00" style="width:110px" onchange="updateSchedCron()">
+        </div>
+        <div id="sched_dow_group" class="form-group" style="flex:0 0 auto;display:none">
+          <label data-i18n="lbl_weekday">Weekday</label>
+          <select id="sched_dow" onchange="updateSchedCron()">
+            <option value="1" data-i18n="day_mon">Monday</option><option value="2" data-i18n="day_tue">Tuesday</option>
+            <option value="3" data-i18n="day_wed">Wednesday</option><option value="4" data-i18n="day_thu">Thursday</option>
+            <option value="5" data-i18n="day_fri">Friday</option><option value="6" data-i18n="day_sat">Saturday</option>
+            <option value="0" data-i18n="day_sun">Sunday</option>
+          </select>
+        </div>
+        <div id="sched_dom_group" class="form-group" style="flex:0 0 auto;display:none">
+          <label data-i18n="lbl_day_of_month">Day of month</label>
+          <select id="sched_dom" onchange="updateSchedCron()"></select>
+        </div>
+        <div id="sched_interval_group" class="form-group" style="flex:0 0 auto;display:none">
+          <label data-i18n="lbl_interval">Interval</label>
+          <select id="sched_interval_val" onchange="updateSchedCron()">
+            <option value="1" data-i18n="opt_int_1h">every hour</option><option value="2" data-i18n="opt_int_2h">every 2 hours</option>
+            <option value="3" data-i18n="opt_int_3h">every 3 hours</option><option value="4" data-i18n="opt_int_4h">every 4 hours</option>
+            <option value="6" data-i18n="opt_int_6h">every 6 hours</option><option value="8" data-i18n="opt_int_8h">every 8 hours</option>
+            <option value="12" data-i18n="opt_int_12h">every 12 hours</option>
+          </select>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:6px">
+        <span data-i18n="hint_cron_prefix">Schedule:</span> <strong id="sched_cron_human" style="color:var(--text)">Daily at 02:00</strong>
+        <input id="sched_cron" type="hidden" value="0 2 * * *">
+      </p>
+
+      <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_vms_include">Include VMs</div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:10px">
+        <input type="checkbox" id="sched_sync_vmids" onchange="toggleSchedSyncVmids()">
+        <span>Automatically include all VMs in this datastore</span>
+      </label>
+      <div id="sched_vmids_manual">
+        <select id="sched_vmids_select" multiple size="6" style="width:100%;min-height:120px;margin-bottom:4px">
+          <option disabled data-i18n="hint_select_mapping">← Select mapping first</option>
+        </select>
+        <div style="display:flex;gap:6px;margin-bottom:4px">
+          <button class="btn btn-ghost btn-sm" onclick="schedSelectAll()" data-i18n="btn_all">All</button>
+          <button class="btn btn-ghost btn-sm" onclick="schedSelectNone()" data-i18n="btn_none">None</button>
+        </div>
+        <p class="hint" data-i18n="hint_no_select">No selection = all VMs of the datastore are included.</p>
+      </div>
+
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
+        <input type="checkbox" id="sched_sm_update">
+        <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" id="sched_notify_enabled" onchange="toggleNotifyFields()">
+        <span data-i18n="lbl_notify_enabled">Send email notifications</span>
+      </label>
+
+      <div id="sched_notify_fields" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+        <div class="form-grid" style="margin-bottom:10px">
+          <div class="form-group" style="margin:0">
+            <label data-i18n="lbl_notify_on">Notify on</label>
+            <select id="sched_notify_on">
+              <option value="all"     data-i18n="opt_notify_all">All events (success &amp; failure)</option>
+              <option value="failed"  data-i18n="opt_notify_failed">Failures only</option>
+              <option value="success" data-i18n="opt_notify_success">Success only</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label data-i18n="lbl_notify_recipients">Recipients (comma-separated)</label>
+            <input id="sched_notify_recipients" type="text" placeholder="admin@example.com, ops@example.com">
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="testScheduleNotification()" data-i18n="btn_notify_test">Send test email</button>
+      </div>
+
+      <details style="margin-bottom:12px">
+        <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;user-select:none">
+          Pre/Post-Scripts (Hooks)
+        </summary>
+        <div style="margin-top:10px;display:grid;gap:10px">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px">Pre-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, before freeze)</span></label>
+            <textarea id="sched_pre_script" rows="2"
+              style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
+              placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-flush.sh"></textarea>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px">Post-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, after thaw)</span></label>
+            <textarea id="sched_post_script" rows="2"
+              style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
+              placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-unlock.sh"></textarea>
+          </div>
+          <p class="hint" style="margin:0">Available variables: <code>$PEGAPROX_VMIDS</code> (space-separated), <code>$PEGAPROX_SNAP</code>, <code>$PEGAPROX_NODE</code></p>
+        </div>
+      </details>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveSchedule()" data-i18n="btn_save">Save</button>
+        <button class="btn btn-ghost"   onclick="hideForm('addScheduleForm')" data-i18n="btn_cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div><!-- /addScheduleForm -->
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
