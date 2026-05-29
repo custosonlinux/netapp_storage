@@ -180,6 +180,8 @@
   .btn-primary:hover { filter: brightness(1.1); }
   .btn-ghost  { background: transparent; color: var(--muted); border-color: var(--border); }
   .btn-ghost:hover  { color: var(--text); border-color: var(--text); background: var(--hover); }
+  .btn-secondary { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--primary); color: var(--primary); background: var(--hover); }
   .btn-danger  { background: transparent; color: var(--error);   border-color: var(--error); }
   .btn-danger:hover  { background: rgba(248,81,73,.1); }
   .btn-success { background: transparent; color: var(--success); border-color: var(--success); }
@@ -2229,11 +2231,14 @@ function applyI18n() {
     <div id="tab-settings" class="tab-panel" style="display:none">
 
       <!-- ═══════════════════════ DEPLOY WIZARD ═══════════════════════ -->
-      <div style="margin:20px 0 10px">
-        <button class="btn btn-ghost" style="width:100%;justify-content:flex-start;gap:10px;padding:10px 14px;text-align:left" onclick="setupWizardToggle()">
-          <span style="font-size:13px;font-weight:600;color:var(--text)">🚀 Deploy Wizard</span>
-          <span style="font-size:11px;color:var(--muted);font-weight:400">First-time setup — configure everything from scratch</span>
-          <span id="setupWizardChevron" style="margin-left:auto;font-size:13px">▼</span>
+      <div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:16px;padding:14px 18px">
+        <span style="font-size:28px;line-height:1">🚀</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;margin-bottom:2px">Deploy Wizard</div>
+          <div style="font-size:12px;color:var(--muted)">First-time setup — ONTAP user, PVE SSH access, package installation, discovery</div>
+        </div>
+        <button class="btn btn-secondary" onclick="setupWizardToggle()">
+          Open Wizard <span id="setupWizardChevron">▼</span>
         </button>
       </div>
 
