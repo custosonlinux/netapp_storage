@@ -1567,43 +1567,6 @@ function applyI18n() {
         <button class="btn btn-primary btn-sm" onclick="showAddEndpointForm()" data-i18n="btn_add_netapp">+ Add NetApp System</button>
       </div>
 
-      <div id="addEndpointForm" class="card" style="display:none">
-        <div class="card-title" data-i18n="ct_new_endpoint">New ONTAP Endpoint</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="lbl_display_name">Display name</label>
-            <input id="ep_name" placeholder="prod-cluster">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_mgmt_ip">Cluster-Management-IP / FQDN</label>
-            <input id="ep_host" placeholder="192.168.1.100">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_username">Username</label>
-            <input id="ep_user" placeholder="admin">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_password">Password</label>
-            <input id="ep_pass" type="password">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_ssl_verify">Verify SSL certificate</label>
-            <select id="ep_ssl">
-              <option value="1" data-i18n="opt_ssl_yes">Yes (recommended)</option>
-              <option value="0" data-i18n="opt_ssl_no">No (self-signed)</option>
-            </select>
-          </div>
-        </div>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
-          <input type="checkbox" id="ep_skip_nfs">
-          <span>SAN-only system — skip NFS scan (e.g. NetApp ASA)</span>
-        </label>
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="addEndpoint()" data-i18n="btn_save">Save</button>
-          <button class="btn btn-ghost"   onclick="hideForm('addEndpointForm')" data-i18n="btn_cancel">Cancel</button>
-        </div>
-      </div>
-
       <div class="card">
         <table>
           <thead><tr>
@@ -1618,47 +1581,6 @@ function applyI18n() {
       <div class="sub-header">
         <span class="sub-header-title" data-i18n="sect_pve">Proxmox VE Hosts</span>
         <button class="btn btn-primary btn-sm" onclick="showAddPveHostForm()" data-i18n="btn_add_pve">+ Add PVE Host</button>
-      </div>
-
-      <div id="addPveHostForm" class="card" style="display:none">
-        <div class="card-title" data-i18n="ct_new_pve_host">New PVE Host</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="lbl_display_name">Display name</label>
-            <input id="pve_name" placeholder="pve-cluster-1">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_host_ip">Host / IP</label>
-            <input id="pve_host" placeholder="192.168.1.10">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_port">Port</label>
-            <input id="pve_port" type="number" value="8006" min="1" max="65535">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_username">Username</label>
-            <input id="pve_user" value="root@pam">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_password">Password</label>
-            <input id="pve_pass" type="password">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_ssl_verify">Verify SSL certificate</label>
-            <select id="pve_ssl">
-              <option value="0" data-i18n="opt_ssl_no">No (self-signed)</option>
-              <option value="1" data-i18n="opt_ssl_yes_s">Yes</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>NFS Storage IP <span style="font-weight:400;color:var(--muted)">(optional — for export rules)</span></label>
-            <input id="pve_nfs_ip" placeholder="10.230.77.x — leave blank to use Host/IP above">
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="addPveHost()" data-i18n="btn_save">Save</button>
-          <button class="btn btn-ghost"   onclick="hideForm('addPveHostForm')" data-i18n="btn_cancel">Cancel</button>
-        </div>
       </div>
 
       <div class="card">
@@ -1874,7 +1796,8 @@ function hideForm(id) { document.getElementById(id).style.display = 'none'; docu
 
 function showAddEndpointForm() {
   ['ep_name','ep_host','ep_user','ep_pass'].forEach(function(id){ document.getElementById(id).value=''; });
-  document.getElementById('addEndpointForm').style.display = 'block';
+  document.getElementById('addEndpointForm').style.display = '';
+  document.body.style.overflow = 'hidden';
 }
 
 async function loadEndpoints() {
@@ -1949,7 +1872,8 @@ function showAddPveHostForm() {
   document.getElementById('pve_port').value = '8006';
   document.getElementById('pve_user').value = 'root@pam';
   document.getElementById('pve_ssl').value  = '0';
-  document.getElementById('addPveHostForm').style.display = 'block';
+  document.getElementById('addPveHostForm').style.display = '';
+  document.body.style.overflow = 'hidden';
 }
 
 async function loadPveHosts() {
@@ -4956,6 +4880,12 @@ function createSnapshotBackdropClick(e) {
 function addScheduleBackdropClick(e) {
   if (e.target === document.getElementById('addScheduleForm')) hideForm('addScheduleForm');
 }
+function addEndpointBackdropClick(e) {
+  if (e.target === document.getElementById('addEndpointForm')) hideForm('addEndpointForm');
+}
+function addPveHostBackdropClick(e) {
+  if (e.target === document.getElementById('addPveHostForm')) hideForm('addPveHostForm');
+}
 
 // Escape key closes any open modal
 document.addEventListener('keydown', function(e) {
@@ -4966,6 +4896,8 @@ document.addEventListener('keydown', function(e) {
   else if (document.getElementById('vmImportModal').style.display !== 'none') { hideVmImportModal(); }
   else if (document.getElementById('createSnapshotForm').style.display !== 'none') { hideForm('createSnapshotForm'); }
   else if (document.getElementById('addScheduleForm').style.display !== 'none') { hideForm('addScheduleForm'); }
+  else if (document.getElementById('addEndpointForm').style.display !== 'none') { hideForm('addEndpointForm'); }
+  else if (document.getElementById('addPveHostForm').style.display !== 'none') { hideForm('addPveHostForm'); }
 });
 
 async function setupWizardInit() {
@@ -6194,6 +6126,100 @@ loadSnapshots();
     </div>
   </div>
 </div><!-- /addScheduleForm -->
+
+<!-- ── Add NetApp System Modal ───────────────────────────────────── -->
+<div id="addEndpointForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addEndpointBackdropClick(event)">
+  <div style="max-width:640px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700" data-i18n="ct_new_endpoint">New ONTAP Endpoint</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideForm('addEndpointForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label data-i18n="lbl_display_name">Display name</label>
+          <input id="ep_name" placeholder="prod-cluster">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_mgmt_ip">Cluster-Management-IP / FQDN</label>
+          <input id="ep_host" placeholder="192.168.1.100">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_username">Username</label>
+          <input id="ep_user" placeholder="admin">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_password">Password</label>
+          <input id="ep_pass" type="password">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_ssl_verify">Verify SSL certificate</label>
+          <select id="ep_ssl">
+            <option value="1" data-i18n="opt_ssl_yes">Yes (recommended)</option>
+            <option value="0" data-i18n="opt_ssl_no">No (self-signed)</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:20px">
+        <input type="checkbox" id="ep_skip_nfs">
+        <span>SAN-only system — skip NFS scan (e.g. NetApp ASA)</span>
+      </label>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="addEndpoint()" data-i18n="btn_save">Save</button>
+        <button class="btn btn-ghost"   onclick="hideForm('addEndpointForm')" data-i18n="btn_cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div><!-- /addEndpointForm -->
+
+<!-- ── Add PVE Host Modal ─────────────────────────────────────────── -->
+<div id="addPveHostForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addPveHostBackdropClick(event)">
+  <div style="max-width:640px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700" data-i18n="ct_new_pve_host">New PVE Host</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideForm('addPveHostForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label data-i18n="lbl_display_name">Display name</label>
+          <input id="pve_name" placeholder="pve-cluster-1">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_host_ip">Host / IP</label>
+          <input id="pve_host" placeholder="192.168.1.10">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_port">Port</label>
+          <input id="pve_port" type="number" value="8006" min="1" max="65535">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_username">Username</label>
+          <input id="pve_user" value="root@pam">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_password">Password</label>
+          <input id="pve_pass" type="password">
+        </div>
+        <div class="form-group">
+          <label data-i18n="lbl_ssl_verify">Verify SSL certificate</label>
+          <select id="pve_ssl">
+            <option value="0" data-i18n="opt_ssl_no">No (self-signed)</option>
+            <option value="1" data-i18n="opt_ssl_yes_s">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>NFS Storage IP <span style="font-weight:400;color:var(--muted)">(optional — for export rules)</span></label>
+          <input id="pve_nfs_ip" placeholder="10.230.77.x — leave blank to use Host/IP above">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="addPveHost()" data-i18n="btn_save">Save</button>
+        <button class="btn btn-ghost"   onclick="hideForm('addPveHostForm')" data-i18n="btn_cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div><!-- /addPveHostForm -->
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
