@@ -897,6 +897,71 @@ def nvme_connect_to_subsystem(ssh_host, ssh_user, ssh_pass, ssh_key,
     nvme_ns_rescan(ssh_host, ssh_user, ssh_pass, ssh_key)
 
 
+def ensure_nvme_discovery_entries(ssh_host, ssh_user, ssh_pass, ssh_key, lif_ips):
+    """Ensure /etc/nvme/discovery.conf has an entry for every LIF IP.
+
+    Matches each LIF to an existing host-traddr/host-iface pair by /16 subnet
+    (first two octets). Idempotent — only appends missing lines.
+    Returns the number of entries added.
+    """
+    CONF = "/etc/nvme/discovery.conf"
+    try:
+        existing_raw = ssh_run(ssh_host, ssh_user, ssh_pass,
+                               f"cat {CONF} 2>/dev/null || true",
+                               capture=True, key_material=ssh_key)
+    except Exception:
+        existing_raw = ""
+
+    lines = [l.strip() for l in existing_raw.splitlines() if l.strip()]
+
+    # Parse existing entries
+    existing_traddrs = set()
+    iface_map = {}  # first-two-octets -> (iface, host_traddr)
+    for line in lines:
+        parts = {}
+        for token in line.split():
+            if "=" in token:
+                k, v = token.split("=", 1)
+                parts[k.lstrip("-")] = v
+        traddr = parts.get("traddr", "")
+        if traddr:
+            existing_traddrs.add(traddr)
+        host_traddr = parts.get("host-traddr", "")
+        iface = parts.get("host-iface", "")
+        if host_traddr and iface:
+            prefix = ".".join(host_traddr.split(".")[:2])
+            iface_map.setdefault(prefix, (iface, host_traddr))
+
+    new_entries = []
+    for lif_ip in lif_ips:
+        if lif_ip in existing_traddrs:
+            continue
+        prefix = ".".join(lif_ip.split(".")[:2])
+        if prefix not in iface_map:
+            log.warning(f"[netapp_storage] ensure_nvme_discovery: no matching host interface "
+                        f"for LIF {lif_ip} on {ssh_host} (known prefixes: {list(iface_map)})")
+            continue
+        iface, host_traddr = iface_map[prefix]
+        entry = (f"--transport=tcp --traddr={lif_ip} "
+                 f"--host-iface={iface} --host-traddr={host_traddr}")
+        new_entries.append(entry)
+
+    if not new_entries:
+        return 0
+
+    append_cmd = " && ".join(
+        f"echo {shlex.quote(e)} >> {CONF}" for e in new_entries
+    )
+    try:
+        ssh_run(ssh_host, ssh_user, ssh_pass, append_cmd, key_material=ssh_key)
+        log.info(f"[netapp_storage] Added {len(new_entries)} entry/entries to "
+                 f"{CONF} on {ssh_host}: {[e.split('--traddr=')[1].split()[0] for e in new_entries]}")
+    except Exception as exc:
+        log.warning(f"[netapp_storage] ensure_nvme_discovery: write failed on {ssh_host}: {exc}")
+        return 0
+    return len(new_entries)
+
+
 def nvme_disconnect_by_vg(ssh_host, ssh_user, ssh_pass, ssh_key, vg_name):
     """Disconnects the NVMe controller that backs the given VG.
 

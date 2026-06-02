@@ -25,7 +25,7 @@ from ..core.san_helpers import (
     get_nvme_host_nqn, nvme_connect_all, nvme_connect_to_subsystem,
     nvme_disconnect_by_vg, nvme_disconnect_by_subsystem_name,
     nvme_list_devices, find_new_nvme_device, find_nvme_device_for_subsystem_nqn,
-    snapmanifest_initialize,
+    ensure_nvme_discovery_entries, snapmanifest_initialize,
 )
 
 log = logging.getLogger(__name__)
@@ -1881,6 +1881,12 @@ def _provision_nvme(ds_id, params, db, jlog):
         m  = host_meta[hid]
         sh, su, sp, sk = m["host"], m["user"], m["pass"], m["key"]
 
+        # Ensure discovery.conf has entries for these LIFs (persistent after reboot)
+        if lif_ips:
+            added = ensure_nvme_discovery_entries(sh, su, sp, sk, lif_ips)
+            if added:
+                jlog.log(f"[{sh}] Added {added} LIF(s) to /etc/nvme/discovery.conf")
+
         jlog.log(f"[{sh}] Capturing NVMe device baseline …")
         devices_before = nvme_list_devices(sh, su, sp, sk)
 
@@ -2164,13 +2170,45 @@ def _add_host_nvme(ds_id, ds, host_id, db, jlog):
         except Exception as exc:
             jlog.log(f"WARNING: add NQN to subsystem: {exc}")
 
-    # 3. Connect NVMe
+    # 3. Get subsystem NQN + LIFs (same pattern as initial provisioning)
+    lif_ips = []
+    subsystem_nqn = ""
+    try:
+        lif_ips = client.get_nvme_lifs_for_svm(svm_name)
+    except Exception:
+        pass
+    if subsystem_uuid:
+        try:
+            sub_info = client.get_nvme_subsystem(subsystem_uuid)
+            subsystem_nqn = sub_info.get("target_nqn", "")
+        except Exception:
+            pass
+    if subsystem_nqn:
+        jlog.log(f"Subsystem NQN: {subsystem_nqn}")
+    else:
+        jlog.log("WARNING: could not retrieve subsystem NQN — falling back to connect-all")
+
+    # Ensure discovery.conf has entries for these LIFs (persistent after reboot)
+    if lif_ips:
+        added = ensure_nvme_discovery_entries(sh, su, sp, sk, lif_ips)
+        if added:
+            jlog.log(f"[{sh}] Added {added} LIF(s) to /etc/nvme/discovery.conf")
+
+    # 4. Connect NVMe
     jlog.log(f"[{sh}] Capturing NVMe device baseline …")
     devices_before = nvme_list_devices(sh, su, sp, sk)
-    jlog.log(f"[{sh}] Connecting NVMe …")
-    nvme_connect_all(sh, su, sp, sk)
+    if subsystem_nqn and lif_ips:
+        jlog.log(f"[{sh}] Connecting NVMe (direct per-LIF) …")
+        nvme_connect_to_subsystem(sh, su, sp, sk, lif_ips, subsystem_nqn)
+    else:
+        jlog.log(f"[{sh}] Connecting NVMe (connect-all fallback) …")
+        nvme_connect_all(sh, su, sp, sk)
     jlog.log(f"[{sh}] Waiting for NVMe namespace device …")
-    device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=60)
+    if subsystem_nqn:
+        device = find_nvme_device_for_subsystem_nqn(
+            sh, su, sp, sk, subsystem_nqn, timeout_s=90, devices_before=devices_before)
+    else:
+        device = find_new_nvme_device(sh, su, sp, sk, devices_before, timeout_s=90)
     jlog.log(f"[{sh}] Device ready: {device}")
 
     # 4. pvscan to activate existing VG on this host
