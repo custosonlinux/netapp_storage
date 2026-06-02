@@ -163,6 +163,88 @@ CREATE TABLE IF NOT EXISTS netapp_provisioned_datastores (
     updated_at          TEXT NOT NULL DEFAULT ''
 );
 
+-- ── Disaster Recovery ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS netapp_dr_sites (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    endpoint_id     TEXT NOT NULL REFERENCES netapp_endpoints(id) ON DELETE RESTRICT,
+    pve_host_ids    TEXT NOT NULL DEFAULT '[]',
+    sync_host       TEXT NOT NULL DEFAULT '',
+    sync_user       TEXT NOT NULL DEFAULT 'root',
+    sync_path       TEXT NOT NULL DEFAULT '/opt/PegaProx/plugins/netapp_storage/',
+    description     TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS netapp_dr_plans (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    dr_site_id      TEXT NOT NULL REFERENCES netapp_dr_sites(id) ON DELETE RESTRICT,
+    state           TEXT NOT NULL DEFAULT 'standby',
+    last_tested_at  TEXT NOT NULL DEFAULT '',
+    last_test_result TEXT NOT NULL DEFAULT '',
+    last_failover_at TEXT NOT NULL DEFAULT '',
+    last_sync_at    TEXT NOT NULL DEFAULT '',
+    notes           TEXT NOT NULL DEFAULT '',
+    created_by      TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS netapp_dr_plan_entries (
+    id                  TEXT PRIMARY KEY,
+    plan_id             TEXT NOT NULL REFERENCES netapp_dr_plans(id) ON DELETE CASCADE,
+    source_endpoint_id  TEXT NOT NULL,
+    source_svm          TEXT NOT NULL,
+    source_volume       TEXT NOT NULL,
+    mapping_id          TEXT NOT NULL DEFAULT '',
+    ds_id               TEXT NOT NULL DEFAULT '',
+    snapmirror_rel_uuid TEXT NOT NULL DEFAULT '',
+    dr_endpoint_id      TEXT NOT NULL DEFAULT '',
+    dr_svm              TEXT NOT NULL DEFAULT '',
+    dr_volume           TEXT NOT NULL DEFAULT '',
+    dr_pve_storage_id   TEXT NOT NULL DEFAULT '',
+    dr_pve_host_ids     TEXT NOT NULL DEFAULT '[]',
+    sort_order          INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS netapp_dr_vm_groups (
+    id                       TEXT PRIMARY KEY,
+    plan_id                  TEXT NOT NULL REFERENCES netapp_dr_plans(id) ON DELETE CASCADE,
+    name                     TEXT NOT NULL,
+    sort_order               INTEGER NOT NULL DEFAULT 0,
+    start_mode               TEXT NOT NULL DEFAULT 'auto',
+    startup_delay_sec        INTEGER NOT NULL DEFAULT 30,
+    health_check_timeout_sec INTEGER NOT NULL DEFAULT 120,
+    created_at               TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS netapp_dr_vm_assignments (
+    id          TEXT PRIMARY KEY,
+    group_id    TEXT NOT NULL REFERENCES netapp_dr_vm_groups(id) ON DELETE CASCADE,
+    vmid        INTEGER NOT NULL,
+    vm_name     TEXT NOT NULL DEFAULT '',
+    target_node TEXT NOT NULL DEFAULT '',
+    start_order INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS netapp_dr_jobs (
+    id          TEXT PRIMARY KEY,
+    plan_id     TEXT NOT NULL REFERENCES netapp_dr_plans(id) ON DELETE CASCADE,
+    job_type    TEXT NOT NULL,
+    state       TEXT NOT NULL DEFAULT 'running',
+    log_json    TEXT NOT NULL DEFAULT '[]',
+    created_by  TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    completed_at TEXT NOT NULL DEFAULT ''
+);
+
+-- ── Snapshot Schedules ─────────────────────────────────────────────────────
+
 CREATE TABLE IF NOT EXISTS netapp_snapshot_schedules (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,

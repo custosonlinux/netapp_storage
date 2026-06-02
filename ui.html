@@ -1241,6 +1241,7 @@ function applyI18n() {
     <div class="subtab" data-tab="clone"><span aria-hidden="true">📋</span> <span data-i18n="tab_clone">Clone</span></div>
     <div class="subtab" data-tab="storage"><span aria-hidden="true">🗄️</span> <span data-i18n="tab_storage">Storage</span></div>
     <div class="subtab" data-tab="jobs"><span aria-hidden="true">📜</span> <span data-i18n="tab_jobs">Jobs &amp; Logs</span></div>
+    <div class="subtab" data-tab="dr"><span aria-hidden="true">🛡️</span> <span>Disaster Recovery</span></div>
     <div class="subtab" data-tab="settings"><span aria-hidden="true">⚙️</span> <span data-i18n="tab_settings">Settings</span></div>
   </div>
 
@@ -1553,6 +1554,55 @@ function applyI18n() {
       </div>
     </div>
 
+    <!-- ════════════════════════ DISASTER RECOVERY ════════════════════════ -->
+    <div id="tab-dr" class="tab-panel" style="display:none">
+
+      <div class="sub-header">
+        <span class="sub-header-title">🏢 DR Sites</span>
+        <button class="btn btn-primary btn-sm" onclick="drShowAddSiteModal()">+ Add DR Site</button>
+      </div>
+      <div id="drSitesList" class="card-list"><div class="muted-hint">Loading…</div></div>
+
+      <div class="sub-header" style="margin-top:1.5rem">
+        <span class="sub-header-title">📋 DR Plans</span>
+        <button class="btn btn-primary btn-sm" onclick="drShowAddPlanModal()">+ Create DR Plan</button>
+      </div>
+      <div id="drPlansList" class="card-list"><div class="muted-hint">Loading…</div></div>
+
+      <div id="drPlanDetail" style="display:none;margin-top:1.5rem">
+        <div class="sub-header">
+          <span class="sub-header-title" id="drPlanDetailTitle">Plan Detail</span>
+          <div style="display:flex;gap:.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="drSyncPlan()" title="Push DB export to DR site via SCP">☁️ Sync to DR</button>
+            <button class="btn btn-ghost btn-sm" onclick="drClosePlanDetail()">✕ Close</button>
+          </div>
+        </div>
+        <div id="drPlanStatusBar" class="alert alert-info" style="margin-bottom:1rem;font-size:.85rem"></div>
+        <div class="nav-tabs" style="margin-bottom:1rem">
+          <div class="subtab active" data-dr-tab="entries" onclick="drShowSubTab('entries',this)">📦 Protected Datastores</div>
+          <div class="subtab" data-dr-tab="groups" onclick="drShowSubTab('groups',this)">🖥️ VM Start Groups</div>
+          <div class="subtab" data-dr-tab="synclog" onclick="drShowSubTab('synclog',this)">📡 Sync Log</div>
+        </div>
+        <div id="drSubTab-entries">
+          <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
+            <button class="btn btn-sm btn-ghost" onclick="drShowAddEntryModal()">+ Add Datastore</button>
+            <button class="btn btn-sm btn-ghost" onclick="drAutoDetect()" title="Auto-detect SnapMirror relationships">🔍 Auto-detect SnapMirror</button>
+          </div>
+          <div id="drEntriesList"></div>
+        </div>
+        <div id="drSubTab-groups" style="display:none">
+          <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
+            <button class="btn btn-sm btn-ghost" onclick="drShowAddGroupModal()">+ Add Group</button>
+            <span class="muted-hint" style="font-size:.8rem">Groups start top → bottom. Auto groups start automatically; Manual require confirmation.</span>
+          </div>
+          <div id="drGroupsList"></div>
+        </div>
+        <div id="drSubTab-synclog" style="display:none">
+          <div id="drSyncLogList"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ════════════════════════ SETTINGS ════════════════════════ -->
     <div id="tab-settings" class="tab-panel" style="display:none">
 
@@ -1859,6 +1909,7 @@ document.querySelectorAll('.subtab').forEach(function(t) {
   t.addEventListener('click', function() {
     document.querySelectorAll('.subtab').forEach(function(x){ x.classList.remove('active'); });
     document.querySelectorAll('.tab-panel').forEach(function(x){ x.style.display='none'; });
+    if (typeof drCloseAllModals === 'function') drCloseAllModals();
     t.classList.add('active');
     document.getElementById('tab-'+t.dataset.tab).style.display = 'block';
     var loaders = {
@@ -1868,7 +1919,8 @@ document.querySelectorAll('.subtab').forEach(function(t) {
       clone:     function(){ loadCloneSnapshots(); loadDrCloneRelationshipSelector(); },
       storage:   loadStorageUnified,
       jobs:      loadAllJobs,
-      settings:  function(){ loadEndpoints(); loadPveHosts(); loadSmtp(); }
+      settings:  function(){ loadEndpoints(); loadPveHosts(); loadSmtp(); },
+      dr:        drInit
     };
     if (loaders[t.dataset.tab]) loaders[t.dataset.tab]();
   });
@@ -5025,6 +5077,10 @@ document.addEventListener('keydown', function(e) {
   else if (document.getElementById('addScheduleForm').style.display !== 'none') { hideForm('addScheduleForm'); }
   else if (document.getElementById('addEndpointForm').style.display !== 'none') { hideForm('addEndpointForm'); }
   else if (document.getElementById('addPveHostForm').style.display !== 'none') { hideForm('addPveHostForm'); }
+  else if (typeof _drModalIds !== 'undefined') {
+    var openDr = _drModalIds.find(function(id) { var el = document.getElementById(id + 'Modal'); return el && el.style.display !== 'none'; });
+    if (openDr) drHideModal(openDr);
+  }
 });
 
 async function setupWizardInit() {
@@ -5739,6 +5795,291 @@ function pluginApplyUpdate(branch) {
     });
   });
 })();
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DISASTER RECOVERY  (v1.2.0)
+// ══════════════════════════════════════════════════════════════════════════════
+
+var _drCurrentPlanId = null;
+var _drSites = [];
+var _drCurrentGroupId = null;
+var _drModalIds = ['drAddSite','drAddPlan','drAddEntry','drAddGroup','drAddVm'];
+
+function drShowModal(id) { document.getElementById(id+'Modal').style.display='block'; document.body.style.overflow='hidden'; }
+function drHideModal(id) { hideForm(id+'Modal'); }
+function drCloseAllModals() { _drModalIds.forEach(function(id){ var el=document.getElementById(id+'Modal'); if(el) el.style.display='none'; }); document.body.style.overflow=''; }
+
+function drShowSubTab(name,el) {
+  ['entries','groups','synclog'].forEach(function(t){ document.getElementById('drSubTab-'+t).style.display = t===name?'':'none'; });
+  document.querySelectorAll('[data-dr-tab]').forEach(function(e){ e.classList.remove('active'); });
+  if(el) el.classList.add('active');
+  if(name==='synclog') drLoadSyncLog();
+}
+
+function drStateBadge(state) {
+  var map={standby:'badge-info',failed_over:'badge-warning',failover_running:'badge-warning',failback_running:'badge-warning',test_running:'badge-success'};
+  return '<span class="badge '+(map[state]||'badge-info')+'">'+esc(state)+'</span>';
+}
+function drLagBadge(lagTime,healthy) {
+  if(healthy===null) return '<span class="badge badge-info">unknown</span>';
+  if(!healthy) return '<span class="badge badge-danger">unhealthy</span>';
+  if(!lagTime) return '<span class="badge badge-success">in sync</span>';
+  return '<span class="badge badge-success">'+esc(lagTime)+'</span>';
+}
+
+function drInit() { drLoadSites(); drLoadPlans(); }
+
+async function drLoadSites() {
+  try {
+    _drSites = await apiFetch('dr/sites');
+    var el = document.getElementById('drSitesList');
+    if(!_drSites.length){ el.innerHTML='<div class="muted-hint">No DR sites configured.</div>'; return; }
+    el.innerHTML = _drSites.map(function(s){
+      return '<div class="list-row" style="display:flex;justify-content:space-between;align-items:center">'
+        +'<div><strong>'+esc(s.name)+'</strong><span class="muted-hint" style="margin-left:.75rem">'+esc(s.endpoint_name)+' · '+esc(s.sync_host||'no sync host')+'</span><span class="muted-hint" style="margin-left:.75rem">'+s.plan_count+' plan(s)</span></div>'
+        +'<div style="display:flex;gap:.5rem">'
+        +'<button class="btn btn-ghost btn-sm" onclick="drTestSiteSsh(\''+esc(s.id)+'\')">Test SSH</button>'
+        +'<button class="btn btn-danger btn-sm" onclick="drDeleteSite(\''+esc(s.id)+'\',\''+esc(s.name)+'\')">Delete</button>'
+        +'</div></div>';
+    }).join('');
+  } catch(e){ document.getElementById('drSitesList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
+}
+
+function drShowAddSiteModal() {
+  var epSel=document.getElementById('drSiteEndpoint');
+  epSel.innerHTML='<option>Loading…</option>';
+  apiFetch('endpoints').then(function(eps){ epSel.innerHTML=eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join(''); }).catch(function(){ epSel.innerHTML=''; });
+  var pveSel=document.getElementById('drSitePveHosts');
+  apiFetch('pve-hosts').then(function(h){ pveSel.innerHTML=h.map(function(x){ return '<option value="'+esc(x.id)+'">'+esc(x.name)+' ('+esc(x.host)+')</option>'; }).join(''); }).catch(function(){ pveSel.innerHTML=''; });
+  ['drSiteName','drSiteSyncHost','drSiteDesc'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('drSiteSyncUser').value='root';
+  document.getElementById('drSiteSyncPath').value='/opt/PegaProx/plugins/netapp_storage/';
+  drShowModal('drAddSite');
+}
+
+async function drCreateSite() {
+  var pveHosts=Array.from(document.getElementById('drSitePveHosts').selectedOptions).map(function(o){ return o.value; });
+  var body={name:document.getElementById('drSiteName').value.trim(),endpoint_id:document.getElementById('drSiteEndpoint').value,pve_host_ids:pveHosts,sync_host:document.getElementById('drSiteSyncHost').value.trim(),sync_user:document.getElementById('drSiteSyncUser').value.trim(),sync_path:document.getElementById('drSiteSyncPath').value.trim(),description:document.getElementById('drSiteDesc').value.trim()};
+  if(!body.name||!body.endpoint_id){ toast('Name and endpoint are required','error'); return; }
+  try { await apiPost('dr/sites/create',body); drHideModal('drAddSite'); toast('DR site created','success'); drLoadSites(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drDeleteSite(id,name) {
+  if(!await uiConfirm('Delete DR site "'+name+'"?')) return;
+  try { await apiPost('dr/sites/delete',{id:id}); toast('DR site deleted','success'); drLoadSites(); drLoadPlans(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drTestSiteSsh(id) {
+  toast('Testing SSH…','info');
+  try { var r=await apiPost('dr/sites/test-ssh',{id:id}); toast(r.message,r.success?'success':'error'); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drLoadPlans() {
+  try {
+    var plans=await apiFetch('dr/plans');
+    var el=document.getElementById('drPlansList');
+    if(!plans.length){ el.innerHTML='<div class="muted-hint">No DR plans yet.</div>'; return; }
+    el.innerHTML=plans.map(function(p){
+      return '<div class="list-row" style="display:flex;justify-content:space-between;align-items:center">'
+        +'<div><strong style="cursor:pointer;text-decoration:underline" onclick="drOpenPlan(\''+esc(p.id)+'\')">'+esc(p.name)+'</strong> '+drStateBadge(p.state)
+        +'<span class="muted-hint" style="margin-left:.75rem">'+esc(p.site_name)+' · '+p.entry_count+' datastore(s) · '+p.group_count+' group(s)</span></div>'
+        +'<div style="display:flex;gap:.5rem">'
+        +'<button class="btn btn-ghost btn-sm" onclick="drOpenPlan(\''+esc(p.id)+'\')">Open</button>'
+        +'<button class="btn btn-danger btn-sm" onclick="drDeletePlan(\''+esc(p.id)+'\',\''+esc(p.name)+'\')">Delete</button>'
+        +'</div></div>';
+    }).join('');
+  } catch(e){ document.getElementById('drPlansList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
+}
+
+function drShowAddPlanModal() {
+  var sel=document.getElementById('drPlanSite');
+  sel.innerHTML=_drSites.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'; }).join('')||'<option value="">No sites configured</option>';
+  document.getElementById('drPlanName').value=''; document.getElementById('drPlanNotes').value='';
+  drShowModal('drAddPlan');
+}
+
+async function drCreatePlan() {
+  var body={name:document.getElementById('drPlanName').value.trim(),dr_site_id:document.getElementById('drPlanSite').value,notes:document.getElementById('drPlanNotes').value.trim()};
+  if(!body.name||!body.dr_site_id){ toast('Name and DR site are required','error'); return; }
+  try { await apiPost('dr/plans/create',body); drHideModal('drAddPlan'); toast('DR plan created','success'); drLoadPlans(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drDeletePlan(id,name) {
+  if(!await uiConfirm('Delete DR plan "'+name+'"?')) return;
+  try { await apiPost('dr/plans/delete',{id:id}); toast('DR plan deleted','success'); if(_drCurrentPlanId===id) drClosePlanDetail(); drLoadPlans(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drOpenPlan(planId) {
+  _drCurrentPlanId=planId;
+  document.getElementById('drPlanDetail').style.display='';
+  document.getElementById('drPlanDetailTitle').textContent='Loading…';
+  drShowSubTab('entries',document.querySelector('[data-dr-tab="entries"]'));
+  await drRefreshPlanDetail();
+  document.getElementById('drPlanDetail').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function drClosePlanDetail() { _drCurrentPlanId=null; document.getElementById('drPlanDetail').style.display='none'; }
+
+async function drRefreshPlanDetail() {
+  if(!_drCurrentPlanId) return;
+  try {
+    var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
+    document.getElementById('drPlanDetailTitle').textContent='📋 '+plan.name;
+    var status=await apiFetch('dr/plans/status?plan_id='+_drCurrentPlanId);
+    var healthy=status.overall_healthy;
+    var syncInfo=plan.last_sync_at?'Last sync: '+plan.last_sync_at.slice(0,16).replace('T',' '):'Never synced';
+    document.getElementById('drPlanStatusBar').className='alert '+(healthy?'alert-success':'alert-warning');
+    document.getElementById('drPlanStatusBar').innerHTML=drStateBadge(plan.state)+'&nbsp;'+(healthy?'✅ SnapMirror healthy':'⚠️ SnapMirror issues')+'&nbsp;·&nbsp;<span class="muted-hint">'+esc(syncInfo)+'</span>';
+    drRenderEntries(plan.entries,status.entries);
+    drRenderGroups(plan.vm_groups);
+  } catch(e){ document.getElementById('drPlanStatusBar').className='alert alert-danger'; document.getElementById('drPlanStatusBar').textContent=e.message; }
+}
+
+function drRenderEntries(entries,statusEntries) {
+  var statusMap={}; (statusEntries||[]).forEach(function(s){ statusMap[s.entry_id]=s; });
+  var el=document.getElementById('drEntriesList');
+  if(!entries.length){ el.innerHTML='<div class="muted-hint">No datastores protected.</div>'; return; }
+  el.innerHTML='<table class="data-table" style="width:100%"><thead><tr><th>Source</th><th>DR Target</th><th>DR PVE Storage</th><th>SnapMirror</th><th></th></tr></thead><tbody>'
+    +entries.map(function(e){
+      var s=statusMap[e.id]||{};
+      var srcLabel=esc(e.source_endpoint_name||e.source_endpoint_id)+' / '+esc(e.source_svm)+' / <strong>'+esc(e.source_volume)+'</strong>';
+      var dstLabel=e.dr_endpoint_id?esc(e.dr_endpoint_name||e.dr_endpoint_id)+' / '+esc(e.dr_svm)+' / <strong>'+esc(e.dr_volume)+'</strong>':'<span class="muted-hint">not configured</span>';
+      var storLabel=e.dr_pve_storage_id?esc(e.dr_pve_storage_id):'<span class="muted-hint">—</span>';
+      var smBadge=drLagBadge(s.sm_lag_time,s.sm_healthy!==undefined?s.sm_healthy:null);
+      return '<tr><td>'+srcLabel+'</td><td>'+dstLabel+'</td><td>'+storLabel+'</td><td>'+smBadge+'</td>'
+        +'<td><button class="btn btn-danger btn-xs" onclick="drDeleteEntry(\''+esc(e.id)+'\')">Remove</button></td></tr>';
+    }).join('')+'</tbody></table>';
+}
+
+function drShowAddEntryModal() {
+  apiFetch('endpoints').then(function(eps){
+    var opts=eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>'; }).join('');
+    document.getElementById('drEntrySourceEndpoint').innerHTML=opts;
+    document.getElementById('drEntryDrEndpoint').innerHTML='<option value="">— auto-detect —</option>'+opts;
+  });
+  var dsSel=document.getElementById('drEntryDatastore');
+  dsSel.innerHTML='<option value="">— auswählen oder manuell —</option>';
+  Promise.all([apiFetch('volume-mappings').catch(function(){ return []; }),apiFetch('provisioning/datastores').catch(function(){ return []; })]).then(function(results){
+    (results[0]||[]).forEach(function(m){ var opt=document.createElement('option'); opt.value=JSON.stringify({type:'mapping',ep:m.endpoint_id,svm:m.svm_name,vol:m.volume_name,id:m.id}); opt.textContent=m.pve_storage_id+' ('+m.svm_name+'/'+m.volume_name+')'; dsSel.appendChild(opt); });
+    (results[1]||[]).forEach(function(d){ var opt=document.createElement('option'); opt.value=JSON.stringify({type:'ds',ep:d.endpoint_id,svm:d.svm_name,vol:d.volume_name,id:d.id}); opt.textContent=d.name+' ('+d.svm_name+'/'+d.volume_name+')'; dsSel.appendChild(opt); });
+  });
+  ['drEntrySourceSvm','drEntrySourceVolume','drEntryDrSvm','drEntryDrVolume','drEntryDrPveStorageId'].forEach(function(id){ document.getElementById(id).value=''; });
+  drShowModal('drAddEntry');
+}
+
+function drEntryFillFromDatastore(val) {
+  if(!val) return;
+  try { var d=JSON.parse(val); document.getElementById('drEntrySourceEndpoint').value=d.ep||''; document.getElementById('drEntrySourceSvm').value=d.svm||''; document.getElementById('drEntrySourceVolume').value=d.vol||''; } catch(e){}
+}
+
+async function drCreateEntry() {
+  var dsVal=document.getElementById('drEntryDatastore').value, mappingId='', dsId='';
+  if(dsVal){ try{ var d=JSON.parse(dsVal); if(d.type==='mapping') mappingId=d.id; else if(d.type==='ds') dsId=d.id; }catch(e){} }
+  var body={source_endpoint_id:document.getElementById('drEntrySourceEndpoint').value,source_svm:document.getElementById('drEntrySourceSvm').value.trim(),source_volume:document.getElementById('drEntrySourceVolume').value.trim(),dr_endpoint_id:document.getElementById('drEntryDrEndpoint').value,dr_svm:document.getElementById('drEntryDrSvm').value.trim(),dr_volume:document.getElementById('drEntryDrVolume').value.trim(),dr_pve_storage_id:document.getElementById('drEntryDrPveStorageId').value.trim(),mapping_id:mappingId,ds_id:dsId};
+  if(!body.source_endpoint_id||!body.source_svm||!body.source_volume){ toast('Source endpoint, SVM, and volume are required','error'); return; }
+  try { await apiPost('dr/plans/entries/add',Object.assign({plan_id:_drCurrentPlanId},body)); drHideModal('drAddEntry'); toast('Datastore added','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drDeleteEntry(entryId) {
+  if(!await uiConfirm('Remove this datastore from the DR plan?')) return;
+  try { await apiPost('dr/plans/entries/delete',{plan_id:_drCurrentPlanId,entry_id:entryId}); toast('Entry removed','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drAutoDetect() {
+  toast('Auto-detecting SnapMirror relationships…','info');
+  try { var r=await apiPost('dr/plans/auto-detect',{plan_id:_drCurrentPlanId}); toast('Updated '+r.updated+' of '+r.total+' entries',r.updated>0?'success':'info'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+}
+
+function drRenderGroups(groups) {
+  var el=document.getElementById('drGroupsList');
+  if(!groups.length){ el.innerHTML='<div class="muted-hint">No VM groups defined.</div>'; return; }
+  el.innerHTML=groups.map(function(g,idx){
+    var modeLabel=g.start_mode==='auto'?'<span class="badge badge-success">auto</span>':'<span class="badge badge-warning">manual</span>';
+    var vmRows=g.vms.length?'<div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem">'+g.vms.map(function(v){
+      return '<span class="badge badge-info" style="cursor:default">'+esc(v.vm_name||'VM '+v.vmid)+' ('+v.vmid+')'
+        +' <button style="background:none;border:none;cursor:pointer;color:inherit;padding:0 0 0 4px" onclick="drRemoveVm(\''+esc(g.id)+'\',\''+esc(v.id)+'\')">✕</button></span>';
+    }).join('')+'</div>':'<div class="muted-hint" style="margin-top:.4rem;font-size:.8rem">No VMs assigned</div>';
+    return '<div class="list-row" style="border-left:3px solid var(--primary)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+      +'<div><strong>'+(idx+1)+'. '+esc(g.name)+'</strong> '+modeLabel+'<span class="muted-hint" style="font-size:.8rem;margin-left:.75rem">delay '+g.startup_delay_sec+'s · health check '+g.health_check_timeout_sec+'s</span></div>'
+      +'<div style="display:flex;gap:.4rem">'
+      +'<button class="btn btn-ghost btn-xs" onclick="drShowAddVmModal(\''+esc(g.id)+'\')">+ VM</button>'
+      +'<button class="btn btn-ghost btn-xs" onclick="drMoveGroup(\''+esc(g.id)+'\',-1)" '+(idx===0?'disabled':'')+'>↑</button>'
+      +'<button class="btn btn-ghost btn-xs" onclick="drMoveGroup(\''+esc(g.id)+'\',1)" '+(idx===groups.length-1?'disabled':'')+'>↓</button>'
+      +'<button class="btn btn-danger btn-xs" onclick="drDeleteGroup(\''+esc(g.id)+'\')">✕</button>'
+      +'</div></div>'+vmRows+'</div>';
+  }).join('');
+}
+
+function drShowAddGroupModal() {
+  document.getElementById('drGroupName').value=''; document.getElementById('drGroupStartMode').value='auto';
+  document.getElementById('drGroupDelay').value=30; document.getElementById('drGroupTimeout').value=120;
+  drShowModal('drAddGroup');
+}
+
+async function drCreateGroup() {
+  var body={name:document.getElementById('drGroupName').value.trim(),start_mode:document.getElementById('drGroupStartMode').value,startup_delay_sec:parseInt(document.getElementById('drGroupDelay').value)||30,health_check_timeout_sec:parseInt(document.getElementById('drGroupTimeout').value)||120};
+  if(!body.name){ toast('Group name is required','error'); return; }
+  try { await apiPost('dr/plans/groups/create',Object.assign({plan_id:_drCurrentPlanId},body)); drHideModal('drAddGroup'); toast('Group created','success'); drRefreshPlanDetail(); drShowSubTab('groups',document.querySelector('[data-dr-tab="groups"]')); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drDeleteGroup(groupId) {
+  if(!await uiConfirm('Delete this VM group?')) return;
+  try { await apiPost('dr/plans/groups/delete',{plan_id:_drCurrentPlanId,group_id:groupId}); toast('Group deleted','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drMoveGroup(groupId,direction) {
+  try {
+    var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
+    var groups=plan.vm_groups, idx=groups.findIndex(function(g){ return g.id===groupId; }), swapIdx=idx+direction;
+    if(swapIdx<0||swapIdx>=groups.length) return;
+    var tmp=groups[idx]; groups[idx]=groups[swapIdx]; groups[swapIdx]=tmp;
+    await apiPost('dr/plans/groups/reorder',{plan_id:_drCurrentPlanId,order:groups.map(function(g){ return g.id; })});
+    drRefreshPlanDetail();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+function drShowAddVmModal(groupId) {
+  _drCurrentGroupId=groupId;
+  ['drVmVmid','drVmName','drVmNode'].forEach(function(id){ document.getElementById(id).value=''; });
+  drShowModal('drAddVm');
+}
+
+async function drAddVmToGroup() {
+  if(!_drCurrentGroupId) return;
+  var body={vmid:parseInt(document.getElementById('drVmVmid').value),vm_name:document.getElementById('drVmName').value.trim(),target_node:document.getElementById('drVmNode').value.trim()};
+  if(!body.vmid){ toast('VMID is required','error'); return; }
+  try { await apiPost('dr/plans/groups/vms/add',Object.assign({plan_id:_drCurrentPlanId,group_id:_drCurrentGroupId},body)); drHideModal('drAddVm'); toast('VM added','success'); drRefreshPlanDetail(); drShowSubTab('groups',document.querySelector('[data-dr-tab="groups"]')); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drRemoveVm(groupId,vmAssignmentId) {
+  try { await apiPost('dr/plans/groups/vms/delete',{plan_id:_drCurrentPlanId,group_id:groupId,vm_id:vmAssignmentId}); toast('VM removed','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drSyncPlan() {
+  if(!_drCurrentPlanId) return;
+  if(!await uiConfirm('Push current plugin DB export to the DR PegaProx site via SCP?')) return;
+  toast('Sync started…','info');
+  try { var r=await apiPost('dr/plans/sync',{plan_id:_drCurrentPlanId}); toast('Sync job started (ID: '+r.job_id+')','success'); drShowSubTab('synclog',document.querySelector('[data-dr-tab="synclog"]')); setTimeout(drLoadSyncLog,1500); } catch(e){ toast(e.message,'error'); }
+}
+
+async function drLoadSyncLog() {
+  if(!_drCurrentPlanId) return;
+  try {
+    var jobs=await apiFetch('dr/plans/sync-status?plan_id='+_drCurrentPlanId);
+    var el=document.getElementById('drSyncLogList');
+    if(!jobs.length){ el.innerHTML='<div class="muted-hint">No sync jobs yet.</div>'; return; }
+    el.innerHTML=jobs.map(function(j){
+      var stateClass=j.state==='success'?'badge-success':j.state==='failed'?'badge-danger':'badge-warning';
+      var logHtml=j.log.map(function(l){ var cls=l.msg.includes('[ERR]')?'color:var(--danger)':l.msg.includes('[WARN]')?'color:var(--warning)':'color:var(--text-muted)'; return '<div style="'+cls+';font-size:.8rem;font-family:monospace">'+esc(l.ts.slice(11,19))+' '+esc(l.msg)+'</div>'; }).join('');
+      return '<div class="list-row" style="margin-bottom:.5rem">'
+        +'<div style="display:flex;justify-content:space-between;margin-bottom:.4rem"><span class="badge '+stateClass+'">'+esc(j.state)+'</span><span class="muted-hint" style="font-size:.8rem">'+esc(j.created_at.slice(0,16).replace('T',' '))+' by '+esc(j.created_by)+'</span></div>'
+        +'<div style="background:var(--code-bg,#1a1a2e);border-radius:4px;padding:.5rem">'+logHtml+'</div></div>';
+    }).join('');
+  } catch(e){ document.getElementById('drSyncLogList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -6793,6 +7134,118 @@ loadSnapshots();
     </div>
   </div>
 </div><!-- /addPveHostForm -->
+
+<!-- ══════════════════════════ DR MODALS ══════════════════════════ -->
+<div id="drAddSiteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddSite')">
+  <div style="max-width:540px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">🏢 Add DR Site</div>
+      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddSite')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div class="form-group"><label>Name</label><input id="drSiteName" placeholder="DR Frankfurt"></div>
+      <div class="form-group"><label>DR ONTAP Endpoint</label><select id="drSiteEndpoint"></select></div>
+      <div class="form-group"><label>DR PVE Hosts <span style="font-weight:400;color:var(--muted)">(Ctrl/Cmd für Mehrfachauswahl)</span></label><select id="drSitePveHosts" multiple size="4"></select></div>
+      <div style="border-top:1px solid var(--border);padding-top:.75rem;font-size:.85rem;font-weight:600;color:var(--muted)">DB Sync (SCP)</div>
+      <div class="form-group"><label>DR PegaProx Host</label><input id="drSiteSyncHost" placeholder="10.0.2.10"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div class="form-group"><label>SSH User</label><input id="drSiteSyncUser" value="root"></div>
+        <div class="form-group"><label>Remote Path</label><input id="drSiteSyncPath" value="/opt/PegaProx/plugins/netapp_storage/"></div>
+      </div>
+      <div class="form-group"><label>Description</label><input id="drSiteDesc" placeholder="optional"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drAddSite')">Cancel</button>
+      <button class="btn btn-primary" onclick="drCreateSite()">Create</button>
+    </div>
+  </div>
+</div>
+
+<div id="drAddPlanModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddPlan')">
+  <div style="max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">📋 Create DR Plan</div>
+      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddPlan')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div class="form-group"><label>Plan Name</label><input id="drPlanName" placeholder="Production DR Plan"></div>
+      <div class="form-group"><label>DR Site</label><select id="drPlanSite"></select></div>
+      <div class="form-group"><label>Notes</label><textarea id="drPlanNotes" rows="2" placeholder="optional"></textarea></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drAddPlan')">Cancel</button>
+      <button class="btn btn-primary" onclick="drCreatePlan()">Create</button>
+    </div>
+  </div>
+</div>
+
+<div id="drAddEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddEntry')">
+  <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">📦 Add Protected Datastore</div>
+      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddEntry')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div style="font-size:.85rem;color:var(--muted)">Wähle einen bestehenden Datastore oder trage ONTAP-Details manuell ein.</div>
+      <div class="form-group"><label>Source Datastore (Auto-Fill)</label><select id="drEntryDatastore" onchange="drEntryFillFromDatastore(this.value)"><option value="">— auswählen oder manuell —</option></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div class="form-group"><label>Source Endpoint</label><select id="drEntrySourceEndpoint"></select></div>
+        <div class="form-group"><label>Source SVM</label><input id="drEntrySourceSvm" placeholder="svm-prod"></div>
+      </div>
+      <div class="form-group"><label>Source Volume</label><input id="drEntrySourceVolume" placeholder="vol_prod_01"></div>
+      <div style="border-top:1px solid var(--border);padding-top:.75rem;font-size:.85rem;font-weight:600;color:var(--muted)">DR Ziel (auto-detect wenn leer)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div class="form-group"><label>DR Endpoint</label><select id="drEntryDrEndpoint"><option value="">— auto-detect —</option></select></div>
+        <div class="form-group"><label>DR SVM</label><input id="drEntryDrSvm" placeholder="auto-detect"></div>
+      </div>
+      <div class="form-group"><label>DR Volume</label><input id="drEntryDrVolume" placeholder="auto-detect"></div>
+      <div class="form-group"><label>DR PVE Storage ID</label><input id="drEntryDrPveStorageId" placeholder="netapp-dr-01"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drAddEntry')">Cancel</button>
+      <button class="btn btn-primary" onclick="drCreateEntry()">Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
+<div id="drAddGroupModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddGroup')">
+  <div style="max-width:440px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">🖥️ VM-Gruppe anlegen</div>
+      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddGroup')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div class="form-group"><label>Gruppenname</label><input id="drGroupName" placeholder="Core Infrastructure"></div>
+      <div class="form-group"><label>Startmodus</label><select id="drGroupStartMode"><option value="auto">Auto — startet automatisch beim Failover</option><option value="manual">Manuell — Admin-Bestätigung erforderlich</option></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div class="form-group"><label>Startverzögerung (s)</label><input id="drGroupDelay" type="number" value="30" min="0"></div>
+        <div class="form-group"><label>Health-Check Timeout (s)</label><input id="drGroupTimeout" type="number" value="120" min="10"></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drAddGroup')">Cancel</button>
+      <button class="btn btn-primary" onclick="drCreateGroup()">Gruppe erstellen</button>
+    </div>
+  </div>
+</div>
+
+<div id="drAddVmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddVm')">
+  <div style="max-width:420px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">➕ VM zur Gruppe hinzufügen</div>
+      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddVm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div class="form-group"><label>VMID</label><input id="drVmVmid" type="number" placeholder="100"></div>
+      <div class="form-group"><label>VM Name (optional)</label><input id="drVmName" placeholder="vm-dns01"></div>
+      <div class="form-group"><label>Ziel DR-Node (optional)</label><input id="drVmNode" placeholder="dr-pmx01"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drAddVm')">Cancel</button>
+      <button class="btn btn-primary" onclick="drAddVmToGroup()">VM hinzufügen</button>
+    </div>
+  </div>
+</div>
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
