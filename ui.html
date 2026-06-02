@@ -5847,6 +5847,46 @@ async function drLoadSites() {
   } catch(e){ document.getElementById('drSitesList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
 }
 
+var _drSiteInlineHostCount = 0;
+
+function drSiteHostModeChange(mode) {
+  ['existing','inline','cluster'].forEach(function(m){ document.getElementById('drSiteMode-'+m).style.display = m===mode?'':'none'; });
+  if(mode==='cluster') {
+    var sel=document.getElementById('drSiteCluster');
+    sel.innerHTML='<option>Loading…</option>';
+    apiFetch('dr/clusters').then(function(cls){
+      sel.innerHTML=cls.length
+        ? cls.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+' ('+esc(c.host)+')</option>'; }).join('')
+        : '<option value="">Keine Cluster gefunden</option>';
+    }).catch(function(){ sel.innerHTML='<option value="">Fehler beim Laden</option>'; });
+  }
+}
+
+function drSiteAddInlineHost() {
+  var idx = _drSiteInlineHostCount++;
+  var row = document.createElement('div');
+  row.id = 'drInlineHost-'+idx;
+  row.style.cssText = 'display:grid;grid-template-columns:1.5fr 2fr 1fr 1.5fr auto;gap:.4rem;align-items:end;margin-bottom:.4rem';
+  row.innerHTML =
+    '<div class="form-group" style="margin:0"><label style="font-size:.75rem">Name</label><input placeholder="dr-pmx01"></div>'
+   +'<div class="form-group" style="margin:0"><label style="font-size:.75rem">Host / IP</label><input placeholder="10.0.2.11"></div>'
+   +'<div class="form-group" style="margin:0"><label style="font-size:.75rem">User</label><input value="root"></div>'
+   +'<div class="form-group" style="margin:0"><label style="font-size:.75rem">Passwort</label><input type="password" placeholder="•••••"></div>'
+   +'<button class="btn btn-danger btn-sm" style="margin-bottom:0" onclick="document.getElementById(\'drInlineHost-'+idx+'\').remove()">✕</button>';
+  document.getElementById('drSiteInlineHosts').appendChild(row);
+}
+
+function drSiteGetInlineHosts() {
+  var hosts = [];
+  document.querySelectorAll('#drSiteInlineHosts > div').forEach(function(row) {
+    var inputs = row.querySelectorAll('input');
+    var host = inputs[1] ? inputs[1].value.trim() : '';
+    if(!host) return;
+    hosts.push({name: inputs[0]?inputs[0].value.trim():host, host:host, username: inputs[2]?inputs[2].value.trim():'root', password: inputs[3]?inputs[3].value:''});
+  });
+  return hosts;
+}
+
 function drShowAddSiteModal() {
   var epSel=document.getElementById('drSiteEndpoint');
   epSel.innerHTML='<option>Loading…</option>';
@@ -5856,14 +5896,43 @@ function drShowAddSiteModal() {
   ['drSiteName','drSiteSyncHost','drSiteDesc'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('drSiteSyncUser').value='root';
   document.getElementById('drSiteSyncPath').value='/opt/PegaProx/plugins/netapp_storage/';
+  // Reset host mode to existing
+  document.querySelector('input[name="drSiteHostMode"][value="existing"]').checked=true;
+  drSiteHostModeChange('existing');
+  document.getElementById('drSiteInlineHosts').innerHTML='';
+  _drSiteInlineHostCount=0;
   drShowModal('drAddSite');
 }
 
 async function drCreateSite() {
-  var pveHosts=Array.from(document.getElementById('drSitePveHosts').selectedOptions).map(function(o){ return o.value; });
-  var body={name:document.getElementById('drSiteName').value.trim(),endpoint_id:document.getElementById('drSiteEndpoint').value,pve_host_ids:pveHosts,sync_host:document.getElementById('drSiteSyncHost').value.trim(),sync_user:document.getElementById('drSiteSyncUser').value.trim(),sync_path:document.getElementById('drSiteSyncPath').value.trim(),description:document.getElementById('drSiteDesc').value.trim()};
-  if(!body.name||!body.endpoint_id){ toast('Name and endpoint are required','error'); return; }
-  try { await apiPost('dr/sites/create',body); drHideModal('drAddSite'); toast('DR site created','success'); drLoadSites(); } catch(e){ toast(e.message,'error'); }
+  var name = document.getElementById('drSiteName').value.trim();
+  var endpoint_id = document.getElementById('drSiteEndpoint').value;
+  if(!name||!endpoint_id){ toast('Name and endpoint are required','error'); return; }
+
+  var mode = document.querySelector('input[name="drSiteHostMode"]:checked').value;
+  var body = {
+    name: name,
+    endpoint_id: endpoint_id,
+    sync_host:   document.getElementById('drSiteSyncHost').value.trim(),
+    sync_user:   document.getElementById('drSiteSyncUser').value.trim(),
+    sync_path:   document.getElementById('drSiteSyncPath').value.trim(),
+    description: document.getElementById('drSiteDesc').value.trim(),
+  };
+
+  if(mode==='existing') {
+    body.pve_host_ids = Array.from(document.getElementById('drSitePveHosts').selectedOptions).map(function(o){ return o.value; });
+  } else if(mode==='inline') {
+    body.pve_hosts_inline = drSiteGetInlineHosts();
+  } else if(mode==='cluster') {
+    body.pve_cluster_id = document.getElementById('drSiteCluster').value;
+  }
+
+  try {
+    var r = await apiPost('dr/sites/create', body);
+    drHideModal('drAddSite');
+    toast('DR site created'+(r.pve_host_ids&&r.pve_host_ids.length?' ('+r.pve_host_ids.length+' host(s) registered)':''), 'success');
+    drLoadSites();
+  } catch(e){ toast(e.message,'error'); }
 }
 
 async function drDeleteSite(id,name) {
@@ -7137,7 +7206,7 @@ loadSnapshots();
 
 <!-- ══════════════════════════ DR MODALS ══════════════════════════ -->
 <div id="drAddSiteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddSite')">
-  <div style="max-width:540px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700">🏢 Add DR Site</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddSite')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
@@ -7145,7 +7214,38 @@ loadSnapshots();
     <div style="padding:20px;display:grid;gap:.75rem">
       <div class="form-group"><label>Name</label><input id="drSiteName" placeholder="DR Frankfurt"></div>
       <div class="form-group"><label>DR ONTAP Endpoint</label><select id="drSiteEndpoint"></select></div>
-      <div class="form-group"><label>DR PVE Hosts <span style="font-weight:400;color:var(--muted)">(Ctrl/Cmd für Mehrfachauswahl)</span></label><select id="drSitePveHosts" multiple size="4"></select></div>
+
+      <!-- PVE Host Mode selector -->
+      <div style="border-top:1px solid var(--border);padding-top:.75rem">
+        <div style="font-size:.85rem;font-weight:600;color:var(--muted);margin-bottom:.5rem">DR PVE Hosts</div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem">
+          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer"><input type="radio" name="drSiteHostMode" value="existing" checked onchange="drSiteHostModeChange('existing')"> Aus registrierten Hosts</label>
+          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer"><input type="radio" name="drSiteHostMode" value="inline" onchange="drSiteHostModeChange('inline')"> Neu eintragen</label>
+          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer"><input type="radio" name="drSiteHostMode" value="cluster" onchange="drSiteHostModeChange('cluster')"> PegaProx-Cluster</label>
+        </div>
+
+        <!-- Mode: existing -->
+        <div id="drSiteMode-existing">
+          <select id="drSitePveHosts" multiple size="4" style="width:100%"></select>
+          <div class="muted-hint" style="font-size:.78rem;margin-top:.3rem">Ctrl/Cmd für Mehrfachauswahl</div>
+        </div>
+
+        <!-- Mode: inline -->
+        <div id="drSiteMode-inline" style="display:none">
+          <div id="drSiteInlineHosts"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:.5rem" onclick="drSiteAddInlineHost()">+ Host hinzufügen</button>
+        </div>
+
+        <!-- Mode: cluster -->
+        <div id="drSiteMode-cluster" style="display:none">
+          <div class="form-group">
+            <label>PegaProx-Cluster auswählen</label>
+            <select id="drSiteCluster" style="width:100%"></select>
+          </div>
+          <div class="muted-hint" style="font-size:.78rem">Alle Nodes des Clusters werden als DR PVE Hosts importiert.</div>
+        </div>
+      </div>
+
       <div style="border-top:1px solid var(--border);padding-top:.75rem;font-size:.85rem;font-weight:600;color:var(--muted)">DB Sync (SCP)</div>
       <div class="form-group"><label>DR PegaProx Host</label><input id="drSiteSyncHost" placeholder="10.0.2.10"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">

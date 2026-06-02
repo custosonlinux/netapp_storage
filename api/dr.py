@@ -98,6 +98,107 @@ def _list_dr_sites():
     return jsonify(result)
 
 
+def _resolve_dr_pve_hosts(data, db):
+    """Resolve DR PVE host IDs from one of three input modes.
+
+    Mode 1 — existing:   data["pve_host_ids"] = ["id1", "id2", ...]
+    Mode 2 — inline:     data["pve_hosts_inline"] = [{"name","host","username","password"}, ...]
+    Mode 3 — cluster:    data["pve_cluster_id"] = "<pegaprox_cluster_id>"
+
+    Returns a list of netapp_pve_hosts.id values (creates new entries for modes 2+3).
+    """
+    now = _now()
+
+    # Mode 1: already-registered host IDs
+    if data.get("pve_host_ids"):
+        return [h for h in data["pve_host_ids"] if h]
+
+    # Mode 2: inline host definitions
+    if data.get("pve_hosts_inline"):
+        host_ids = []
+        for h in data["pve_hosts_inline"]:
+            host_val  = (h.get("host") or "").strip()
+            name_val  = (h.get("name") or host_val).strip()
+            user_val  = (h.get("username") or "root").strip()
+            pass_val  = h.get("password", "")
+            if not host_val:
+                continue
+            # idempotent: reuse existing entry with same host
+            existing = db.query_one("SELECT id FROM netapp_pve_hosts WHERE host=?", (host_val,))
+            if existing:
+                hid = existing["id"]
+            else:
+                hid = str(uuid.uuid4())[:8]
+                pw_enc = db._encrypt(pass_val) if pass_val else ""
+                db.execute(
+                    "INSERT INTO netapp_pve_hosts (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip, created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (hid, name_val, host_val, 8006, user_val, pw_enc, 0, "", now)
+                )
+            host_ids.append(hid)
+        return host_ids
+
+    # Mode 3: import from PegaProx cluster
+    if data.get("pve_cluster_id"):
+        cluster_id = data["pve_cluster_id"]
+        host_ids = []
+        try:
+            from pegaprox.globals import cluster_managers
+            mgr = cluster_managers.get(cluster_id)
+            if not mgr:
+                return []
+            node_status = mgr.get_node_status() or {}
+            # cluster object has host + credentials
+            cluster_host = getattr(mgr, "host", "") or getattr(mgr, "api_host", "")
+            cluster_user = getattr(mgr, "user", "root")
+            cluster_pass = getattr(mgr, "password", "") or getattr(mgr, "_password", "")
+            for node_name, ninfo in node_status.items():
+                node_ip = ninfo.get("ip") or ninfo.get("host") or node_name
+                # try to resolve node IP from PVE API
+                try:
+                    nodes = mgr.get_nodes() or []
+                    for n in nodes:
+                        if n.get("node") == node_name:
+                            node_ip = n.get("ip") or n.get("host") or cluster_host
+                            break
+                except Exception:
+                    node_ip = cluster_host  # fallback: use cluster API host
+                existing = db.query_one("SELECT id FROM netapp_pve_hosts WHERE host=?", (node_ip,))
+                if existing:
+                    hid = existing["id"]
+                else:
+                    hid = str(uuid.uuid4())[:8]
+                    pw_enc = db._encrypt(cluster_pass) if cluster_pass else ""
+                    db.execute(
+                        "INSERT INTO netapp_pve_hosts (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip, created_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        (hid, node_name, node_ip, 8006, cluster_user, pw_enc, 0, "", now)
+                    )
+                host_ids.append(hid)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] DR site: cluster import failed: {exc}")
+        return host_ids
+
+    return []
+
+
+def _list_pegaprox_clusters():
+    """Return PegaProx-managed clusters for the DR Site cluster-import picker."""
+    try:
+        from pegaprox.globals import cluster_managers
+        result = []
+        for cid, mgr in cluster_managers.items():
+            result.append({
+                "id":   cid,
+                "name": getattr(mgr, "name", cid) or cid,
+                "host": getattr(mgr, "host", "") or getattr(mgr, "api_host", ""),
+            })
+        return jsonify(result)
+    except Exception as exc:
+        log.warning(f"[netapp_storage] list_pegaprox_clusters: {exc}")
+        return jsonify([])
+
+
 def _create_dr_site():
     err = _require_admin()
     if err: return err
@@ -109,20 +210,23 @@ def _create_dr_site():
     db = get_db()
     if not db.query_one("SELECT id FROM netapp_endpoints WHERE id=?", (endpoint_id,)):
         return {"error": "Endpoint not found"}, 404
+
+    pve_host_ids = _resolve_dr_pve_hosts(data, db)
+
     sid = str(uuid.uuid4())[:8]
     now = _now()
     db.execute(
         "INSERT INTO netapp_dr_sites (id, name, endpoint_id, pve_host_ids, sync_host, sync_user, sync_path, description, created_at, updated_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?)",
         (sid, name, endpoint_id,
-         json.dumps(data.get("pve_host_ids") or []),
+         json.dumps(pve_host_ids),
          data.get("sync_host", ""),
          data.get("sync_user", "root"),
          data.get("sync_path", "/opt/PegaProx/plugins/netapp_storage/"),
          data.get("description", ""),
          now, now)
     )
-    return jsonify({"id": sid, "message": "DR site created"}), 201
+    return jsonify({"id": sid, "message": "DR site created", "pve_host_ids": pve_host_ids}), 201
 
 
 def _update_dr_site():
@@ -815,6 +919,7 @@ def register_routes():
 
     rpr(PLUGIN_ID, "dr/sites",              _list_dr_sites)
     rpr(PLUGIN_ID, "dr/sites/create",       _create_dr_site)
+    rpr(PLUGIN_ID, "dr/clusters",           _list_pegaprox_clusters)
     rpr(PLUGIN_ID, "dr/sites/update",       _update_dr_site)
     rpr(PLUGIN_ID, "dr/sites/delete",       _delete_dr_site)
     rpr(PLUGIN_ID, "dr/sites/test-ssh",     _test_dr_site_ssh)
