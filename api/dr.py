@@ -94,6 +94,8 @@ def _list_dr_sites():
         s["endpoint_name"] = ep["name"] if ep else ""
         cnt = db.query_one("SELECT COUNT(*) as c FROM netapp_dr_plans WHERE dr_site_id=?", (s["id"],))
         s["plan_count"] = cnt["c"] if cnt else 0
+        s.setdefault("last_test_at", "")
+        s.setdefault("last_test_result", "")
         result.append(s)
     return jsonify(result)
 
@@ -183,17 +185,11 @@ def _resolve_dr_pve_hosts(data, db):
 
 
 def _list_pegaprox_clusters():
-    """Return PegaProx-managed clusters for the DR Site cluster-import picker."""
+    """Return PegaProx-managed clusters from the clusters table."""
     try:
-        from pegaprox.globals import cluster_managers
-        result = []
-        for cid, mgr in cluster_managers.items():
-            result.append({
-                "id":   cid,
-                "name": getattr(mgr, "name", cid) or cid,
-                "host": getattr(mgr, "host", "") or getattr(mgr, "api_host", ""),
-            })
-        return jsonify(result)
+        db = get_db()
+        rows = db.query("SELECT id, name, host FROM clusters ORDER BY name") or []
+        return jsonify([{"id": r["id"], "name": r["name"], "host": r["host"]} for r in rows])
     except Exception as exc:
         log.warning(f"[netapp_storage] list_pegaprox_clusters: {exc}")
         return jsonify([])
@@ -287,16 +283,31 @@ def _test_dr_site_ssh():
     if key_path:
         cmd += ["-i", key_path]
     cmd += [f"{user}@{host}", "echo OK"]
+
+    success = False
+    message = ""
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=15)
         if result.returncode == 0 and b"OK" in result.stdout:
-            return jsonify({"success": True, "message": f"SSH connection to {user}@{host} successful"})
-        stderr = result.stderr.decode(errors="replace")[:300]
-        return jsonify({"success": False, "message": f"SSH failed: {stderr}"})
+            success = True
+            message = f"SSH connection to {user}@{host} successful"
+        else:
+            stderr = result.stderr.decode(errors="replace")[:300]
+            message = f"SSH failed: {stderr}" if stderr else "SSH failed (no output)"
     except subprocess.TimeoutExpired:
-        return jsonify({"success": False, "message": "Connection timed out"})
+        message = f"Connection to {host} timed out"
     except Exception as exc:
-        return jsonify({"success": False, "message": str(exc)[:300]})
+        message = str(exc)[:300]
+
+    # Persist result in DB
+    now = _now()
+    result_str = ("✅ " if success else "❌ ") + message
+    db.execute(
+        "UPDATE netapp_dr_sites SET last_test_at=?, last_test_result=?, updated_at=? WHERE id=?",
+        (now, result_str[:500], now, site_id)
+    )
+
+    return jsonify({"success": success, "message": message, "tested_at": now})
 
 
 def _get_ssh_key_path():

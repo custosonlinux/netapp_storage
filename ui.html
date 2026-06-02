@@ -5837,12 +5837,26 @@ async function drLoadSites() {
     var el = document.getElementById('drSitesList');
     if(!_drSites.length){ el.innerHTML='<div class="muted-hint">No DR sites configured.</div>'; return; }
     el.innerHTML = _drSites.map(function(s){
-      return '<div class="list-row" style="display:flex;justify-content:space-between;align-items:center">'
-        +'<div><strong>'+esc(s.name)+'</strong><span class="muted-hint" style="margin-left:.75rem">'+esc(s.endpoint_name)+' · '+esc(s.sync_host||'no sync host')+'</span><span class="muted-hint" style="margin-left:.75rem">'+s.plan_count+' plan(s)</span></div>'
+      var testLog = '';
+      if(s.last_test_result) {
+        var ok = s.last_test_result.startsWith('✅');
+        var ts = s.last_test_at ? s.last_test_at.slice(0,16).replace('T',' ') : '';
+        testLog = '<div style="margin-top:.35rem;font-size:.78rem;padding:.3rem .5rem;border-radius:4px;background:'+(ok?'rgba(22,163,74,.12)':'rgba(220,38,38,.12)')+';color:'+(ok?'var(--success)':'var(--danger)')+'">'+esc(s.last_test_result)+(ts?' <span style="opacity:.6">'+esc(ts)+'</span>':'')+'</div>';
+      }
+      return '<div class="list-row">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        +'<div>'
+        +'<strong>'+esc(s.name)+'</strong>'
+        +'<span class="muted-hint" style="margin-left:.75rem">'+esc(s.endpoint_name)+'</span>'
+        +'<span class="muted-hint" style="margin-left:.75rem">'+esc(s.sync_host||'kein Sync-Host')+'</span>'
+        +'<span class="muted-hint" style="margin-left:.75rem">'+s.plan_count+' Plan(s)</span>'
+        +'</div>'
         +'<div style="display:flex;gap:.5rem">'
-        +'<button class="btn btn-ghost btn-sm" onclick="drTestSiteSsh(\''+esc(s.id)+'\')">Test SSH</button>'
+        +'<button class="btn btn-ghost btn-sm" id="drTestBtn-'+esc(s.id)+'" onclick="drTestSiteSsh(\''+esc(s.id)+'\')">Test SSH</button>'
         +'<button class="btn btn-danger btn-sm" onclick="drDeleteSite(\''+esc(s.id)+'\',\''+esc(s.name)+'\')">Delete</button>'
-        +'</div></div>';
+        +'</div></div>'
+        +testLog
+        +'</div>';
     }).join('');
   } catch(e){ document.getElementById('drSitesList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
 }
@@ -5941,8 +5955,16 @@ async function drDeleteSite(id,name) {
 }
 
 async function drTestSiteSsh(id) {
-  toast('Testing SSH…','info');
-  try { var r=await apiPost('dr/sites/test-ssh',{id:id}); toast(r.message,r.success?'success':'error'); } catch(e){ toast(e.message,'error'); }
+  var btn = document.getElementById('drTestBtn-'+id);
+  if(btn) { btn.disabled=true; btn.textContent='Testing…'; }
+  try {
+    var r = await apiPost('dr/sites/test-ssh',{id:id});
+    toast(r.message, r.success?'success':'error');
+    await drLoadSites();  // reload to show persisted result
+  } catch(e){
+    toast(e.message,'error');
+    if(btn) { btn.disabled=false; btn.textContent='Test SSH'; }
+  }
 }
 
 async function drLoadPlans() {
