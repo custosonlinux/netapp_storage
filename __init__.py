@@ -62,9 +62,10 @@ def _init_db():
         _add_column_if_missing(db, "netapp_provisioned_datastores", "imported_from",
                                "TEXT NOT NULL DEFAULT ''")
 
-        # v1.2: DR site SSH test log
-        _add_column_if_missing(db, "netapp_dr_sites", "last_test_at",     "TEXT NOT NULL DEFAULT ''")
-        _add_column_if_missing(db, "netapp_dr_sites", "last_test_result",  "TEXT NOT NULL DEFAULT ''")
+        # v1.2: DR site SSH test log + sync password
+        _add_column_if_missing(db, "netapp_dr_sites", "last_test_at",          "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(db, "netapp_dr_sites", "last_test_result",       "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(db, "netapp_dr_sites", "sync_password_encrypted","TEXT NOT NULL DEFAULT ''")
 
         # SAN extension (iSCSI / NVMe-oF)
         _add_column_if_missing(db, "netapp_volume_mapping", "storage_protocol",     "TEXT NOT NULL DEFAULT 'nfs'")

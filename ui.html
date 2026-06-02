@@ -5853,6 +5853,7 @@ async function drLoadSites() {
         +'</div>'
         +'<div style="display:flex;gap:.5rem">'
         +'<button class="btn btn-ghost btn-sm" id="drTestBtn-'+esc(s.id)+'" onclick="drTestSiteSsh(\''+esc(s.id)+'\')">Test SSH</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="drPushSshKey(\''+esc(s.id)+'\')" title="SSH Key auf DR PegaProx pushen (Passwort erforderlich)">🔑 Push Key</button>'
         +'<button class="btn btn-danger btn-sm" onclick="drDeleteSite(\''+esc(s.id)+'\',\''+esc(s.name)+'\')">Delete</button>'
         +'</div></div>'
         +testLog
@@ -5907,7 +5908,7 @@ function drShowAddSiteModal() {
   apiFetch('endpoints').then(function(eps){ epSel.innerHTML=eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join(''); }).catch(function(){ epSel.innerHTML=''; });
   var pveSel=document.getElementById('drSitePveHosts');
   apiFetch('pve-hosts').then(function(h){ pveSel.innerHTML=h.map(function(x){ return '<option value="'+esc(x.id)+'">'+esc(x.name)+' ('+esc(x.host)+')</option>'; }).join(''); }).catch(function(){ pveSel.innerHTML=''; });
-  ['drSiteName','drSiteSyncHost','drSiteDesc'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['drSiteName','drSiteSyncHost','drSiteDesc','drSiteSyncPassword'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('drSiteSyncUser').value='root';
   document.getElementById('drSiteSyncPath').value='/opt/PegaProx/plugins/netapp_storage/';
   // Reset host mode to existing
@@ -5927,10 +5928,11 @@ async function drCreateSite() {
   var body = {
     name: name,
     endpoint_id: endpoint_id,
-    sync_host:   document.getElementById('drSiteSyncHost').value.trim(),
-    sync_user:   document.getElementById('drSiteSyncUser').value.trim(),
-    sync_path:   document.getElementById('drSiteSyncPath').value.trim(),
-    description: document.getElementById('drSiteDesc').value.trim(),
+    sync_host:     document.getElementById('drSiteSyncHost').value.trim(),
+    sync_user:     document.getElementById('drSiteSyncUser').value.trim(),
+    sync_path:     document.getElementById('drSiteSyncPath').value.trim(),
+    sync_password: document.getElementById('drSiteSyncPassword').value,
+    description:   document.getElementById('drSiteDesc').value.trim(),
   };
 
   if(mode==='existing') {
@@ -5959,11 +5961,21 @@ async function drTestSiteSsh(id) {
   if(btn) { btn.disabled=true; btn.textContent='Testing…'; }
   try {
     var r = await apiPost('dr/sites/test-ssh',{id:id});
-    toast(r.message, r.success?'success':'error');
-    await drLoadSites();  // reload to show persisted result
+    toast('SSH-Test gestartet — <a href="#" onclick="showTabByName(\'jobs\');return false">Jobs &amp; Logs</a> (Job: '+r.job_id+')', 'info');
+    setTimeout(drLoadSites, 3000);  // reload after test completes
   } catch(e){
     toast(e.message,'error');
     if(btn) { btn.disabled=false; btn.textContent='Test SSH'; }
+  }
+}
+
+async function drPushSshKey(id) {
+  try {
+    var r = await apiPost('dr/sites/push-ssh-key',{id:id});
+    toast('SSH Key Push gestartet — <a href="#" onclick="showTabByName(\'jobs\');return false">Jobs &amp; Logs</a> (Job: '+r.job_id+')', 'info');
+    setTimeout(drLoadSites, 5000);
+  } catch(e){
+    toast(e.message,'error');
   }
 }
 
@@ -7273,6 +7285,10 @@ loadSnapshots();
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
         <div class="form-group"><label>SSH User</label><input id="drSiteSyncUser" value="root"></div>
         <div class="form-group"><label>Remote Path</label><input id="drSiteSyncPath" value="/opt/PegaProx/plugins/netapp_storage/"></div>
+      </div>
+      <div class="form-group">
+        <label>SSH Passwort <span style="font-weight:400;color:var(--muted)">(optional — für initialen Key-Push; danach leer lassen)</span></label>
+        <input id="drSiteSyncPassword" type="password" placeholder="leer = nur Key-Auth">
       </div>
       <div class="form-group"><label>Description</label><input id="drSiteDesc" placeholder="optional"></div>
     </div>

@@ -211,14 +211,22 @@ def _create_dr_site():
 
     sid = str(uuid.uuid4())[:8]
     now = _now()
+    pw_enc = ""
+    if data.get("sync_password"):
+        try:
+            pw_enc = db._encrypt(data["sync_password"])
+        except Exception:
+            pass
+
     db.execute(
-        "INSERT INTO netapp_dr_sites (id, name, endpoint_id, pve_host_ids, sync_host, sync_user, sync_path, description, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO netapp_dr_sites (id, name, endpoint_id, pve_host_ids, sync_host, sync_user, sync_path, sync_password_encrypted, description, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (sid, name, endpoint_id,
          json.dumps(pve_host_ids),
          data.get("sync_host", ""),
          data.get("sync_user", "root"),
          data.get("sync_path", "/opt/PegaProx/plugins/netapp_storage/"),
+         pw_enc,
          data.get("description", ""),
          now, now)
     )
@@ -240,6 +248,16 @@ def _update_dr_site():
             val = json.dumps(data[k]) if k == "pve_host_ids" else data[k]
             updates.append(f"{k}=?")
             params.append(val)
+    if "sync_password" in data:
+        if data["sync_password"]:
+            try:
+                updates.append("sync_password_encrypted=?")
+                params.append(db._encrypt(data["sync_password"]))
+            except Exception:
+                pass
+        else:
+            updates.append("sync_password_encrypted=?")
+            params.append("")  # clear password
     if not updates:
         return {"error": "No fields to update"}, 400
     updates.append("updated_at=?")
@@ -263,6 +281,87 @@ def _delete_dr_site():
     return jsonify({"message": "DR site deleted"})
 
 
+def _dr_start_job(site_id, job_type, username):
+    """Create a netapp_jobs entry for a DR site operation. Returns job_id."""
+    db = get_db()
+    job_id = str(uuid.uuid4())[:8]
+    db.execute(
+        "INSERT INTO netapp_jobs (id, job_type, status, log_json, created_by, created_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (job_id, job_type, "running", "[]", username, _now())
+    )
+    return job_id
+
+
+def _dr_job_log(job_id, lines):
+    db = get_db()
+    db.execute("UPDATE netapp_jobs SET log_json=? WHERE id=?", (json.dumps(lines), job_id))
+
+
+def _dr_job_finish(job_id, status, lines, site_id=None, test_result=None):
+    db = get_db()
+    db.execute(
+        "UPDATE netapp_jobs SET status=?, log_json=?, completed_at=? WHERE id=?",
+        (status, json.dumps(lines), _now(), job_id)
+    )
+    if site_id and test_result is not None:
+        result_str = ("✅ " if status == "done" else "❌ ") + test_result
+        db.execute(
+            "UPDATE netapp_dr_sites SET last_test_at=?, last_test_result=?, updated_at=? WHERE id=?",
+            (_now(), result_str[:500], _now(), site_id)
+        )
+
+
+def _build_ssh_cmd(host, user, password, key_path, extra_args, remote_cmd=None):
+    """Build ssh or sshpass+ssh command list."""
+    import shutil
+    has_sshpass = shutil.which("sshpass") is not None
+    if password and has_sshpass:
+        cmd = ["sshpass", "-p", password, "ssh",
+               "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+    else:
+        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+               "-o", "BatchMode=yes"]
+        if key_path:
+            cmd += ["-i", key_path]
+    cmd += extra_args
+    cmd.append(f"{user}@{host}")
+    if remote_cmd:
+        cmd.append(remote_cmd)
+    return cmd
+
+
+def _build_scp_cmd(host, user, password, key_path, src, dest):
+    """Build scp or sshpass+scp command list."""
+    import shutil
+    has_sshpass = shutil.which("sshpass") is not None
+    if password and has_sshpass:
+        cmd = ["sshpass", "-p", password, "scp",
+               "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15"]
+    else:
+        cmd = ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15"]
+        if key_path:
+            cmd += ["-i", key_path]
+    cmd += [src, dest]
+    return cmd
+
+
+def _get_site_credentials(site):
+    """Return (host, user, password, key_path) for a DR site."""
+    host = site.get("sync_host", "")
+    user = site.get("sync_user", "root")
+    pw_enc = site.get("sync_password_encrypted", "")
+    password = ""
+    if pw_enc:
+        try:
+            db = get_db()
+            password = db._decrypt(pw_enc)
+        except Exception:
+            pass
+    key_path = _get_ssh_key_path()
+    return host, user, password, key_path
+
+
 def _test_dr_site_ssh():
     err = _require_admin()
     if err: return err
@@ -273,41 +372,117 @@ def _test_dr_site_ssh():
     if not row:
         return {"error": "DR site not found"}, 404
     site = dict(row)
-    host = site.get("sync_host", "")
-    user = site.get("sync_user", "root")
+    host, user, password, key_path = _get_site_credentials(site)
     if not host:
         return {"error": "No sync_host configured"}, 400
 
-    key_path = _get_ssh_key_path()
-    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
-    if key_path:
-        cmd += ["-i", key_path]
-    cmd += [f"{user}@{host}", "echo OK"]
+    username = request.session.get("user", "system")
+    job_id = _dr_start_job(site_id, "dr_ssh_test", username)
+    threading.Thread(target=_run_ssh_test, args=(job_id, site_id, host, user, password, key_path), daemon=True).start()
+    return jsonify({"job_id": job_id, "message": "SSH test started"}), 202
 
-    success = False
-    message = ""
+
+def _run_ssh_test(job_id, site_id, host, user, password, key_path):
+    lines = []
+    def _log(msg):
+        lines.append({"ts": _now(), "msg": msg})
+        _dr_job_log(job_id, lines)
+
+    _log(f"[INFO] Testing SSH connection to {user}@{host} …")
+    if not password and not key_path:
+        _log("[WARN] No SSH key found and no password configured")
+    elif password:
+        _log("[INFO] Using password authentication (sshpass)")
+    else:
+        _log(f"[INFO] Using SSH key: {key_path}")
+
+    cmd = _build_ssh_cmd(host, user, password, key_path, [], "echo OK")
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=15)
         if result.returncode == 0 and b"OK" in result.stdout:
-            success = True
-            message = f"SSH connection to {user}@{host} successful"
+            _log(f"[INFO] ✅ SSH connection successful")
+            _dr_job_finish(job_id, "done", lines, site_id, f"SSH to {user}@{host} successful")
         else:
             stderr = result.stderr.decode(errors="replace")[:300]
-            message = f"SSH failed: {stderr}" if stderr else "SSH failed (no output)"
+            msg = stderr or "SSH failed (no output)"
+            _log(f"[ERR] {msg}")
+            _dr_job_finish(job_id, "failed", lines, site_id, msg)
     except subprocess.TimeoutExpired:
-        message = f"Connection to {host} timed out"
+        _log(f"[ERR] Connection to {host} timed out")
+        _dr_job_finish(job_id, "failed", lines, site_id, f"Connection to {host} timed out")
     except Exception as exc:
-        message = str(exc)[:300]
+        _log(f"[ERR] {exc}")
+        _dr_job_finish(job_id, "failed", lines, site_id, str(exc)[:200])
 
-    # Persist result in DB
-    now = _now()
-    result_str = ("✅ " if success else "❌ ") + message
-    db.execute(
-        "UPDATE netapp_dr_sites SET last_test_at=?, last_test_result=?, updated_at=? WHERE id=?",
-        (now, result_str[:500], now, site_id)
-    )
 
-    return jsonify({"success": success, "message": message, "tested_at": now})
+def _push_ssh_key_to_dr():
+    """Push the primary PegaProx SSH public key to the DR PegaProx via ssh-copy-id."""
+    err = _require_admin()
+    if err: return err
+    data = _body()
+    site_id = (data.get("id") or "").strip()
+    db = get_db()
+    row = db.query_one("SELECT * FROM netapp_dr_sites WHERE id=?", (site_id,))
+    if not row:
+        return {"error": "DR site not found"}, 404
+    site = dict(row)
+    host, user, password, key_path = _get_site_credentials(site)
+    if not host:
+        return {"error": "No sync_host configured"}, 400
+    if not password:
+        return {"error": "sync_password required to push SSH key. Set it in the DR site settings."}, 400
+
+    username = request.session.get("user", "system")
+    job_id = _dr_start_job(site_id, "dr_push_ssh_key", username)
+    threading.Thread(target=_run_push_ssh_key, args=(job_id, site_id, host, user, password, key_path), daemon=True).start()
+    return jsonify({"job_id": job_id, "message": "SSH key push started"}), 202
+
+
+def _run_push_ssh_key(job_id, site_id, host, user, password, key_path):
+    import shutil
+    lines = []
+    def _log(msg):
+        lines.append({"ts": _now(), "msg": msg})
+        _dr_job_log(job_id, lines)
+
+    _log(f"[INFO] Pushing SSH public key to {user}@{host} …")
+    has_sshpass = shutil.which("sshpass") is not None
+    if not has_sshpass:
+        _log("[ERR] sshpass not installed. Run: apt install sshpass")
+        _dr_job_finish(job_id, "failed", lines)
+        return
+    if not key_path:
+        _log("[ERR] No SSH public key found on this PegaProx instance")
+        _dr_job_finish(job_id, "failed", lines)
+        return
+
+    pub_key_path = key_path + ".pub" if not key_path.endswith(".pub") else key_path
+    if not __import__("os").path.exists(pub_key_path):
+        _log(f"[ERR] Public key not found: {pub_key_path}")
+        _dr_job_finish(job_id, "failed", lines)
+        return
+
+    cmd = ["sshpass", "-p", password, "ssh-copy-id",
+           "-i", pub_key_path,
+           "-o", "StrictHostKeyChecking=no",
+           "-o", "ConnectTimeout=10",
+           f"{user}@{host}"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        if result.returncode == 0:
+            _log(f"[INFO] ✅ SSH key successfully pushed to {user}@{host}")
+            _log("[INFO] You can now remove the sync_password — key-based auth will be used")
+            _dr_job_finish(job_id, "done", lines, site_id, f"SSH key pushed to {user}@{host}")
+        else:
+            stderr = result.stderr.decode(errors="replace")[:300]
+            _log(f"[ERR] ssh-copy-id failed: {stderr}")
+            _dr_job_finish(job_id, "failed", lines)
+    except subprocess.TimeoutExpired:
+        _log(f"[ERR] Timed out pushing key to {host}")
+        _dr_job_finish(job_id, "failed", lines)
+    except Exception as exc:
+        _log(f"[ERR] {exc}")
+        _dr_job_finish(job_id, "failed", lines)
 
 
 def _get_ssh_key_path():
@@ -871,16 +1046,10 @@ def _execute_sync(job_id, plan_id, site):
             tmp_path = f.name
         _log(f"[INFO] Export written ({len(export_json)} bytes)")
 
-        host = site["sync_host"]
-        user = site.get("sync_user", "root")
+        host, user, password, key_path = _get_site_credentials(site)
         remote_path = site.get("sync_path", "/opt/PegaProx/plugins/netapp_storage/").rstrip("/")
         remote_dest = f"{user}@{host}:{remote_path}/netapp_storage_dr_sync.json"
-
-        key_path = _get_ssh_key_path()
-        cmd = ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=15"]
-        if key_path:
-            cmd += ["-i", key_path]
-        cmd += [tmp_path, remote_dest]
+        cmd = _build_scp_cmd(host, user, password, key_path, tmp_path, remote_dest)
 
         _log(f"[INFO] SCP → {remote_dest}")
         result = subprocess.run(cmd, capture_output=True, timeout=60)
@@ -934,6 +1103,7 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/sites/update",       _update_dr_site)
     rpr(PLUGIN_ID, "dr/sites/delete",       _delete_dr_site)
     rpr(PLUGIN_ID, "dr/sites/test-ssh",     _test_dr_site_ssh)
+    rpr(PLUGIN_ID, "dr/sites/push-ssh-key", _push_ssh_key_to_dr)
 
     rpr(PLUGIN_ID, "dr/plans",              _list_dr_plans)
     rpr(PLUGIN_ID, "dr/plans/create",       _create_dr_plan)
