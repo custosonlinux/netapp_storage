@@ -683,6 +683,13 @@ def _storage_unified():
             continue  # deduplicate multi-host rows for the same volume
         seen_discovered.add(storage_id)
 
+        # Collect all hosts that have this storage discovered
+        host_rows = db.query(
+            "SELECT DISTINCT pve_cluster_id FROM netapp_volume_mapping WHERE pve_storage_id=?",
+            (storage_id,)
+        )
+        pve_host_ids = [dict(r)["pve_cluster_id"] for r in (host_rows or [])]
+
         item = {
             "id":               f"mapping-{m['mapping_id']}",
             "mapping_id":       m["mapping_id"],
@@ -699,7 +706,7 @@ def _storage_unified():
             "nfs_junction_path":m.get("junction_path", ""),
             "size_bytes":       None,
             "status":           "active",
-            "pve_host_ids":     [],
+            "pve_host_ids":     pve_host_ids,
             "snapinfo_initialized": bool(m.get("snapinfo_initialized", 0)),
         }
         if m.get("sm_id"):
