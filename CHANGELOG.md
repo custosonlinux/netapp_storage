@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] – 2026-06-02
+
+### Fixed
+- **NVMe +Add Host: device not found after 60s** — `_add_host_nvme` used `find_new_nvme_device` which only detected brand-new devices. When the host NQN was already in the subsystem (e.g. from a previous run), `nvme connect-all` created no new device and the job timed out. Fixed by using `find_nvme_device_for_subsystem_nqn` (NQN-based lookup via `nvme list-subsys` + sysfs) and direct per-LIF connect instead of `connect-all`.
+- **NVMe datastores lose connection after host reboot** — Plugin did not write NVMe LIF IPs to `/etc/nvme/discovery.conf` on PVE hosts. After a reboot, `nvme connect-all` could not find datastores whose LIFs were not already listed. Plugin now calls `ensure_nvme_discovery_entries()` during both initial NVMe provisioning and `+Add Host`, matching each LIF to the correct host interface by /16 subnet. Idempotent — only missing entries are appended.
+
 ## [1.1.0] – 2026-05-29
 
 ### Added
