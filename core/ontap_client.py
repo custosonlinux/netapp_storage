@@ -2106,9 +2106,30 @@ class OntapClient:
         job_uuid = (resp.get("job") or {}).get("uuid", "")
 
         if job_uuid:
-            _cb(f"[INFO] ONTAP job started ({job_uuid[:8]}…) — waiting for completion...")
-            self.poll_job(job_uuid, interval_s=4, timeout_s=90)
-            _cb(f"[INFO] ONTAP job completed.")
+            _cb(f"[INFO] ONTAP job started ({job_uuid[:8]}…) — creating destination volume and relationship...")
+            start = time.monotonic()
+            last_log = start
+            deadline = start + 300
+            while True:
+                data = self._get(f"cluster/jobs/{job_uuid}")
+                state = data.get("state", "")
+                if state == "success":
+                    _cb(f"[INFO] ONTAP job completed ({int(time.monotonic()-start)}s).")
+                    break
+                if state == "failure":
+                    raise OntapError(
+                        f"ONTAP job {job_uuid[:8]} failed: {data.get('message', 'no message')}"
+                    )
+                elapsed = int(time.monotonic() - start)
+                if time.monotonic() - last_log >= 15:
+                    _cb(f"[INFO] Still working… ({elapsed}s elapsed, state: {state})")
+                    last_log = time.monotonic()
+                if time.monotonic() > deadline:
+                    raise OntapError(
+                        f"ONTAP job {job_uuid[:8]} timed out after 300s (state: {state}). "
+                        f"The operation may still complete on ONTAP — check System Manager."
+                    )
+                time.sleep(4)
         elif rel_uuid:
             _cb(f"[INFO] Relationship created directly (UUID: {rel_uuid[:8]}…)")
 
