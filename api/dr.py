@@ -409,9 +409,12 @@ def _wizard_create_volume():
 def _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
                                   vol_uuid, junction_path, nfs_ip):
     """Insert or update netapp_volume_mapping for the config volume and link it to plugin_config."""
+    # Check both by volume identity AND by the UNIQUE constraint columns
     existing = db.query_one(
-        "SELECT id FROM netapp_volume_mapping WHERE endpoint_id=? AND svm_name=? AND volume_name=?",
-        (endpoint_id, svm_name, volume_name)
+        "SELECT id FROM netapp_volume_mapping "
+        "WHERE (endpoint_id=? AND svm_name=? AND volume_name=?) "
+        "OR (pve_cluster_id='dr-config' AND pve_storage_id=?)",
+        (endpoint_id, svm_name, volume_name, volume_name)
     )
     now = _now()
     if existing:
