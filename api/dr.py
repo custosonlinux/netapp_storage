@@ -243,31 +243,42 @@ def _setup_config_volume():
     vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (volume_id,))
     if not vol:
         return {"error": "Volume not found in volume mappings"}, 404
-    if not os.path.isdir(mount_path):
-        return {"error": f"Mount path '{mount_path}' is not accessible"}, 400
-    config_dir = f"{mount_path}/.netapp-dr"
-    try:
-        os.makedirs(f"{config_dir}/plans", exist_ok=True)
-    except Exception as exc:
-        return {"error": f"Cannot create config directory: {exc}"}, 500
+
+    # Save the config regardless of mount state — the volume may not be mounted yet
     _get_plugin_config()
     db.execute(
         "UPDATE netapp_plugin_config SET config_volume_id=?, config_mount_path=?, updated_at=? WHERE id='default'",
         (volume_id, mount_path, _now())
     )
-    _write_config_to_volume()
-    return jsonify({"message": "Config volume configured", "config_dir": config_dir})
+
+    # Try to create config dir if mount is already accessible
+    warning = None
+    if os.path.isdir(mount_path):
+        config_dir = f"{mount_path}/.netapp-dr"
+        try:
+            os.makedirs(f"{config_dir}/plans", exist_ok=True)
+            _write_config_to_volume()
+        except Exception as exc:
+            warning = f"Config saved but could not create directory: {exc}"
+    else:
+        warning = (f"Config saved. Mount path '{mount_path}' is not yet accessible on this server. "
+                   f"Mount the NFS volume first: mount -t nfs {vol['nfs_export_ip']}:{vol['junction_path']} {mount_path}")
+
+    result = {"message": "Config volume saved", "volume_name": vol["volume_name"]}
+    if warning:
+        result["warning"] = warning
+    return jsonify(result)
 
 
 def _list_nfs_volumes():
     """GET dr/config-volume/nfs-volumes — list NFS volume mappings for config volume selection."""
     db = get_db()
     rows = db.query(
-        "SELECT vm.id, vm.volume_name, vm.pve_storage_id, vm.nfs_export_ip, vm.nfs_mount_path, "
-        "ep.name as endpoint_name "
+        "SELECT DISTINCT vm.id, vm.volume_name, vm.pve_storage_id, vm.nfs_export_ip, "
+        "vm.nfs_mount_path, ep.name as endpoint_name "
         "FROM netapp_volume_mapping vm "
         "LEFT JOIN netapp_endpoints ep ON ep.id=vm.endpoint_id "
-        "WHERE vm.storage_protocol='nfs' OR vm.storage_protocol='' "
+        "WHERE vm.storage_protocol='nfs' "
         "ORDER BY ep.name, vm.volume_name"
     ) or []
     return jsonify([dict(r) for r in rows])

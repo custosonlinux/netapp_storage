@@ -5894,26 +5894,59 @@ async function drShowRoleModal() {
 function drShowCVSetupForm() {
   var form=document.getElementById('drCVSetupForm');
   form.style.display='';
+  document.getElementById('drCVError').style.display='none';
+  document.getElementById('drCVMountHint').textContent='';
+  document.getElementById('drCVMountPath').value='';
   apiFetch('dr/config-volume/nfs-volumes').then(function(vols){
     var sel=document.getElementById('drCVVolumeSelect');
+    if(!vols.length){
+      sel.innerHTML='<option value="">— no NFS volumes discovered yet —</option>';
+      document.getElementById('drCVError').textContent='No NFS volumes found. Run Discovery in the Storage tab first.';
+      document.getElementById('drCVError').style.display='';
+      return;
+    }
     sel.innerHTML='<option value="">— select NFS volume —</option>'
-      +vols.map(function(v){ return '<option value="'+esc(v.id)+'">'+esc(v.volume_name)+' ('+esc(v.endpoint_name)+' / '+esc(v.pve_storage_id)+')</option>'; }).join('');
+      +vols.map(function(v){
+        return '<option value="'+esc(v.id)+'">'+esc(v.volume_name)+' ('+esc(v.endpoint_name)+' / '+esc(v.pve_storage_id)+')</option>';
+      }).join('');
     sel.onchange=function(){
       var found=vols.find(function(v){ return v.id===sel.value; });
-      if(found&&found.nfs_mount_path) document.getElementById('drCVMountPath').value=found.nfs_mount_path;
+      if(found){
+        var hint='NFS: '+esc(found.nfs_export_ip||'?')+':'+esc(found.pve_storage_id||found.volume_name);
+        document.getElementById('drCVMountHint').textContent='Mount on this server: mount -t nfs '+hint+' <path>';
+      } else {
+        document.getElementById('drCVMountHint').textContent='';
+      }
     };
-  }).catch(function(){});
+  }).catch(function(e){
+    document.getElementById('drCVError').textContent='Could not load volumes: '+e.message;
+    document.getElementById('drCVError').style.display='';
+  });
 }
 
 async function drSaveConfigVolume() {
   var volume_id=document.getElementById('drCVVolumeSelect').value;
   var mount_path=document.getElementById('drCVMountPath').value.trim();
-  if(!volume_id||!mount_path){ toast('Select a volume and enter the mount path','error'); return; }
+  var errEl=document.getElementById('drCVError');
+  errEl.style.display='none';
+  if(!volume_id){ errEl.textContent='Please select a volume.'; errEl.style.display=''; return; }
+  if(!mount_path){ errEl.textContent='Please enter the local mount path on this server.'; errEl.style.display=''; return; }
   try {
-    await apiPost('dr/config-volume/setup',{volume_id,mount_path});
-    toast('Config volume configured ✓','success');
-    drHideModal('drRole'); drLoadRole();
-  } catch(e){ toast(e.message,'error'); }
+    var r=await apiPost('dr/config-volume/setup',{volume_id,mount_path});
+    if(r.warning){
+      errEl.style.background='var(--bg)'; errEl.style.borderColor='var(--warning,#ffc107)'; errEl.style.color='var(--warning,#a07000)';
+      errEl.textContent='⚠ '+r.warning;
+      errEl.style.display='';
+      toast('Config volume saved (with warning)','success');
+    } else {
+      toast('Config volume configured ✓','success');
+      drHideModal('drRole');
+    }
+    drLoadRole();
+  } catch(e){
+    errEl.textContent='❌ '+e.message;
+    errEl.style.display='';
+  }
 }
 
 async function drSaveRole() {
@@ -7571,8 +7604,13 @@ loadSnapshots();
         <div id="drConfigVolStatus" style="padding:.5rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:.85rem"></div>
         <div id="drCVSetupForm" style="display:none;margin-top:.75rem;padding:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px">
           <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Setup Config Volume</div>
-          <div class="form-group"><label style="font-size:.82rem">NFS Volume (will store DR config JSON files)</label><select id="drCVVolumeSelect" style="width:100%"></select></div>
-          <div class="form-group"><label style="font-size:.82rem">Local NFS Mount Path</label><input id="drCVMountPath" placeholder="/mnt/pve/dr-config" autocomplete="off"></div>
+          <div id="drCVError" style="display:none;padding:.4rem .6rem;background:var(--error-bg,#2d1b1b);border:1px solid var(--error,#f85149);border-radius:4px;font-size:.8rem;color:var(--error,#f85149);margin-bottom:.5rem;word-break:break-word"></div>
+          <div class="form-group"><label style="font-size:.82rem">NFS Volume <span style="font-weight:400;color:var(--muted)">(stores DR config JSON files)</span></label><select id="drCVVolumeSelect" style="width:100%"></select></div>
+          <div id="drCVMountHint" style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem;font-family:monospace;word-break:break-all"></div>
+          <div class="form-group">
+            <label style="font-size:.82rem">Local Mount Path on this server <span style="font-weight:400;color:var(--muted)">(volume must be NFS-mounted here)</span></label>
+            <input id="drCVMountPath" placeholder="/mnt/pve/dr-config" autocomplete="off">
+          </div>
           <div style="display:flex;gap:.5rem;margin-top:.5rem">
             <button class="btn btn-ghost btn-sm" onclick="document.getElementById('drCVSetupForm').style.display='none'">Cancel</button>
             <button class="btn btn-primary btn-sm" onclick="drSaveConfigVolume()">✅ Save Config Volume</button>
