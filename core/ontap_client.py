@@ -2068,3 +2068,51 @@ class OntapClient:
             body={"nas": {"path": junction_path}},
             params={"return_timeout": 30},
         )
+
+    def get_volume_by_uuid(self, volume_uuid):
+        """Return volume details by UUID."""
+        return self._get(
+            f"storage/volumes/{volume_uuid}",
+            params={"fields": "name,svm.name,type,nas.path,space.size,state"},
+        )
+
+    def create_snapmirror_relationship(self, source_path, dest_path,
+                                       policy="MirrorAllSnapshots"):
+        """Create a SnapMirror relationship and auto-create the destination volume.
+
+        source_path / dest_path format: 'svm_name:volume_name'
+        Cluster peering must already be established.
+        Returns relationship UUID.
+        """
+        body = {
+            "source":      {"path": source_path},
+            "destination": {"path": dest_path},
+            "policy":      {"name": policy},
+            "create_destination": {"enabled": True},
+        }
+        resp = self._post("snapmirror/relationships", body=body,
+                          params={"return_timeout": 60})
+        rel_uuid = resp.get("uuid", "")
+        job_uuid = (resp.get("job") or {}).get("uuid", "")
+        if job_uuid:
+            self.poll_job(job_uuid, interval_s=3, timeout_s=300)
+        if not rel_uuid:
+            rels = self._get_all_records("snapmirror/relationships", params={
+                "destination.path": dest_path, "fields": "uuid", "max_records": 5,
+            })
+            if rels:
+                rel_uuid = rels[0].get("uuid", "")
+        return rel_uuid
+
+    def initialize_snapmirror(self, relationship_uuid):
+        """Trigger initial SnapMirror baseline transfer."""
+        try:
+            self._patch(
+                f"snapmirror/relationships/{relationship_uuid}",
+                body={"state": "snapmirrored"},
+                params={"return_timeout": 0},
+            )
+        except OntapError as e:
+            if "already" in str(e).lower() or "409" in str(e):
+                return  # already initialized
+            raise

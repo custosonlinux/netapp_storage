@@ -284,6 +284,251 @@ def _list_nfs_volumes():
     return jsonify([dict(r) for r in rows])
 
 
+def _config_volume_wizard_data():
+    """GET dr/config-volume/wizard/data — endpoints + config volume DB state."""
+    db = get_db()
+    cfg = _get_plugin_config()
+    eps = db.query("SELECT id, name, host FROM netapp_endpoints ORDER BY name") or []
+
+    # Resolve stored config volume details
+    cv_details = None
+    if cfg.get("config_volume_id"):
+        row = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
+        vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?",
+                           (cfg["config_volume_id"],)) if row else None
+        if vol:
+            import os
+            mount_path = cfg.get("config_mount_path", "")
+            cv_details = {
+                "volume_id":   cfg["config_volume_id"],
+                "volume_name": vol["volume_name"],
+                "endpoint_id": vol["endpoint_id"],
+                "nfs_ip":      vol["nfs_export_ip"],
+                "junction":    vol["junction_path"],
+                "mount_path":  mount_path,
+                "mounted":     bool(mount_path and os.path.isdir(mount_path)),
+            }
+
+    return jsonify({
+        "endpoints": [dict(e) for e in eps],
+        "config_volume": cv_details,
+        "config_mount_path": cfg.get("config_mount_path", ""),
+    })
+
+
+def _wizard_list_svms():
+    """GET dr/config-volume/wizard/svms?endpoint_id= — list SVMs for endpoint."""
+    endpoint_id = request.args.get("endpoint_id", "")
+    if not endpoint_id:
+        return {"error": "endpoint_id required"}, 400
+    db = get_db()
+    try:
+        from ..core._helpers import get_endpoint, build_ontap_client
+        ep = get_endpoint(db, endpoint_id)
+        client = build_ontap_client(ep)
+        svms = client.list_svms()
+        return jsonify([{"name": s.get("name", ""), "uuid": s.get("uuid", "")} for s in svms])
+    except Exception as exc:
+        return {"error": str(exc)}, 500
+
+
+def _wizard_list_aggregates():
+    """GET dr/config-volume/wizard/aggregates?endpoint_id= — list aggregates."""
+    endpoint_id = request.args.get("endpoint_id", "")
+    if not endpoint_id:
+        return {"error": "endpoint_id required"}, 400
+    db = get_db()
+    try:
+        from ..core._helpers import get_endpoint, build_ontap_client
+        ep = get_endpoint(db, endpoint_id)
+        client = build_ontap_client(ep)
+        aggs = client.list_aggregates()
+        return jsonify(aggs)
+    except Exception as exc:
+        return {"error": str(exc)}, 500
+
+
+def _wizard_create_volume():
+    """POST dr/config-volume/wizard/create-volume — create NFS config volume on ONTAP."""
+    err = _require_admin()
+    if err: return err
+    data = _body()
+    endpoint_id  = (data.get("endpoint_id") or "").strip()
+    svm_name     = (data.get("svm_name") or "").strip()
+    volume_name  = (data.get("volume_name") or "vol_dr_config").strip()
+    size_gb      = int(data.get("size_gb") or 1)
+    junction     = (data.get("junction_path") or f"/{volume_name}").strip()
+    aggregate    = (data.get("aggregate_name") or "").strip() or None
+
+    if not endpoint_id or not svm_name:
+        return {"error": "endpoint_id and svm_name are required"}, 400
+
+    db = get_db()
+    try:
+        from ..core._helpers import get_endpoint, build_ontap_client
+        ep = get_endpoint(db, endpoint_id)
+        client = build_ontap_client(ep)
+
+        # Check if volume already exists
+        existing = client.get_volume_by_name(svm_name, volume_name)
+        if existing:
+            vol_uuid = existing.get("uuid", "")
+            nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""
+            _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
+                                         vol_uuid, junction, nfs_ip)
+            return jsonify({"volume_uuid": vol_uuid, "volume_name": volume_name,
+                            "nfs_ip": nfs_ip, "junction": junction,
+                            "message": f"Volume '{volume_name}' already exists — linked.", "existed": True})
+
+        vol_uuid = client.create_volume_nfs(svm_name, volume_name,
+                                             size_gb * 1024 * 1024 * 1024,
+                                             junction, aggregate_name=aggregate)
+        nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""
+        _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
+                                     vol_uuid, junction, nfs_ip)
+        return jsonify({"volume_uuid": vol_uuid, "volume_name": volume_name,
+                        "nfs_ip": nfs_ip, "junction": junction,
+                        "message": f"Volume '{volume_name}' created on {svm_name}."})
+    except Exception as exc:
+        return {"error": str(exc)}, 500
+
+
+def _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
+                                  vol_uuid, junction_path, nfs_ip):
+    """Insert or update netapp_volume_mapping for the config volume and link it to plugin_config."""
+    existing = db.query_one(
+        "SELECT id FROM netapp_volume_mapping WHERE endpoint_id=? AND svm_name=? AND volume_name=?",
+        (endpoint_id, svm_name, volume_name)
+    )
+    now = _now()
+    if existing:
+        mapping_id = existing["id"]
+        db.execute(
+            "UPDATE netapp_volume_mapping SET volume_uuid=?, junction_path=?, nfs_export_ip=?, updated_at=? WHERE id=?",  # noqa
+            (vol_uuid, junction_path, nfs_ip, now, mapping_id)
+        )
+    else:
+        mapping_id = str(uuid.uuid4())[:8]
+        db.execute(
+            "INSERT INTO netapp_volume_mapping "
+            "(id, endpoint_id, pve_cluster_id, pve_storage_id, svm_name, volume_uuid, volume_name, "
+            "junction_path, nfs_export_ip, nfs_mount_path, discovered_at, storage_protocol, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (mapping_id, endpoint_id, "dr-config", volume_name,
+             svm_name, vol_uuid, volume_name, junction_path, nfs_ip, "",
+             now, "nfs", now)
+        )
+    _get_plugin_config()
+    db.execute(
+        "UPDATE netapp_plugin_config SET config_volume_id=?, updated_at=? WHERE id='default'",
+        (mapping_id, now)
+    )
+
+
+def _wizard_create_snapmirror():
+    """POST dr/config-volume/wizard/create-snapmirror — create SnapMirror for config volume."""
+    err = _require_admin()
+    if err: return err
+    data = _body()
+    dr_endpoint_id = (data.get("dr_endpoint_id") or "").strip()
+    dr_svm         = (data.get("dr_svm") or "").strip()
+    dr_volume_name = (data.get("dr_volume_name") or "").strip()
+    policy         = (data.get("policy") or "MirrorAllSnapshots").strip()
+
+    if not dr_endpoint_id or not dr_svm or not dr_volume_name:
+        return {"error": "dr_endpoint_id, dr_svm, dr_volume_name are required"}, 400
+
+    db = get_db()
+    cfg = _get_plugin_config()
+    if not cfg.get("config_volume_id"):
+        return {"error": "Create the config volume first (Step 1)"}, 400
+
+    vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
+    if not vol:
+        return {"error": "Config volume mapping not found"}, 404
+
+    source_path = f"{vol['svm_name']}:{vol['volume_name']}"
+    dest_path   = f"{dr_svm}:{dr_volume_name}"
+
+    try:
+        from ..core._helpers import get_endpoint, build_ontap_client
+        dr_ep = get_endpoint(db, dr_endpoint_id)
+        dr_client = build_ontap_client(dr_ep)
+
+        rel_uuid = dr_client.create_snapmirror_relationship(source_path, dest_path, policy)
+        if not rel_uuid:
+            return {"error": "SnapMirror relationship created but UUID not returned"}, 500
+
+        # Trigger initial transfer
+        try:
+            dr_client.initialize_snapmirror(rel_uuid)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] SM init warning: {exc}")
+
+        return jsonify({
+            "relationship_uuid": rel_uuid,
+            "source_path":       source_path,
+            "dest_path":         dest_path,
+            "message": f"SnapMirror created: {source_path} → {dest_path}. Initial transfer initiated."
+        })
+    except Exception as exc:
+        return {"error": str(exc)}, 500
+
+
+def _wizard_activate_mount():
+    """POST dr/config-volume/wizard/activate — save mount path and check accessibility."""
+    import os
+    err = _require_admin()
+    if err: return err
+    data = _body()
+    mount_path = (data.get("mount_path") or "").strip().rstrip("/")
+    if not mount_path:
+        return {"error": "mount_path is required"}, 400
+
+    db = get_db()
+    cfg = _get_plugin_config()
+    if not cfg.get("config_volume_id"):
+        return {"error": "Create the config volume first (Step 1)"}, 400
+
+    vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
+
+    _get_plugin_config()
+    db.execute(
+        "UPDATE netapp_plugin_config SET config_mount_path=?, updated_at=? WHERE id='default'",
+        (mount_path, _now())
+    )
+    # Also update nfs_mount_path in the mapping for consistency
+    if vol:
+        db.execute("UPDATE netapp_volume_mapping SET nfs_mount_path=? WHERE id=?",
+                   (mount_path, vol["id"]))
+
+    mounted = os.path.isdir(mount_path)
+    if mounted:
+        config_dir = f"{mount_path}/.netapp-dr"
+        try:
+            os.makedirs(f"{config_dir}/plans", exist_ok=True)
+            _write_config_to_volume()
+        except Exception as exc:
+            return jsonify({"mounted": True, "warning": f"Mount accessible but config dir failed: {exc}",
+                            "mount_path": mount_path})
+        return jsonify({"mounted": True, "message": "Config volume activated ✓ — config files written.",
+                        "mount_path": mount_path})
+
+    # Not mounted yet — build mount command for admin
+    mount_cmd = ""
+    if vol:
+        nfs_ip  = vol.get("nfs_export_ip", "")
+        jpath   = vol.get("junction_path", "")
+        if nfs_ip and jpath:
+            mount_cmd = f"mkdir -p {mount_path} && mount -t nfs -o vers=3 {nfs_ip}:{jpath} {mount_path}"
+    return jsonify({
+        "mounted": False,
+        "mount_path": mount_path,
+        "mount_command": mount_cmd,
+        "message": f"Mount path '{mount_path}' not yet accessible. Run the mount command below, then click Activate again."
+    })
+
+
 def _write_config_to_volume():
     """Write plan configs + role/site info as JSON files to the config volume NFS mount."""
     import os
@@ -1451,6 +1696,14 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/config-volume",           _config_volume_status)
     rpr(PLUGIN_ID, "dr/config-volume/setup",     _setup_config_volume)
     rpr(PLUGIN_ID, "dr/config-volume/nfs-volumes", _list_nfs_volumes)
+
+    # Config volume wizard
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/data",            _config_volume_wizard_data)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/svms",            _wizard_list_svms)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/aggregates",      _wizard_list_aggregates)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/create-volume",   _wizard_create_volume)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/create-snapmirror", _wizard_create_snapmirror)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/activate",        _wizard_activate_mount)
 
     # DR Sites
     rpr(PLUGIN_ID, "dr/sites",                   _list_dr_sites)
