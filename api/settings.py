@@ -508,13 +508,17 @@ _EXPORT_TABLES = [
     'netapp_volume_mapping',
     'netapp_provisioned_datastores',
     'netapp_snapshot_schedules',
+    'netapp_snapmirror_relationships',
+    'netapp_dr_sites',
+    'netapp_dr_plans',
+    'netapp_dr_plan_entries',
+    'netapp_dr_vm_groups',
+    'netapp_dr_vm_assignments',
 ]
 
 
-def _db_export():
-    err = _require_admin()
-    if err:
-        return err
+def build_export_payload():
+    """Build and return the export payload dict (usable by sync and download)."""
     db = get_db()
     payload = {
         'version': '1',
@@ -525,7 +529,14 @@ def _db_export():
     for table in _EXPORT_TABLES:
         rows = db.query(f"SELECT * FROM {table}")
         payload['tables'][table] = [dict(r) for r in rows]
+    return payload
 
+
+def _db_export():
+    err = _require_admin()
+    if err:
+        return err
+    payload = build_export_payload()
     ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     filename = f'netapp_storage_backup_{ts}.json'
     return Response(
@@ -533,6 +544,36 @@ def _db_export():
         mimetype='application/json',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
+
+
+def apply_import_payload(payload):
+    """Apply an export payload dict to the local DB. Returns stats dict."""
+    if payload.get('plugin') != 'netapp_storage':
+        raise ValueError('Backup file is not from the netapp_storage plugin')
+    if str(payload.get('version')) != '1':
+        raise ValueError(f"Unsupported backup version: {payload.get('version')}")
+    tables = payload.get('tables', {})
+    db = get_db()
+    stats = {}
+    for table in _EXPORT_TABLES:
+        rows = tables.get(table, [])
+        if not rows:
+            stats[table] = 0
+            continue
+        inserted = 0
+        for row in rows:
+            cols = ', '.join(row.keys())
+            placeholders = ', '.join(['?' for _ in row])
+            sql = f'INSERT OR REPLACE INTO {table} ({cols}) VALUES ({placeholders})'
+            try:
+                db.execute(sql, list(row.values()))
+                inserted += 1
+            except Exception as exc:
+                log.warning(f'[netapp_storage] import: skipped row in {table}: {exc}')
+        stats[table] = inserted
+    total = sum(stats.values())
+    log.info(f'[netapp_storage] DB import: {total} rows restored — {stats}')
+    return {'success': True, 'rows_imported': total, 'per_table': stats}
 
 
 def _db_import():
@@ -555,35 +596,11 @@ def _db_import():
         except Exception as exc:
             return jsonify({'error': f'Invalid JSON: {exc}'}), 400
 
-    if payload.get('plugin') != 'netapp_storage':
-        return jsonify({'error': 'Backup file is not from the netapp_storage plugin'}), 400
-    if str(payload.get('version')) != '1':
-        return jsonify({'error': f"Unsupported backup version: {payload.get('version')}"}), 400
-
-    tables = payload.get('tables', {})
-    db = get_db()
-    stats = {}
-
-    for table in _EXPORT_TABLES:
-        rows = tables.get(table, [])
-        if not rows:
-            stats[table] = 0
-            continue
-        inserted = 0
-        for row in rows:
-            cols = ', '.join(row.keys())
-            placeholders = ', '.join(['?' for _ in row])
-            sql = f'INSERT OR REPLACE INTO {table} ({cols}) VALUES ({placeholders})'
-            try:
-                db.execute(sql, list(row.values()))
-                inserted += 1
-            except Exception as exc:
-                log.warning(f'[netapp_storage] import: skipped row in {table}: {exc}')
-        stats[table] = inserted
-
-    total = sum(stats.values())
-    log.info(f'[netapp_storage] DB import: {total} rows restored — {stats}')
-    return jsonify({'success': True, 'rows_imported': total, 'per_table': stats})
+    try:
+        result = apply_import_payload(payload)
+        return jsonify(result)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 # ── Plugin Updater ────────────────────────────────────────────────────────────

@@ -173,7 +173,9 @@ CREATE TABLE IF NOT EXISTS netapp_dr_sites (
     sync_host       TEXT NOT NULL DEFAULT '',
     sync_user       TEXT NOT NULL DEFAULT 'root',
     sync_path       TEXT NOT NULL DEFAULT '/opt/PegaProx/plugins/netapp_storage/',
-    description     TEXT NOT NULL DEFAULT '',
+    pv_port                 INTEGER NOT NULL DEFAULT 443,
+    pv_api_token_encrypted  TEXT NOT NULL DEFAULT '',
+    description             TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );

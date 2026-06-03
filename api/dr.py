@@ -218,14 +218,21 @@ def _create_dr_site():
         except Exception:
             pass
 
+    token_enc = ""
+    if data.get("pv_api_token"):
+        try: token_enc = db._encrypt(data["pv_api_token"])
+        except Exception: pass
+
     db.execute(
-        "INSERT INTO netapp_dr_sites (id, name, endpoint_id, pve_host_ids, sync_host, sync_user, sync_path, sync_password_encrypted, description, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO netapp_dr_sites (id, name, endpoint_id, pve_host_ids, sync_host, sync_user, sync_path, pv_port, pv_api_token_encrypted, sync_password_encrypted, description, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (sid, name, endpoint_id,
          json.dumps(pve_host_ids),
          data.get("sync_host", ""),
          data.get("sync_user", "root"),
          data.get("sync_path", "/opt/PegaProx/plugins/netapp_storage/"),
+         int(data.get("pv_port") or 443),
+         token_enc,
          pw_enc,
          data.get("description", ""),
          now, now)
@@ -241,7 +248,8 @@ def _update_dr_site():
     db = get_db()
     if not site_id or not db.query_one("SELECT id FROM netapp_dr_sites WHERE id=?", (site_id,)):
         return {"error": "DR site not found"}, 404
-    allowed = {"name", "endpoint_id", "pve_host_ids", "sync_host", "sync_user", "sync_path", "description"}
+    allowed = {"name", "endpoint_id", "pve_host_ids", "sync_host", "sync_user", "sync_path", "pv_port", "description"}
+
     updates, params = [], []
     for k in allowed:
         if k in data:
@@ -250,14 +258,16 @@ def _update_dr_site():
             params.append(val)
     if "sync_password" in data:
         if data["sync_password"]:
-            try:
-                updates.append("sync_password_encrypted=?")
-                params.append(db._encrypt(data["sync_password"]))
-            except Exception:
-                pass
+            try: updates.append("sync_password_encrypted=?"); params.append(db._encrypt(data["sync_password"]))
+            except Exception: pass
         else:
-            updates.append("sync_password_encrypted=?")
-            params.append("")  # clear password
+            updates.append("sync_password_encrypted=?"); params.append("")
+    if "pv_api_token" in data:
+        if data["pv_api_token"]:
+            try: updates.append("pv_api_token_encrypted=?"); params.append(db._encrypt(data["pv_api_token"]))
+            except Exception: pass
+        else:
+            updates.append("pv_api_token_encrypted=?"); params.append("")
     if not updates:
         return {"error": "No fields to update"}, 400
     updates.append("updated_at=?")
@@ -565,8 +575,8 @@ def _get_dr_plan_detail():
         p["vm_groups"].append(grp)
 
     last_sync = db.query_one(
-        "SELECT state, created_at, completed_at FROM netapp_dr_jobs "
-        "WHERE plan_id=? AND job_type='sync' ORDER BY created_at DESC LIMIT 1",
+        "SELECT status, created_at, completed_at FROM netapp_jobs "
+        "WHERE snapshot_id=? AND job_type='dr_sync' ORDER BY created_at DESC LIMIT 1",
         (plan_id,)
     )
     p["last_sync_job"] = dict(last_sync) if last_sync else None
@@ -612,12 +622,45 @@ def _delete_dr_plan():
 
 # ── Plan Entries ──────────────────────────────────────────────────────────────
 
+def _lookup_primary_storage_id(db, source_endpoint_id, source_svm, source_volume):
+    """Return the primary PVE storage ID for a given source volume, or '' if not found."""
+    row = db.query_one(
+        "SELECT pve_storage_id FROM netapp_volume_mapping "
+        "WHERE endpoint_id=? AND svm_name=? AND volume_name=? LIMIT 1",
+        (source_endpoint_id, source_svm, source_volume)
+    )
+    if row and row["pve_storage_id"]:
+        return row["pve_storage_id"]
+    row = db.query_one(
+        "SELECT pve_storage_id FROM netapp_provisioned_datastores "
+        "WHERE endpoint_id=? AND svm_name=? AND volume_name=? LIMIT 1",
+        (source_endpoint_id, source_svm, source_volume)
+    )
+    return row["pve_storage_id"] if row and row["pve_storage_id"] else ""
+
+
 def _enrich_entry(entry, db):
     ep = db.query_one("SELECT name FROM netapp_endpoints WHERE id=?", (entry.get("source_endpoint_id", ""),))
     entry["source_endpoint_name"] = ep["name"] if ep else ""
     dr_ep = db.query_one("SELECT name FROM netapp_endpoints WHERE id=?", (entry.get("dr_endpoint_id", ""),))
     entry["dr_endpoint_name"] = dr_ep["name"] if dr_ep else ""
     entry["dr_pve_host_ids"] = _json_field(entry.get("dr_pve_host_ids"))
+
+    # Auto-derive dr_pve_storage_id from primary if not set (read-only lookup, no DB write here)
+    primary_storage_id = _lookup_primary_storage_id(
+        db, entry.get("source_endpoint_id", ""),
+        entry.get("source_svm", ""), entry.get("source_volume", "")
+    )
+    entry["source_pve_storage_id"] = primary_storage_id
+    if not entry.get("dr_pve_storage_id") and primary_storage_id:
+        entry["dr_pve_storage_id"] = primary_storage_id
+        # Persist silently — only on mutating requests to avoid side-effects on GET
+        if request.method in ("POST", "PUT", "PATCH"):
+            try:
+                db.execute("UPDATE netapp_dr_plan_entries SET dr_pve_storage_id=? WHERE id=?",
+                           (primary_storage_id, entry["id"]))
+            except Exception:
+                pass
     if entry.get("snapmirror_rel_uuid"):
         rel = db.query_one(
             "SELECT state, healthy, lag_time, last_transfer_time "
@@ -733,30 +776,59 @@ def _auto_detect_entries():
     data = _body()
     plan_id = (data.get("plan_id") or "").strip()
     db = get_db()
-    if not plan_id or not db.query_one("SELECT id FROM netapp_dr_plans WHERE id=?", (plan_id,)):
+    plan = db.query_one("SELECT * FROM netapp_dr_plans WHERE id=?", (plan_id,))
+    if not plan_id or not plan:
         return {"error": "DR plan not found"}, 404
-    entries = db.query(
-        "SELECT * FROM netapp_dr_plan_entries WHERE plan_id=? AND snapmirror_rel_uuid=''", (plan_id,)
+
+    site = db.query_one("SELECT * FROM netapp_dr_sites WHERE id=?", (plan["dr_site_id"],))
+    if not site:
+        return {"error": "DR site not found"}, 404
+    dr_endpoint_id = site["endpoint_id"]
+
+    # Find all SnapMirror relationships pointing to the DR endpoint
+    rels = db.query(
+        "SELECT * FROM netapp_snapmirror_relationships WHERE dest_endpoint_id=?",
+        (dr_endpoint_id,)
     ) or []
-    updated = 0
-    for e in entries:
-        rel = db.query_one(
-            "SELECT relationship_uuid, dest_endpoint_id, dest_svm, dest_volume "
-            "FROM netapp_snapmirror_relationships "
-            "WHERE source_endpoint_id=? AND source_svm=? AND source_volume=? LIMIT 1",
-            (e["source_endpoint_id"], e["source_svm"], e["source_volume"])
+
+    added = 0
+    skipped = 0
+    for rel in rels:
+        existing = db.query_one(
+            "SELECT id FROM netapp_dr_plan_entries "
+            "WHERE plan_id=? AND source_svm=? AND source_volume=?",
+            (plan_id, rel["source_svm"], rel["source_volume"])
         )
-        if rel:
-            db.execute(
-                "UPDATE netapp_dr_plan_entries SET snapmirror_rel_uuid=?, dr_endpoint_id=?, dr_svm=?, dr_volume=? WHERE id=?",
-                (rel["relationship_uuid"],
-                 rel["dest_endpoint_id"] or e["dr_endpoint_id"],
-                 rel["dest_svm"]         or e["dr_svm"],
-                 rel["dest_volume"]      or e["dr_volume"],
-                 e["id"])
-            )
-            updated += 1
-    return jsonify({"updated": updated, "total": len(entries)})
+        if existing:
+            skipped += 1
+            continue
+        max_ord = db.query_one(
+            "SELECT MAX(sort_order) as m FROM netapp_dr_plan_entries WHERE plan_id=?", (plan_id,)
+        )
+        sort_order = (max_ord["m"] or 0) + 1
+        eid = str(uuid.uuid4())[:8]
+        primary_storage_id = _lookup_primary_storage_id(
+            db, rel["source_endpoint_id"], rel["source_svm"], rel["source_volume"]
+        )
+        db.execute(
+            "INSERT INTO netapp_dr_plan_entries "
+            "(id, plan_id, source_endpoint_id, source_svm, source_volume, mapping_id, ds_id, "
+            "snapmirror_rel_uuid, dr_endpoint_id, dr_svm, dr_volume, dr_pve_storage_id, dr_pve_host_ids, sort_order, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (eid, plan_id,
+             rel["source_endpoint_id"], rel["source_svm"], rel["source_volume"],
+             "", "",
+             rel["relationship_uuid"],
+             rel["dest_endpoint_id"] or dr_endpoint_id,
+             rel["dest_svm"] or "",
+             rel["dest_volume"] or "",
+             primary_storage_id, "[]",
+             sort_order, _now())
+        )
+        added += 1
+
+    db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
+    return jsonify({"added": added, "skipped": skipped, "total": len(rels)})
 
 
 # ── VM Groups ─────────────────────────────────────────────────────────────────
@@ -1007,9 +1079,9 @@ def _sync_to_dr_site():
     now = _now()
     username = request.session.get("user", "system")
     db.execute(
-        "INSERT INTO netapp_dr_jobs (id, plan_id, job_type, state, log_json, created_by, created_at) "
+        "INSERT INTO netapp_jobs (id, job_type, snapshot_id, status, log_json, created_by, created_at) "
         "VALUES (?,?,?,?,?,?,?)",
-        (job_id, plan_id, "sync", "running", "[]", username, now)
+        (job_id, "dr_sync", plan_id, "running", "[]", username, now)
     )
     threading.Thread(target=_execute_sync, args=(job_id, plan_id, site), daemon=True).start()
     return jsonify({"job_id": job_id, "message": "Sync started"}), 202
@@ -1021,13 +1093,14 @@ def _execute_sync(job_id, plan_id, site):
     def _log(msg):
         log_lines.append({"ts": _now(), "msg": msg})
         db = get_db()
-        db.execute("UPDATE netapp_dr_jobs SET log_json=? WHERE id=?", (json.dumps(log_lines), job_id))
+        db.execute("UPDATE netapp_jobs SET log_json=? WHERE id=?", (json.dumps(log_lines), job_id))
 
     def _finish(state):
         db = get_db()
+        status = "done" if state == "success" else "failed"
         db.execute(
-            "UPDATE netapp_dr_jobs SET state=?, completed_at=?, log_json=? WHERE id=?",
-            (state, _now(), json.dumps(log_lines), job_id)
+            "UPDATE netapp_jobs SET status=?, completed_at=?, log_json=? WHERE id=?",
+            (status, _now(), json.dumps(log_lines), job_id)
         )
         if state == "success":
             db.execute("UPDATE netapp_dr_plans SET last_sync_at=?, updated_at=? WHERE id=?",
@@ -1065,10 +1138,66 @@ def _execute_sync(job_id, plan_id, site):
             return
 
         _log("[INFO] SCP completed successfully")
+
+        # Set permissions + write trigger file (PegaProx runs as non-root, needs read access)
+        sync_file_remote = f"{remote_path.rstrip('/')}/netapp_storage_dr_sync.json"
+        trigger_file     = f"{remote_path.rstrip('/')}/.dr_sync_pending"
+        perm_cmd = (
+            f"chmod 644 {sync_file_remote} 2>/dev/null; "
+            f"touch {trigger_file} && chmod 644 {trigger_file}"
+        )
+        touch_cmd = _build_ssh_cmd(host, user, password, key_path, [], remote_cmd=perm_cmd)
+        res2 = subprocess.run(touch_cmd, capture_output=True, timeout=30)
+        if res2.returncode == 0:
+            _log("[INFO] Sync file permissions set, trigger file created")
+            _log("[INFO] → Open the DR tab on the DR PegaProx to apply the import automatically")
+        else:
+            stderr2 = res2.stderr.decode(errors="replace").strip()
+            _log(f"[WARN] Could not create trigger file: {stderr2}")
+            _log("[WARN] Manual import: DR PegaProx → Settings → Data Backup/Restore → Import")
+
         _finish("success")
     except Exception as exc:
         _log(f"[ERR] Sync failed: {exc}")
         _finish("failed")
+
+
+def _check_pending_sync():
+    """Called by drInit() on the DR PegaProx when the DR tab is opened.
+    Detects a pending sync trigger file and auto-imports the sync payload.
+    No special auth needed — uses the user's existing session.
+    """
+    import os as _os, json as _json
+
+    # Find the sync file from any configured DR site path, or use the default
+    db = get_db()
+    sites = db.query("SELECT sync_path FROM netapp_dr_sites LIMIT 1") or []
+    sync_path = dict(sites[0])["sync_path"].rstrip("/") if sites else "/opt/PegaProx/plugins/netapp_storage"
+    sync_file    = f"{sync_path}/netapp_storage_dr_sync.json"
+    trigger_file = f"{sync_path}/.dr_sync_pending"
+
+    if not _os.path.exists(trigger_file):
+        return jsonify({"pending": False})
+
+    if not _os.path.exists(sync_file):
+        try: _os.unlink(trigger_file)
+        except Exception: pass
+        return jsonify({"pending": False, "error": "Sync file missing"})
+
+    try:
+        with open(sync_file) as f:
+            payload = _json.load(f)
+        from .settings import apply_import_payload
+        result = apply_import_payload(payload)
+        # Remove trigger file — ignore if not writable (root-owned)
+        try: _os.unlink(trigger_file)
+        except Exception:
+            try: open(trigger_file, 'w').close()  # truncate to 0 bytes as fallback
+            except Exception: pass
+        log.info(f"[netapp_storage] DR auto-import: {result.get('rows_imported', 0)} rows")
+        return jsonify({"pending": True, "imported": True, "rows_imported": result.get("rows_imported", 0)})
+    except Exception as exc:
+        return jsonify({"pending": True, "imported": False, "error": str(exc)})
 
 
 def _get_sync_status():
@@ -1077,17 +1206,450 @@ def _get_sync_status():
     if not plan_id or not db.query_one("SELECT id FROM netapp_dr_plans WHERE id=?", (plan_id,)):
         return {"error": "DR plan not found"}, 404
     jobs = db.query(
-        "SELECT id, state, log_json, created_at, completed_at, created_by "
-        "FROM netapp_dr_jobs WHERE plan_id=? AND job_type='sync' ORDER BY created_at DESC LIMIT 5",
+        "SELECT id, job_type, status, log_json, created_at, completed_at, created_by "
+        "FROM netapp_jobs WHERE job_type='dr_sync' AND snapshot_id=? ORDER BY created_at DESC LIMIT 5",
         (plan_id,)
     ) or []
     result = []
     for j in jobs:
         row = dict(j)
+        row["state"] = "success" if row.get("status") == "done" else row.get("status", "")
         try:
             row["log"] = json.loads(row.pop("log_json") or "[]")
         except Exception:
             row["log"] = []
+        result.append(row)
+    return jsonify(result)
+
+
+# ── Failover ─────────────────────────────────────────────────────────────────
+
+def _failover_precheck():
+    plan_id = request.args.get("plan_id") or (_body().get("plan_id") or "")
+    db = get_db()
+    plan = db.query_one("SELECT * FROM netapp_dr_plans WHERE id=?", (plan_id,))
+    if not plan:
+        return {"error": "DR plan not found"}, 404
+
+    checks = []
+
+    def _chk(name, ok, msg):
+        checks.append({"name": name, "status": "ok" if ok else "error", "message": msg})
+
+    entries = db.query("SELECT * FROM netapp_dr_plan_entries WHERE plan_id=?", (plan_id,)) or []
+    _chk("Plan entries", len(entries) > 0, f"{len(entries)} datastore(s) in plan")
+
+    missing_storage = [e["source_volume"] for e in entries if not e.get("dr_pve_storage_id")]
+    _chk("Storage IDs", not missing_storage,
+         "All entries have storage IDs" if not missing_storage
+         else f"Missing: {', '.join(missing_storage)}")
+
+    missing_hosts = [e["source_volume"] for e in entries
+                     if not _json_field(e.get("dr_pve_host_ids"))]
+    _chk("DR PVE hosts", not missing_hosts,
+         "All entries have DR host(s) assigned" if not missing_hosts
+         else f"No host assigned: {', '.join(missing_hosts)}")
+
+    missing_rel = [e["source_volume"] for e in entries if not e.get("snapmirror_rel_uuid")]
+    _chk("SnapMirror links", not missing_rel,
+         "All entries linked to SnapMirror relationships" if not missing_rel
+         else f"No relationship: {', '.join(missing_rel)}")
+
+    unhealthy = []
+    for e in entries:
+        if not e.get("snapmirror_rel_uuid"):
+            continue
+        rel = db.query_one(
+            "SELECT healthy, lag_time FROM netapp_snapmirror_relationships WHERE relationship_uuid=?",
+            (e["snapmirror_rel_uuid"],)
+        )
+        if rel and not rel["healthy"]:
+            unhealthy.append(e["source_volume"])
+    checks.append({
+        "name": "SnapMirror health",
+        "status": "warn" if unhealthy else "ok",
+        "message": f"Unhealthy: {', '.join(unhealthy)}" if unhealthy else "All relationships healthy"
+    })
+
+    vm_groups = db.query(
+        "SELECT g.*, (SELECT COUNT(*) FROM netapp_dr_vm_assignments a WHERE a.group_id=g.id) as vm_count "
+        "FROM netapp_dr_vm_groups g WHERE g.plan_id=? ORDER BY g.sort_order", (plan_id,)
+    ) or []
+    total_vms = sum(g["vm_count"] for g in vm_groups)
+    checks.append({
+        "name": "VM groups",
+        "status": "warn" if not vm_groups else "ok",
+        "message": f"{len(vm_groups)} group(s), {total_vms} VM(s)" if vm_groups
+                   else "No VM groups — storage will be mounted, VMs must be started manually"
+    })
+
+    overall = all(c["status"] in ("ok", "warn") for c in checks)
+    return jsonify({"ok": overall, "checks": checks})
+
+
+def _start_failover():
+    err = _require_admin()
+    if err: return err
+    data = _body()
+    plan_id      = (data.get("plan_id") or "").strip()
+    failover_type = (data.get("failover_type") or "planned").strip()
+    if failover_type not in ("planned", "emergency"):
+        return {"error": "failover_type must be 'planned' or 'emergency'"}, 400
+
+    db = get_db()
+    plan = db.query_one("SELECT * FROM netapp_dr_plans WHERE id=?", (plan_id,))
+    if not plan:
+        return {"error": "DR plan not found"}, 404
+    if plan["state"] in ("failover_running", "failback_running"):
+        return {"error": f"Plan is already in state '{plan['state']}'"}, 409
+
+    entry_ids    = data.get("entry_ids") or []      # empty = all entries
+    snap_map     = data.get("snap_map") or {}       # {entry_id: snap_name} — empty = latest
+
+    from flask import g as flask_g
+    username = getattr(flask_g, "username", "admin")
+    job_id = str(uuid.uuid4())[:8]
+    now = _now()
+    db.execute(
+        "INSERT INTO netapp_jobs (id, job_type, snapshot_id, status, log_json, created_by, created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (job_id, "dr_" + failover_type + "_failover", plan_id, "running", "[]", username, now)
+    )
+    db.execute("UPDATE netapp_dr_plans SET state='failover_running', updated_at=? WHERE id=?",
+               (now, plan_id))
+    threading.Thread(target=_execute_failover, args=(job_id, plan_id, failover_type, entry_ids, snap_map), daemon=True).start()
+    return jsonify({"job_id": job_id, "message": "Failover started"}), 202
+
+
+def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=None):
+    import shlex
+    from ..core._helpers import build_ontap_client, build_pve_client, get_ssh_creds, ssh_run, get_endpoint
+
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append({"ts": _now(), "msg": msg})
+        db = get_db()
+        db.execute("UPDATE netapp_jobs SET log_json=? WHERE id=?", (json.dumps(log_lines), job_id))
+
+    def _finish(state):
+        plan_state = "failed_over" if state == "success" else "standby"
+        status = "done" if state == "success" else "failed"
+        db = get_db()
+        db.execute(
+            "UPDATE netapp_jobs SET status=?, completed_at=?, log_json=? WHERE id=?",
+            (status, _now(), json.dumps(log_lines), job_id)
+        )
+        db.execute(
+            "UPDATE netapp_dr_plans SET state=?, last_failover_at=?, updated_at=? WHERE id=?",
+            (plan_state, _now(), _now(), plan_id)
+        )
+
+    try:
+        db = get_db()
+        all_entries = db.query(
+            "SELECT * FROM netapp_dr_plan_entries WHERE plan_id=? ORDER BY sort_order", (plan_id,)
+        ) or []
+        if not all_entries:
+            _log("[ERR] No plan entries found"); _finish("failed"); return
+
+        # Filter to selected entries if specified
+        if entry_ids:
+            entries = [e for e in all_entries if dict(e)["id"] in entry_ids]
+            skipped = len(all_entries) - len(entries)
+            if skipped:
+                _log(f"[INFO] {skipped} datastore(s) skipped (not selected)")
+        else:
+            entries = all_entries
+
+        _log(f"[INFO] Starting {failover_type.upper()} FAILOVER — {len(entries)} datastore(s)")
+
+        for entry in entries:
+            entry = dict(entry)
+            dr_ep_id  = entry.get("dr_endpoint_id", "")
+            dr_svm    = entry.get("dr_svm", "")
+            dr_volume = entry.get("dr_volume", "")
+            rel_uuid  = entry.get("snapmirror_rel_uuid", "")
+            storage_id = entry.get("dr_pve_storage_id", "")
+            pve_host_ids = _json_field(entry.get("dr_pve_host_ids")) or []
+
+            _log(f"[INFO] ── Datastore: {entry['source_volume']} → {dr_volume} ──")
+
+            if not rel_uuid:
+                _log(f"[WARN] No SnapMirror relationship linked — skipping {dr_volume}"); continue
+            if not storage_id:
+                _log(f"[WARN] No DR PVE Storage ID set — skipping {dr_volume}"); continue
+            if not pve_host_ids:
+                _log(f"[WARN] No DR PVE host assigned — skipping {dr_volume}"); continue
+
+            # ── 1. Get DR ONTAP client ────────────────────────────────────
+            try:
+                dr_ep = get_endpoint(db, dr_ep_id)
+                dr_client = build_ontap_client(dr_ep)
+            except Exception as exc:
+                _log(f"[ERR] Cannot connect to DR ONTAP endpoint: {exc}"); _finish("failed"); return
+
+            # ── 2. [Planned] Final SnapMirror update ──────────────────────
+            if failover_type == "planned":
+                _log("[INFO] Triggering final SnapMirror update…")
+                try:
+                    dr_client.trigger_snapmirror_transfer(rel_uuid)
+                    import time; time.sleep(5)
+                    _log("[INFO] Final update triggered")
+                except Exception as exc:
+                    _log(f"[WARN] Final update failed (continuing): {exc}")
+
+            # ── 3. Break SnapMirror ───────────────────────────────────────
+            _log(f"[INFO] Breaking SnapMirror relationship {rel_uuid}…")
+            try:
+                dr_client.snapmirror_break(rel_uuid)
+                _log("[INFO] SnapMirror broken — destination volume is now read-write")
+            except Exception as exc:
+                _log(f"[ERR] SnapMirror break failed: {exc}"); _finish("failed"); return
+
+            # ── 4. Get / set junction path ────────────────────────────────
+            _log(f"[INFO] Getting volume info for {dr_volume}…")
+            try:
+                vol = dr_client.get_volume_by_name(dr_svm, dr_volume)
+                vol_uuid  = vol.get("uuid", "")
+                junction  = (vol.get("nas") or {}).get("path", "")
+                if not junction:
+                    junction = f"/{dr_volume}"
+                    _log(f"[INFO] No junction path — mounting at {junction}")
+                    dr_client.mount_volume(vol_uuid, junction)
+                    _log(f"[INFO] Volume mounted at {junction}")
+                else:
+                    _log(f"[INFO] Junction path: {junction}")
+            except Exception as exc:
+                _log(f"[ERR] Volume info/mount failed: {exc}"); _finish("failed"); return
+
+            # ── 5. Get NFS LIF ────────────────────────────────────────────
+            try:
+                nfs_ip = dr_client.get_nfs_lif_for_svm(dr_svm)
+                if not nfs_ip:
+                    _log(f"[ERR] No NFS LIF found on DR SVM '{dr_svm}'"); _finish("failed"); return
+                _log(f"[INFO] NFS LIF: {nfs_ip}")
+            except Exception as exc:
+                _log(f"[ERR] NFS LIF lookup failed: {exc}"); _finish("failed"); return
+
+            # ── 6. Register NFS storage on DR PVE hosts ───────────────────
+            sid_q    = shlex.quote(storage_id)
+            ip_q     = shlex.quote(nfs_ip)
+            path_q   = shlex.quote(junction)
+            pvesm_cmd = (f"pvesm add nfs {sid_q}"
+                         f" --server {ip_q}"
+                         f" --export {path_q}"
+                         f" --content images,rootdir"
+                         f" --options vers=3")
+
+            for pve_host_id in pve_host_ids:
+                try:
+                    pve = build_pve_client(db, pve_host_id)
+                    su, sp, sk = get_ssh_creds(pve)
+                    sh = pve.host
+                    _log(f"[INFO] [{sh}] Registering storage '{storage_id}'…")
+                    check = ssh_run(sh, su, sp,
+                                    f"pvesm status {sid_q} 2>/dev/null && echo EXISTS || echo MISSING",
+                                    capture=True, key_material=sk)
+                    if "EXISTS" in check:
+                        _log(f"[INFO] [{sh}] Storage '{storage_id}' already registered")
+                    else:
+                        ssh_run(sh, su, sp, pvesm_cmd, key_material=sk, timeout=60)
+                        _log(f"[INFO] [{sh}] Storage '{storage_id}' registered ✓")
+                except Exception as exc:
+                    _log(f"[ERR] [{pve_host_id}] Storage registration failed: {exc}")
+                    _finish("failed"); return
+
+            # Update entry with resolved NFS info
+            db.execute(
+                "UPDATE netapp_snapmirror_relationships SET dest_nfs_ip=?, dest_junction_path=? "
+                "WHERE relationship_uuid=?",
+                (nfs_ip, junction, rel_uuid)
+            )
+
+            # ── 7a. Restore VM configs from snapmanifest on DR volume ─────
+            # .netapp-snapmanifest/<snap-name>/<vmid>.conf is replicated via SnapMirror
+            manifest_subdir = ".netapp-snapmanifest"
+            mount_base      = f"/mnt/pve/{storage_id}"
+            manifest_root   = f"{mount_base}/{manifest_subdir}"
+
+            for pve_host_id in pve_host_ids:
+                try:
+                    pve = build_pve_client(db, pve_host_id)
+                    su, sp, sk = get_ssh_creds(pve)
+                    sh = pve.host
+
+                    # Use explicitly chosen snapshot, or find most recent
+                    chosen_snap = (snap_map or {}).get(entry["id"], "")
+                    if chosen_snap:
+                        latest_dir = f"{manifest_root}/{chosen_snap}"
+                        _log(f"[INFO] [{sh}] Using selected snapshot: {chosen_snap}")
+                    else:
+                        find_latest = (
+                            f"ls -dt {shlex.quote(manifest_root)}/*/manifest.json 2>/dev/null"
+                            f" | head -1 | xargs -r dirname"
+                        )
+                        latest_dir = ssh_run(sh, su, sp, find_latest, capture=True, key_material=sk).strip()
+                        _log(f"[INFO] [{sh}] Auto-selected latest snapshot dir")
+
+                    if not latest_dir:
+                        _log(f"[INFO] [{sh}] No snapmanifest found in {manifest_root} — VM configs must be registered manually")
+                        continue
+
+                    _log(f"[INFO] [{sh}] Latest snapmanifest: {latest_dir}")
+
+                    # Get VM groups for this plan to know which VMIDs to restore
+                    vm_groups_for_conf = db.query(
+                        "SELECT a.vmid, a.vm_name FROM netapp_dr_vm_assignments a "
+                        "JOIN netapp_dr_vm_groups g ON g.id=a.group_id "
+                        "WHERE g.plan_id=?", (plan_id,)
+                    ) or []
+
+                    restored = 0
+                    for vm in vm_groups_for_conf:
+                        vmid    = vm["vmid"]
+                        vm_name = vm["vm_name"] or str(vmid)
+                        conf_src = f"{latest_dir}/{vmid}.conf"
+                        conf_dst = f"/etc/pve/qemu-server/{vmid}.conf"
+
+                        # Check conf exists in snapmanifest
+                        check = ssh_run(sh, su, sp,
+                                        f"test -f {shlex.quote(conf_src)} && echo EXISTS || echo MISSING",
+                                        capture=True, key_material=sk)
+                        if "MISSING" in check:
+                            _log(f"[WARN] [{sh}] No config for VM {vmid} in snapmanifest — skipping")
+                            continue
+
+                        # Skip if conf already registered on DR PVE
+                        existing = ssh_run(sh, su, sp,
+                                           f"test -f {shlex.quote(conf_dst)} && echo EXISTS || echo MISSING",
+                                           capture=True, key_material=sk)
+                        if "EXISTS" in existing:
+                            _log(f"[INFO] [{sh}] VM {vmid} already registered — keeping existing config")
+                            continue
+
+                        ssh_run(sh, su, sp,
+                                f"cp {shlex.quote(conf_src)} {shlex.quote(conf_dst)}",
+                                key_material=sk)
+                        _log(f"[INFO] [{sh}] VM {vmid} ({vm_name}): config restored from snapmanifest ✓")
+                        restored += 1
+
+                    if restored:
+                        _log(f"[INFO] [{sh}] {restored} VM config(s) restored from snapmanifest")
+                except Exception as exc:
+                    _log(f"[WARN] VM config restore failed on {pve_host_id}: {exc}")
+
+        # ── 7. Start VM groups ────────────────────────────────────────────
+        vm_groups = db.query(
+            "SELECT * FROM netapp_dr_vm_groups WHERE plan_id=? ORDER BY sort_order", (plan_id,)
+        ) or []
+
+        if not vm_groups:
+            _log("[INFO] No VM groups configured — storage is mounted and ready")
+        else:
+            import time
+            _log(f"[INFO] Starting {len(vm_groups)} VM group(s)…")
+            for group in vm_groups:
+                group = dict(group)
+                assignments = db.query(
+                    "SELECT * FROM netapp_dr_vm_assignments WHERE group_id=? ORDER BY start_order",
+                    (group["id"],)
+                ) or []
+                _log(f"[INFO] Group '{group['name']}' (mode={group['start_mode']}, {len(assignments)} VM(s))")
+
+                if group["start_mode"] == "manual":
+                    _log(f"[INFO] Group '{group['name']}' is MANUAL — skipping (start manually after failover)")
+                    continue
+
+                for assignment in assignments:
+                    assignment = dict(assignment)
+                    vmid       = assignment["vmid"]
+                    vm_name    = assignment.get("vm_name") or str(vmid)
+                    target_node = assignment.get("target_node") or ""
+
+                    # Find a DR PVE host to use (first available from plan entries)
+                    first_entry = next(
+                        (dict(e) for e in entries if _json_field(e.get("dr_pve_host_ids"))),
+                        None
+                    )
+                    if not first_entry:
+                        _log(f"[WARN] VM {vmid}: no DR PVE host found — skipping"); continue
+
+                    pve_host_id = _json_field(first_entry["dr_pve_host_ids"])[0]
+                    try:
+                        pve = build_pve_client(db, pve_host_id)
+                        su, sp, sk = get_ssh_creds(pve)
+                        sh = pve.host
+                        node_arg = shlex.quote(target_node) if target_node else ""
+                        # Check if VM exists
+                        check = ssh_run(sh, su, sp,
+                                        f"qm status {vmid} 2>/dev/null && echo EXISTS || echo MISSING",
+                                        capture=True, key_material=sk)
+                        if "MISSING" in check:
+                            _log(f"[WARN] VM {vmid} ({vm_name}): not registered on DR PVE — skipping")
+                            _log(f"[WARN]   → Copy /etc/pve/qemu-server/{vmid}.conf from primary to DR PVE manually")
+                            continue
+                        ssh_run(sh, su, sp, f"qm start {vmid}", key_material=sk, timeout=120)
+                        _log(f"[INFO] VM {vmid} ({vm_name}): started ✓")
+                    except Exception as exc:
+                        _log(f"[WARN] VM {vmid} ({vm_name}): start failed: {exc}")
+
+                if group["sort_order"] < (vm_groups[-1]["sort_order"] if vm_groups else 0):
+                    delay = group.get("startup_delay_sec", 30)
+                    if delay > 0:
+                        _log(f"[INFO] Waiting {delay}s before next group…")
+                        time.sleep(delay)
+
+        _log("[INFO] ✅ Failover complete")
+        _finish("success")
+
+    except Exception as exc:
+        _log(f"[ERR] Unexpected error: {exc}")
+        _finish("failed")
+
+
+def _list_dr_snapshots():
+    """List available ONTAP snapshots on a DR destination volume for snapshot selection."""
+    plan_id  = request.args.get("plan_id") or ""
+    entry_id = request.args.get("entry_id") or ""
+    db = get_db()
+    entry = db.query_one(
+        "SELECT * FROM netapp_dr_plan_entries WHERE id=? AND plan_id=?", (entry_id, plan_id)
+    )
+    if not entry:
+        return {"error": "Entry not found"}, 404
+    entry = dict(entry)
+    try:
+        from ..core._helpers import get_endpoint, build_ontap_client
+        dr_ep = get_endpoint(db, entry["dr_endpoint_id"])
+        client = build_ontap_client(dr_ep)
+        vol = client.get_volume_by_name(entry["dr_svm"], entry["dr_volume"])
+        vol_uuid = vol.get("uuid", "")
+        snaps = client.list_snapshots(vol_uuid)
+        result = [{"name": s.get("name", ""), "created": s.get("create_time", "")} for s in (snaps or [])]
+        result.sort(key=lambda s: s["created"], reverse=True)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+def _get_failover_jobs():
+    plan_id = request.args.get("plan_id") or (_body().get("plan_id") or "")
+    db = get_db()
+    if not plan_id:
+        return {"error": "plan_id required"}, 400
+    jobs = db.query(
+        "SELECT id, job_type, status, log_json, created_at, completed_at, created_by "
+        "FROM netapp_jobs WHERE snapshot_id=? AND job_type LIKE 'dr_%failover%' "
+        "ORDER BY created_at DESC LIMIT 5",
+        (plan_id,)
+    ) or []
+    result = []
+    for j in jobs:
+        row = dict(j)
+        row["state"] = "success" if row.get("status") == "done" else row.get("status", "")
+        try: row["log"] = json.loads(row.pop("log_json") or "[]")
+        except Exception: row["log"] = []
         result.append(row)
     return jsonify(result)
 
@@ -1128,3 +1690,9 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/plans/status",       _plan_status)
     rpr(PLUGIN_ID, "dr/plans/sync",         _sync_to_dr_site)
     rpr(PLUGIN_ID, "dr/plans/sync-status",  _get_sync_status)
+    rpr(PLUGIN_ID, "dr/check-pending-sync",  _check_pending_sync)
+
+    rpr(PLUGIN_ID, "dr/plans/precheck",         _failover_precheck)
+    rpr(PLUGIN_ID, "dr/plans/failover",         _start_failover)
+    rpr(PLUGIN_ID, "dr/plans/failover-jobs",    _get_failover_jobs)
+    rpr(PLUGIN_ID, "dr/plans/snapshots",        _list_dr_snapshots)
