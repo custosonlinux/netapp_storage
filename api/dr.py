@@ -420,8 +420,8 @@ def _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
     if existing:
         mapping_id = existing["id"]
         db.execute(
-            "UPDATE netapp_volume_mapping SET volume_uuid=?, junction_path=?, nfs_export_ip=?, updated_at=? WHERE id=?",  # noqa
-            (vol_uuid, junction_path, nfs_ip, now, mapping_id)
+            "UPDATE netapp_volume_mapping SET volume_uuid=?, junction_path=?, nfs_export_ip=? WHERE id=?",
+            (vol_uuid, junction_path, nfs_ip, mapping_id)
         )
     else:
         mapping_id = str(uuid.uuid4())[:8]
