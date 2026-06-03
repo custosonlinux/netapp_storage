@@ -2087,7 +2087,6 @@ class OntapClient:
             "svm":      {"name": svm_name},
             "type":     "dp",
             "guarantee":{"type": "none"},
-            "encrypt":  False,
             "snapshot_policy": {"name": "none"},
             "space":    {"snapshot": {"reserve_percent": 0}},
         }
