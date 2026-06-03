@@ -2438,7 +2438,9 @@ function renderSnapshots() {
     return '<tr'+(isNative?' style="opacity:.85"':'')+'>' +
       '<td style="padding:4px 8px"><input type="checkbox" class="snap-cb" onchange="snapUpdateBulkBar()" '+cbData+'></td>' +
       '<td><code>'+esc(s.snap_name)+'</code></td>' +
-      '<td>'+esc(s.pve_storage_id||s.volume_name||'')+'</td>' +
+      '<td><strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
+      +(s.svm_name||s.endpoint_name?'<br><span style="font-size:.75rem;color:var(--muted)">'+esc(s.svm_name||'')+(s.svm_name&&s.endpoint_name?' · ':'')+esc(s.endpoint_name||'')+'</span>':'')
+      +'</td>' +
       '<td style="max-width:200px;word-break:break-word">'+vmsHtml+'</td>' +
       '<td>'+(isNative?'<span style="color:var(--muted)">–</span>':esc(s.consistency))+'</td>' +
       '<td>'+(s.label?'<span class="badge badge-blue">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +

@@ -274,7 +274,8 @@ def _list_snapshots():
     # ── 1. Plugin-managed snapshots from DB ─────────────────────────────
     rows = db.query(
         "SELECT s.*, vm.pve_storage_id, vm.volume_name, vm.volume_uuid, vm.endpoint_id, "
-        "vm.storage_protocol, vm.lvm_vg_name, ep.san_optimized "
+        "vm.storage_protocol, vm.lvm_vg_name, vm.svm_name, "
+        "ep.name AS endpoint_name, ep.san_optimized "
         "FROM netapp_snapshots s "
         "JOIN netapp_volume_mapping vm ON vm.id = s.mapping_id "
         "JOIN netapp_endpoints ep ON ep.id = vm.endpoint_id "
@@ -297,7 +298,7 @@ def _list_snapshots():
 
     # ── 2. ONTAP-native snapshots (not in DB) ──────────────────────────
     mappings = db.query(
-        "SELECT vm.*, ep.id AS ep_id, ep.san_optimized "
+        "SELECT vm.*, ep.id AS ep_id, ep.name AS endpoint_name, ep.san_optimized "
         "FROM netapp_volume_mapping vm "
         "JOIN netapp_endpoints ep ON ep.id = vm.endpoint_id"
     )
@@ -335,6 +336,8 @@ def _list_snapshots():
                     "pve_storage_id": m["pve_storage_id"],
                     "volume_name": m["volume_name"],
                     "volume_uuid": m["volume_uuid"],
+                    "svm_name": m.get("svm_name", ""),
+                    "endpoint_name": m.get("endpoint_name", ""),
                     "storage_protocol": m.get("storage_protocol", "nfs"),
                     "lvm_vg_name": m.get("lvm_vg_name", ""),
                     "manifest_path": "",
