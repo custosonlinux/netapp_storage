@@ -1519,7 +1519,7 @@ function applyI18n() {
         <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click &ldquo;🔍 Detect&rdquo; to discover existing datastores, or &ldquo;+ Provision New&rdquo; to create one.</div>
         <table style="min-width:1040px">
           <thead><tr>
-            <th>Name</th><th>Protocol</th><th>Volume</th><th>VG / Mount</th>
+            <th>Datastore / SVM / System</th><th>Protocol</th><th>Volume</th><th>VG / Mount</th>
             <th>Hosts</th><th>Size</th><th>SnapMirror®</th><th>Status</th><th>Actions</th>
           </tr></thead>
           <tbody id="storageTbody"></tbody>
@@ -3858,8 +3858,11 @@ async function loadStorageUnified() {
           + '<button class="btn btn-danger btn-sm"'
             + ' onclick="deleteMapping(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Remove from database">✕</button>';
       }
+      var _svmEp = [ds.svm_name, ds.endpoint_name].filter(Boolean).join(' · ');
       return '<tr>'
-        + '<td><strong>'+esc(ds.name)+'</strong> '+_srcBadge+'</td>'
+        + '<td><strong>'+esc(ds.name)+'</strong> '+_srcBadge
+          + (_svmEp ? '<br><span style="font-size:.75rem;color:var(--muted)">'+esc(_svmEp)+'</span>' : '')
+          + '</td>'
         + '<td>'+_protoBadge+'</td>'
         + '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.volume_name||'–')+'</td>'
         + '<td style="font-family:var(--mono);font-size:11px">'+esc(ds.vg_name||ds.nfs_junction_path||'–')+'</td>'
