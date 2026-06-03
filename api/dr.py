@@ -563,15 +563,49 @@ def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, polic
         dr_client = build_ontap_client(dr_ep)
         _log(f"[INFO] Connected to {dr_ep.get('host', dr_endpoint_id)}")
 
-        _log("[INFO] Checking SVM peering...")
-
         def _progress(msg):
             _log(msg)
 
-        _log("[INFO] Creating SnapMirror relationship (destination volume will be created automatically)...")
-        _log("[INFO] This may take 30–90 seconds depending on cluster load...")
+        # Step 1: Pre-create destination DP volume without encryption
+        # (avoids hanging ONTAP job on AFF→FAS where encryption confirmation blocks)
+        dest_svm    = dest_path.split(":")[0]
+        dest_vol    = dest_path.split(":")[1]
+        src_svm     = source_path.split(":")[0]
+        src_vol_name = source_path.split(":")[1]
+
+        _log(f"[INFO] Checking if destination volume '{dest_vol}' already exists on DR cluster...")
+        try:
+            existing_dest = dr_client.get_volume_by_name(dest_svm, dest_vol)
+            _log(f"[INFO] Destination volume already exists (UUID: {existing_dest.get('uuid','')[:8]}…) — skipping creation")
+        except Exception:
+            existing_dest = None
+
+        if not existing_dest:
+            _log(f"[INFO] Creating DP destination volume '{dest_vol}' on {dest_svm} (encrypt=False)...")
+            try:
+                # Get source volume size
+                src_ep_row = db.query_one(
+                    "SELECT * FROM netapp_volume_mapping WHERE endpoint_id=? AND svm_name=? AND volume_name=? LIMIT 1",
+                    (dr_endpoint_id, src_svm, src_vol_name)
+                )
+                # fallback: use 1GB if source size not known
+                size_bytes = 1 * 1024 * 1024 * 1024
+
+                dp_uuid = dr_client.create_dp_volume(dest_svm, dest_vol, size_bytes)
+                if dp_uuid:
+                    _log(f"[INFO] ✅ Destination volume created (UUID: {dp_uuid[:8]}…)")
+                else:
+                    _log(f"[WARN] Volume created but UUID not returned — continuing")
+            except Exception as exc:
+                _log(f"[ERR] Failed to create destination volume: {exc}")
+                _finish(False, error=str(exc)); return
+
+        # Step 2: Create SnapMirror relationship (dest volume already exists → no create_destination)
+        _log(f"[INFO] Creating SnapMirror relationship {source_path} → {dest_path}...")
         rel_uuid = dr_client.create_snapmirror_relationship(
-            source_path, dest_path, policy, progress_cb=_progress
+            source_path, dest_path, policy,
+            progress_cb=_progress,
+            create_destination=False,
         )
 
         if not rel_uuid:

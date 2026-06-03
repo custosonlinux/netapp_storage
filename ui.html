@@ -5858,27 +5858,35 @@ async function drLoadRole() {
     var sub=document.getElementById('drRoleSubtitle');
     var badge=document.getElementById('drConfigVolBadge');
     var role=r.role||'MASTER';
-    if(role==='MASTER'){
+    var hasConfigVol=!!(r.config_volume);
+
+    // No config volume = OFFLINE (red) regardless of role
+    if(!hasConfigVol){
+      banner.style.borderColor='var(--error,#f85149)';
+      icon.textContent='🔴'; label.textContent='OFFLINE'; label.style.color='var(--error,#f85149)';
+      sub.textContent='No config volume configured — DR sync not active. Run the Setup Wizard to activate.';
+      badge.textContent='⚠ Setup required';
+      badge.style.color='var(--error,#f85149)';
+    } else if(role==='MASTER'){
       banner.style.borderColor='var(--success,#198754)';
       icon.textContent='🟢'; label.textContent='MASTER'; label.style.color='var(--success,#198754)';
       sub.textContent='This instance manages DR plans and writes config to the config volume.';
+      badge.textContent='📁 '+esc(r.config_volume.volume_name);
+      badge.style.color='var(--success,#198754)';
     } else if(role==='DR_SLAVE'){
       banner.style.borderColor='var(--warning,#ffc107)';
       icon.textContent='🟡'; label.textContent='DR SLAVE'; label.style.color='var(--warning,#a07000)';
       sub.textContent='Standby mode — reads config from SnapMirror\'d config volume. Ready for failover.';
+      badge.textContent='📁 '+esc(r.config_volume.volume_name);
+      badge.style.color='var(--warning,#a07000)';
     } else {
       banner.style.borderColor='var(--info,#0dcaf0)';
       icon.textContent='🔵'; label.textContent='DR TEST'; label.style.color='var(--info,#0a5988)';
       sub.textContent='Test mode — FlexClone-based isolated DR test.';
-    }
-    if(r.role_forced) sub.textContent+=' [forced override]';
-    if(r.config_volume){
       badge.textContent='📁 '+esc(r.config_volume.volume_name);
-      badge.style.color='var(--success,#198754)';
-    } else {
-      badge.textContent='⚠ No config volume';
-      badge.style.color='var(--warning,#a07000)';
+      badge.style.color='var(--info,#0a5988)';
     }
+    if(r.role_forced && hasConfigVol) sub.textContent+=' [forced override]';
   } catch(e){ document.getElementById('drRoleSubtitle').textContent='Could not load role info'; }
 }
 

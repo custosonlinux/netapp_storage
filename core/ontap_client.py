@@ -2076,9 +2076,39 @@ class OntapClient:
             params={"fields": "name,svm.name,type,nas.path,space.size,state"},
         )
 
+    def create_dp_volume(self, svm_name, vol_name, size_bytes=None):
+        """Create a DP (data protection) volume for SnapMirror destination.
+
+        Explicitly sets encrypt=False to avoid failures on clusters without
+        encryption license. Returns volume UUID.
+        """
+        body = {
+            "name":     vol_name,
+            "svm":      {"name": svm_name},
+            "type":     "dp",
+            "guarantee":{"type": "none"},
+            "encrypt":  False,
+            "snapshot_policy": {"name": "none"},
+            "space":    {"snapshot": {"reserve_percent": 0}},
+        }
+        if size_bytes:
+            body["size"] = size_bytes
+        resp = self._post("storage/volumes", body=body, params={"return_timeout": 30})
+        vol_uuid = resp.get("uuid", "")
+        job_uuid = (resp.get("job") or {}).get("uuid", "")
+        if job_uuid:
+            self.poll_job(job_uuid, interval_s=3, timeout_s=60)
+        if not vol_uuid:
+            for v in (self.get_volumes(svm_name=svm_name) or []):
+                if v.get("name") == vol_name:
+                    vol_uuid = v.get("uuid", "")
+                    break
+        return vol_uuid
+
     def create_snapmirror_relationship(self, source_path, dest_path,
                                        policy="MirrorAllSnapshots",
-                                       progress_cb=None):
+                                       progress_cb=None,
+                                       create_destination=True):
         """Create a SnapMirror relationship and auto-create the destination volume.
 
         source_path / dest_path format: 'svm_name:volume_name'
@@ -2096,8 +2126,9 @@ class OntapClient:
             "source":      {"path": source_path},
             "destination": {"path": dest_path},
             "policy":      {"name": policy},
-            "create_destination": {"enabled": True},
         }
+        if create_destination:
+            body["create_destination"] = {"enabled": True}
         # Use return_timeout=0 to get a job UUID immediately (avoids HTTP read timeout)
         _cb(f"[INFO] Sending SnapMirror relationship request to ONTAP...")
         resp = self._post("snapmirror/relationships", body=body,
