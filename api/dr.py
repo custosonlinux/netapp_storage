@@ -383,6 +383,16 @@ def _wizard_create_volume():
                             "nfs_ip": nfs_ip, "junction": junction,
                             "message": f"Volume '{volume_name}' already exists — linked.", "existed": True})
 
+        # Auto-select aggregate if not specified (required for FlexVol on most systems)
+        if not aggregate:
+            try:
+                aggs = client.list_aggregates()
+                if aggs:
+                    aggregate = aggs[0]["name"]
+                    log.info(f"[netapp_storage] Config volume wizard: auto-selected aggregate '{aggregate}'")
+            except Exception as exc:
+                log.warning(f"[netapp_storage] Could not auto-select aggregate: {exc}")
+
         vol_uuid = client.create_volume_nfs(svm_name, volume_name,
                                              size_gb * 1024 * 1024 * 1024,
                                              junction, aggregate_name=aggregate)
