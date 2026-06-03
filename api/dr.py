@@ -284,6 +284,45 @@ def _list_nfs_volumes():
     return jsonify([dict(r) for r in rows])
 
 
+def _remove_config_volume():
+    """POST dr/config-volume/remove — unlink config volume (optionally delete on ONTAP)."""
+    err = _require_admin()
+    if err: return err
+    data = _body()
+    delete_ontap = bool(data.get("delete_ontap", False))
+
+    db = get_db()
+    cfg = _get_plugin_config()
+    mapping_id = cfg.get("config_volume_id", "")
+
+    ontap_result = None
+    if delete_ontap and mapping_id:
+        vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (mapping_id,))
+        if vol:
+            try:
+                from ..core._helpers import get_endpoint, build_ontap_client
+                ep = get_endpoint(db, vol["endpoint_id"])
+                client = build_ontap_client(ep)
+                client.delete_volume(vol["volume_uuid"])
+                ontap_result = f"Volume '{vol['volume_name']}' deleted on ONTAP."
+            except Exception as exc:
+                ontap_result = f"ONTAP delete failed: {exc}"
+
+    # Remove from DB
+    if mapping_id:
+        db.execute("DELETE FROM netapp_volume_mapping WHERE id=? AND pve_cluster_id='dr-config'",
+                   (mapping_id,))
+    db.execute(
+        "UPDATE netapp_plugin_config SET config_volume_id='', config_mount_path='', updated_at=? WHERE id='default'",
+        (_now(),)
+    )
+
+    msg = "Config volume removed from database."
+    if ontap_result:
+        msg += " " + ontap_result
+    return jsonify({"message": msg})
+
+
 def _config_volume_wizard_data():
     """GET dr/config-volume/wizard/data — endpoints + config volume DB state."""
     db = get_db()
@@ -1722,6 +1761,7 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/role/detect",             _detect_role)
     rpr(PLUGIN_ID, "dr/config-volume",           _config_volume_status)
     rpr(PLUGIN_ID, "dr/config-volume/setup",     _setup_config_volume)
+    rpr(PLUGIN_ID, "dr/config-volume/remove",    _remove_config_volume)
     rpr(PLUGIN_ID, "dr/config-volume/nfs-volumes", _list_nfs_volumes)
 
     # Config volume wizard

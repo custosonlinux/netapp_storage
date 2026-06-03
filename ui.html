@@ -6008,11 +6008,40 @@ async function drLoadConfigVolSection() {
       +(cv.mounted?'&nbsp; <span style="color:var(--muted);font-size:.75rem">'+esc(cv.mount_path)+'</span>':'')
       +'</div>'
       +'</div></div>'
+      +'<div style="display:flex;gap:.4rem">'
       +'<button class="btn btn-ghost btn-sm" onclick="drShowConfigVolumeWizard()">⚙ Reconfigure</button>'
+      +'<button class="btn btn-danger btn-sm" onclick="drRemoveConfigVolume()">🗑 Remove</button>'
+      +'</div>'
       +'</div></div>';
   } catch(e) {
     el.innerHTML='<div class="alert alert-danger" style="font-size:.85rem">'+esc(e.message)+'</div>';
   }
+}
+
+async function drRemoveConfigVolume() {
+  var choice = await new Promise(function(resolve) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:400px">'
+      +'<div style="font-weight:600;margin-bottom:12px">🗑 Config Volume entfernen</div>'
+      +'<div style="font-size:.85rem;margin-bottom:16px">Wie soll das Config Volume entfernt werden?</div>'
+      +'<div style="display:flex;flex-direction:column;gap:.5rem">'
+      +'<button id="cvr_db" class="btn btn-danger" style="text-align:left">Nur aus Datenbank entfernen<br><span style="font-size:.75rem;opacity:.8">Volume bleibt auf ONTAP erhalten</span></button>'
+      +'<button id="cvr_ontap" class="btn btn-danger" style="text-align:left">Aus Datenbank UND ONTAP löschen<br><span style="font-size:.75rem;opacity:.8">Volume wird auf ONTAP gelöscht</span></button>'
+      +'<button id="cvr_cancel" class="btn btn-ghost">Abbrechen</button>'
+      +'</div></div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#cvr_db').onclick    = function(){ document.body.removeChild(overlay); resolve('db'); };
+    overlay.querySelector('#cvr_ontap').onclick = function(){ document.body.removeChild(overlay); resolve('ontap'); };
+    overlay.querySelector('#cvr_cancel').onclick= function(){ document.body.removeChild(overlay); resolve(null); };
+  });
+  if(!choice) return;
+  try {
+    var r = await apiPost('dr/config-volume/remove', {delete_ontap: choice==='ontap'});
+    toast(r.message, 'success');
+    drLoadRole();
+    drLoadConfigVolSection();
+  } catch(e){ toast(e.message,'error'); }
 }
 
 // ── Config Volume Wizard ─────────────────────────────────────────────────────
