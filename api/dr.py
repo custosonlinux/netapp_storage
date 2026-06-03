@@ -420,6 +420,14 @@ def _wizard_create_volume():
         ep = get_endpoint(db, endpoint_id)
         client = build_ontap_client(ep)
 
+        # Ensure dedicated export policy with RW access exists
+        export_policy = "dr-config"
+        try:
+            client.ensure_export_policy_rw(svm_name, export_policy)
+        except Exception as exc:
+            log.warning(f"[netapp_storage] Could not ensure export policy: {exc}")
+            export_policy = "default"
+
         # Check if volume already exists (get_volume_by_name raises if not found)
         try:
             existing = client.get_volume_by_name(svm_name, volume_name)
@@ -428,6 +436,10 @@ def _wizard_create_volume():
         if existing:
             vol_uuid = existing.get("uuid", "")
             nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""
+            try:
+                client.set_volume_export_policy(vol_uuid, export_policy)
+            except Exception as exc:
+                log.warning(f"[netapp_storage] Could not update export policy on existing volume: {exc}")
             _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
                                          vol_uuid, junction, nfs_ip)
             return jsonify({"volume_uuid": vol_uuid, "volume_name": volume_name,
@@ -446,7 +458,8 @@ def _wizard_create_volume():
 
         vol_uuid = client.create_volume_nfs(svm_name, volume_name,
                                              size_gb * 1024 * 1024 * 1024,
-                                             junction, aggregate_name=aggregate)
+                                             junction, aggregate_name=aggregate,
+                                             export_policy=export_policy)
         nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""
         _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
                                      vol_uuid, junction, nfs_ip)
@@ -499,10 +512,11 @@ def _wizard_create_snapmirror():
     err = _require_admin()
     if err: return err
     data = _body()
-    dr_endpoint_id = (data.get("dr_endpoint_id") or "").strip()
-    dr_svm         = (data.get("dr_svm") or "").strip()
-    dr_volume_name = (data.get("dr_volume_name") or "").strip()
-    policy         = (data.get("policy") or "MirrorAllSnapshots").strip()
+    dr_endpoint_id    = (data.get("dr_endpoint_id") or "").strip()
+    dr_svm            = (data.get("dr_svm") or "").strip()
+    dr_volume_name    = (data.get("dr_volume_name") or "").strip()
+    policy            = (data.get("policy") or "MirrorAllSnapshots").strip()
+    transfer_schedule = (data.get("transfer_schedule") or "10min").strip()
 
     if not dr_endpoint_id or not dr_svm or not dr_volume_name:
         return {"error": "dr_endpoint_id, dr_svm, dr_volume_name are required"}, 400
@@ -524,14 +538,14 @@ def _wizard_create_snapmirror():
 
     threading.Thread(
         target=_execute_cv_snapmirror,
-        args=(job_id, dr_endpoint_id, source_path, dest_path, policy),
+        args=(job_id, dr_endpoint_id, source_path, dest_path, policy, transfer_schedule),
         daemon=True
     ).start()
 
     return jsonify({"job_id": job_id, "source_path": source_path, "dest_path": dest_path}), 202
 
 
-def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, policy):
+def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, policy, transfer_schedule="10min"):
     """Async worker: create SnapMirror relationship for config volume."""
     log_lines = []
 
@@ -557,6 +571,7 @@ def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, polic
         _log(f"[INFO] Source:      {source_path}")
         _log(f"[INFO] Destination: {dest_path}")
         _log(f"[INFO] Policy:      {policy}")
+        _log(f"[INFO] Schedule:    {transfer_schedule}")
 
         _log("[INFO] Connecting to DR ONTAP cluster...")
         dr_ep = get_endpoint(db, dr_endpoint_id)
@@ -606,6 +621,7 @@ def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, polic
             source_path, dest_path, policy,
             progress_cb=_progress,
             create_destination=False,
+            transfer_schedule=transfer_schedule,
         )
 
         if not rel_uuid:
@@ -663,20 +679,29 @@ def _wizard_sm_status():
 
 def _wizard_register_pve_storage():
     """POST dr/config-volume/wizard/register-storage
-    Register the config volume as a pvesm NFS storage on the selected PVE hosts.
-    Tries each host, reports per-host result. Saves succeeded hosts to plugin_config.
+    Mount the config NFS volume directly on selected PVE hosts (no pvesm registration).
+    Adds an fstab entry for persistence. The mount is invisible in the PVE GUI.
     """
+    try:
+        return _wizard_register_pve_storage_impl()
+    except Exception as exc:
+        import traceback
+        log.error(f"[netapp_storage] register-storage unexpected error: {traceback.format_exc()}")
+        return {"error": f"Unexpected error: {exc}"}, 500
+
+
+def _wizard_register_pve_storage_impl():
     import shlex
     err = _require_admin()
     if err: return err
     data = _body()
     pve_host_ids = data.get("pve_host_ids") or []
-    storage_id   = (data.get("storage_id") or "dr-config").strip()
+    mount_point  = (data.get("mount_point") or "/mnt/netapp-dr-config").strip().rstrip("/")
 
     if not pve_host_ids:
         return {"error": "Select at least one PVE host"}, 400
-    if not storage_id:
-        return {"error": "storage_id is required"}, 400
+    if not mount_point:
+        return {"error": "mount_point is required"}, 400
 
     db = get_db()
     cfg = _get_plugin_config()
@@ -695,13 +720,21 @@ def _wizard_register_pve_storage():
 
     from ..core._helpers import build_pve_client, get_ssh_creds, ssh_run
 
-    sid_q  = shlex.quote(storage_id)
-    ip_q   = shlex.quote(nfs_ip)
-    path_q = shlex.quote(junction)
-    pvesm_add = (
-        f"pvesm status {sid_q} 2>/dev/null && echo ALREADY_EXISTS || "
-        f"(pvesm add nfs {sid_q} --server {ip_q} --export {path_q} "
-        f"--content none --options vers=3 && echo ADDED)"
+    mp_q  = shlex.quote(mount_point)
+    ip_q  = shlex.quote(nfs_ip)
+    jct_q = shlex.quote(junction)
+    src_q = shlex.quote(f"{nfs_ip}:{junction}")
+    # soft: return errors instead of hanging; noauto+x-systemd.automount: on-demand via systemd
+    fstab_entry = f"{nfs_ip}:{junction} {mount_point} nfs vers=3,soft,_netdev,noauto,x-systemd.automount 0 0"
+    fstab_q = shlex.quote(fstab_entry)
+
+    # Initial direct mount (soft); persist via fstab automount entry; reload systemd
+    mount_cmd = (
+        f"mkdir -p {mp_q} && "
+        f"(mountpoint -q {mp_q} && echo ALREADY_MOUNTED || "
+        f"(mount -t nfs -o vers=3,soft {ip_q}:{jct_q} {mp_q} && echo MOUNTED)) && "
+        f"(grep -qF {src_q} /etc/fstab || echo {fstab_q} >> /etc/fstab) && "
+        f"systemctl daemon-reload"
     )
 
     results   = []
@@ -712,12 +745,10 @@ def _wizard_register_pve_storage():
             pve = build_pve_client(db, pve_host_id)
             su, sp, sk = get_ssh_creds(pve)
             sh = pve.host
-            out = ssh_run(sh, su, sp, pvesm_add, capture=True, key_material=sk, timeout=30)
-            status = "already_registered" if "ALREADY_EXISTS" in out else "registered"
-            # Create config dir on this host
-            mount_path = f"/mnt/pve/{storage_id}"
+            out = ssh_run(sh, su, sp, mount_cmd, capture=True, key_material=sk, timeout=30)
+            status = "already_mounted" if "ALREADY_MOUNTED" in out else "mounted"
             ssh_run(sh, su, sp,
-                    f"mkdir -p {shlex.quote(mount_path)}/.netapp-dr/plans",
+                    f"mkdir -p {mp_q}/.netapp-dr/plans",
                     key_material=sk, timeout=10)
             results.append({"host": sh, "host_id": pve_host_id, "status": status})
             succeeded.append(pve_host_id)
@@ -726,24 +757,24 @@ def _wizard_register_pve_storage():
                             "status": "failed", "error": str(exc)[:200]})
 
     if not succeeded:
-        return {"error": "Storage registration failed on all selected PVE hosts",
+        return {"error": "NFS mount failed on all selected PVE hosts",
                 "results": results}, 500
 
     db.execute(
         "UPDATE netapp_plugin_config "
         "SET config_storage_id=?, config_pve_host_ids=?, updated_at=? WHERE id='default'",
-        (storage_id, json.dumps(succeeded), _now())
+        (mount_point, json.dumps(succeeded), _now())
     )
 
     # Write initial config via SSH
     written = _write_config_to_volume()
 
     return jsonify({
-        "message": f"Storage '{storage_id}' registered on {len(succeeded)}/{len(pve_host_ids)} host(s)."
+        "message": f"NFS volume mounted at '{mount_point}' on {len(succeeded)}/{len(pve_host_ids)} host(s)."
                    + (" Config files written." if written else " Warning: config write failed."),
-        "results":    results,
-        "storage_id": storage_id,
-        "written":    written,
+        "results":     results,
+        "mount_point": mount_point,
+        "written":     written,
     })
 
 
@@ -758,12 +789,12 @@ def _write_config_to_volume():
     cfg = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
     if not cfg:
         return False
+    cfg = dict(cfg)
     pve_host_ids = _json_field(cfg.get("config_pve_host_ids"))
-    storage_id   = cfg.get("config_storage_id", "")
-    if not pve_host_ids or not storage_id:
+    mount_path   = cfg.get("config_storage_id", "")
+    if not pve_host_ids or not mount_path:
         return False
 
-    mount_path = f"/mnt/pve/{storage_id}"
     config_dir = f"{mount_path}/.netapp-dr"
 
     # Build all files to write

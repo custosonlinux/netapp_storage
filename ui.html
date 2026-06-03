@@ -6080,7 +6080,7 @@ async function drShowConfigVolumeWizard() {
     document.getElementById('cvwVolumeName').value   = volName;
     document.getElementById('cvwJunction').value     = '/'+volName;
     document.getElementById('cvwDrVolumeName').value = volName+'_dp';
-    document.getElementById('cvwStorageId').value    = d.config_storage_id || 'dr-config';
+    document.getElementById('cvwMountPoint').value   = d.config_storage_id || '/mnt/netapp-dr-config';
 
     // Load PVE hosts for Step 3
     var pveHosts = d.pve_hosts || [];
@@ -6189,10 +6189,11 @@ async function cvwStep2Run() {
   res.innerHTML='<div id="cvwSmLog" style="background:var(--code-bg,#0d1117);border-radius:6px;padding:.6rem .75rem;font-family:monospace;font-size:.78rem;max-height:200px;overflow-y:auto;color:var(--muted)"></div>';
 
   var payload = {
-    dr_endpoint_id: document.getElementById('cvwDrEndpoint').value,
-    dr_svm:         document.getElementById('cvwDrSvm').value,
-    dr_volume_name: document.getElementById('cvwDrVolumeName').value.trim(),
-    policy:         document.getElementById('cvwSmPolicy').value,
+    dr_endpoint_id:     document.getElementById('cvwDrEndpoint').value,
+    dr_svm:             document.getElementById('cvwDrSvm').value,
+    dr_volume_name:     document.getElementById('cvwDrVolumeName').value.trim(),
+    policy:             document.getElementById('cvwSmPolicy').value,
+    transfer_schedule:  document.getElementById('cvwSmSchedule').value,
   };
   if(!payload.dr_endpoint_id||!payload.dr_svm||!payload.dr_volume_name){
     res.innerHTML=cvwErr('All DR fields required'); btn.disabled=false; btn.textContent='▶ Create SnapMirror'; return;
@@ -6246,24 +6247,31 @@ function cvwStep2Skip() {
 async function cvwStep3Run() {
   var btn = document.getElementById('cvwStep3Btn');
   var res = document.getElementById('cvwStep3Result');
-  btn.disabled=true; btn.textContent='Registering…'; res.innerHTML='';
-  var storage_id = document.getElementById('cvwStorageId').value.trim();
+  btn.disabled=true; btn.textContent='Mounting…'; res.innerHTML='';
+  var mount_point = document.getElementById('cvwMountPoint').value.trim();
   var pve_host_ids = Array.from(document.getElementById('cvwPveHosts').selectedOptions).map(function(o){ return o.value; });
-  if(!storage_id){ res.innerHTML=cvwErr('Enter a storage ID'); btn.disabled=false; btn.textContent='▶ Register Storage on PVE hosts'; return; }
-  if(!pve_host_ids.length){ res.innerHTML=cvwErr('Select at least one PVE host'); btn.disabled=false; btn.textContent='▶ Register Storage on PVE hosts'; return; }
+  if(!mount_point){ res.innerHTML=cvwErr('Enter a mount path'); btn.disabled=false; btn.textContent='▶ Mount on PVE hosts'; return; }
+  if(!pve_host_ids.length){ res.innerHTML=cvwErr('Select at least one PVE host'); btn.disabled=false; btn.textContent='▶ Mount on PVE hosts'; return; }
   try {
-    var r = await apiPost('dr/config-volume/wizard/register-storage', {storage_id, pve_host_ids});
+    var r = await apiPost('dr/config-volume/wizard/register-storage', {mount_point, pve_host_ids});
     var hostResults = (r.results||[]).map(function(h){
       var icon = h.status==='failed' ? '❌' : '✅';
-      var detail = h.status==='already_registered' ? ' (already registered)' : h.status==='registered' ? ' (registered)' : ' — '+esc(h.error||'');
+      var detail = h.status==='already_mounted' ? ' (already mounted)' : h.status==='mounted' ? ' (mounted)' : ' — '+esc(h.error||'');
       return icon+' '+esc(h.host)+detail;
     }).join('<br>');
     res.innerHTML = cvwOk(esc(r.message)) + (hostResults ? '<div style="font-size:.78rem;margin-top:.3rem">'+hostResults+'</div>' : '');
     if(r.written !== false) {
       setTimeout(function(){ drHideModal('cvWizard'); drLoadRole(); drLoadConfigVolSection(); }, 2000);
     }
-  } catch(e){ res.innerHTML=cvwErr(e.message); }
-  btn.disabled=false; btn.textContent='▶ Register Storage on PVE hosts';
+  } catch(e){
+    var hostResults = (((e.data||{}).results)||[]).map(function(h){
+      var icon = h.status==='failed' ? '❌' : '✅';
+      var detail = h.status==='already_mounted' ? ' (already mounted)' : h.status==='mounted' ? ' (mounted)' : ' — '+esc(h.error||'');
+      return icon+' '+esc(h.host)+detail;
+    }).join('<br>');
+    res.innerHTML = cvwErr(e.message) + (hostResults ? '<div style="font-size:.78rem;margin-top:.3rem">'+hostResults+'</div>' : '');
+  }
+  btn.disabled=false; btn.textContent='▶ Mount on PVE hosts';
 }
 
 function cvwOk(msg){ return '<div style="color:var(--success,#198754);font-size:.82rem;padding:.3rem 0">✅ '+msg+'</div>'; }
@@ -7871,6 +7879,14 @@ loadSnapshots();
           </select>
         </div>
       </div>
+      <div class="form-group" style="max-width:220px">
+        <label style="font-size:.82rem">Transfer Schedule</label>
+        <select id="cvwSmSchedule">
+          <option value="10min" selected>every 10 min</option>
+          <option value="5min">every 5 min</option>
+          <option value="hourly">hourly</option>
+        </select>
+      </div>
       <div id="cvwStep2Result" style="margin-bottom:.5rem"></div>
       <div style="display:flex;gap:.5rem">
         <button id="cvwStep2Btn" class="btn btn-primary" onclick="cvwStep2Run()">▶ Create SnapMirror</button>
@@ -7878,20 +7894,20 @@ loadSnapshots();
       </div>
     </div>
 
-    <!-- Step 3: Register on PVE hosts -->
+    <!-- Step 3: Mount on PVE hosts -->
     <div id="cvwPanel3" style="display:none;padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Register the config volume as a PVE NFS storage on one or more PVE hosts. PegaProx writes config files via SSH to whichever host is reachable — no direct NFS access from the PegaProx VM needed.</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Mount the config volume directly on the PVE hosts via NFS. The mount is not registered in PVE and not visible in the GUI — PegaProx writes config files via SSH to whichever host is reachable.</div>
       <div class="form-group">
-        <label style="font-size:.82rem">Storage ID <span style="font-weight:400;color:var(--muted)">(pvesm name on PVE hosts)</span></label>
-        <input id="cvwStorageId" value="dr-config" autocomplete="off">
+        <label style="font-size:.82rem">Mount Path <span style="font-weight:400;color:var(--muted)">(on each PVE host — created if missing)</span></label>
+        <input id="cvwMountPoint" value="/mnt/netapp-dr-config" autocomplete="off">
       </div>
       <div class="form-group">
-        <label style="font-size:.82rem">PVE Host(s) <span style="font-weight:400;color:var(--muted)">(Ctrl+click for multiple — all selected hosts get the storage registered)</span></label>
+        <label style="font-size:.82rem">PVE Host(s) <span style="font-weight:400;color:var(--muted)">(Ctrl+click for multiple — all selected hosts get the volume mounted)</span></label>
         <select id="cvwPveHosts" multiple size="4" style="width:100%"></select>
       </div>
       <div id="cvwStep3Result" style="margin-bottom:.5rem"></div>
       <div style="display:flex;gap:.5rem">
-        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Register Storage on PVE hosts</button>
+        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Mount on PVE hosts</button>
       </div>
     </div>
   </div>

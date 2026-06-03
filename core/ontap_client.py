@@ -1953,6 +1953,23 @@ class OntapClient:
             raise OntapError(f"Export policy '{policy_name}' not found after creation")
         return policy_id
 
+    def ensure_export_policy_rw(self, svm_name, policy_name, client_match="0.0.0.0/0"):
+        """Get or create an export policy and ensure it has a RW rule. Returns policy id."""
+        records = self._get_all_records(
+            "protocols/nfs/export-policies",
+            params={"name": policy_name, "svm.name": svm_name,
+                    "fields": "id", "max_records": 5},
+        )
+        if records:
+            policy_id = records[0].get("id", 0)
+        else:
+            policy_id = self.create_export_policy(svm_name, policy_name)
+        try:
+            self.add_nfs_export_rule_rw(policy_id, client_match)
+        except Exception:
+            pass  # rule already exists
+        return policy_id
+
     def add_nfs_export_rule_rw(self, export_policy_id, client_match="0.0.0.0/0"):
         """Adds a read-write NFS export rule (used for provisioned datastores)."""
         body = {
@@ -2082,13 +2099,19 @@ class OntapClient:
         Explicitly sets encrypt=False to avoid failures on clusters without
         encryption license. Returns volume UUID.
         """
+        aggregates = self.list_aggregates()
+        if not aggregates:
+            raise RuntimeError("No aggregates found on DR cluster")
+        agg = max(aggregates, key=lambda a: a["available_bytes"])
         body = {
-            "name":     vol_name,
-            "svm":      {"name": svm_name},
-            "type":     "dp",
-            "guarantee":{"type": "none"},
+            "name":       vol_name,
+            "svm":        {"name": svm_name},
+            "type":       "dp",
+            "style":      "flexvol",
+            "aggregates": [{"name": agg["name"]}],
+            "guarantee":  {"type": "none"},
             "snapshot_policy": {"name": "none"},
-            "space":    {"snapshot": {"reserve_percent": 0}},
+            "space":      {"snapshot": {"reserve_percent": 0}},
         }
         if size_bytes:
             body["size"] = size_bytes
@@ -2107,7 +2130,8 @@ class OntapClient:
     def create_snapmirror_relationship(self, source_path, dest_path,
                                        policy="MirrorAllSnapshots",
                                        progress_cb=None,
-                                       create_destination=True):
+                                       create_destination=True,
+                                       transfer_schedule=None):
         """Create a SnapMirror relationship and auto-create the destination volume.
 
         source_path / dest_path format: 'svm_name:volume_name'
@@ -2126,6 +2150,8 @@ class OntapClient:
             "destination": {"path": dest_path},
             "policy":      {"name": policy},
         }
+        if transfer_schedule:
+            body["transfer_schedule"] = {"name": transfer_schedule}
         if create_destination:
             body["create_destination"] = {"enabled": True}
         # Use return_timeout=0 to get a job UUID immediately (avoids HTTP read timeout)
