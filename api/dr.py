@@ -569,12 +569,9 @@ def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, polic
             _log(msg)
 
         _log("[INFO] Creating SnapMirror relationship (destination volume will be created automatically)...")
-        _log("[INFO] Encryption on destination: disabled (avoids failures on clusters without encryption license)")
         _log("[INFO] This may take 30–90 seconds depending on cluster load...")
         rel_uuid = dr_client.create_snapmirror_relationship(
-            source_path, dest_path, policy,
-            progress_cb=_progress,
-            encrypt_destination=False,
+            source_path, dest_path, policy, progress_cb=_progress
         )
 
         if not rel_uuid:

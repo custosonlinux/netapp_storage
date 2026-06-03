@@ -2078,8 +2078,7 @@ class OntapClient:
 
     def create_snapmirror_relationship(self, source_path, dest_path,
                                        policy="MirrorAllSnapshots",
-                                       progress_cb=None,
-                                       encrypt_destination=False):
+                                       progress_cb=None):
         """Create a SnapMirror relationship and auto-create the destination volume.
 
         source_path / dest_path format: 'svm_name:volume_name'
@@ -2093,15 +2092,11 @@ class OntapClient:
             if progress_cb:
                 progress_cb(msg)
 
-        create_dest = {"enabled": True}
-        if encrypt_destination is not None:
-            create_dest["encrypt"] = encrypt_destination
-
         body = {
             "source":      {"path": source_path},
             "destination": {"path": dest_path},
             "policy":      {"name": policy},
-            "create_destination": create_dest,
+            "create_destination": {"enabled": True},
         }
         # Use return_timeout=0 to get a job UUID immediately (avoids HTTP read timeout)
         _cb(f"[INFO] Sending SnapMirror relationship request to ONTAP...")
