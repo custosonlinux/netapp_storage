@@ -369,8 +369,11 @@ def _wizard_create_volume():
         ep = get_endpoint(db, endpoint_id)
         client = build_ontap_client(ep)
 
-        # Check if volume already exists
-        existing = client.get_volume_by_name(svm_name, volume_name)
+        # Check if volume already exists (get_volume_by_name raises if not found)
+        try:
+            existing = client.get_volume_by_name(svm_name, volume_name)
+        except Exception:
+            existing = None
         if existing:
             vol_uuid = existing.get("uuid", "")
             nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""

@@ -1575,7 +1575,6 @@ function applyI18n() {
       <!-- Config Volume Status Section -->
       <div class="sub-header">
         <span class="sub-header-title">🗄 DR Config Volume</span>
-        <button class="btn btn-ghost btn-sm" onclick="drShowConfigVolumeWizard()">🔧 Setup Wizard</button>
       </div>
       <div id="drConfigVolSection" style="margin-bottom:1.5rem"><div class="muted-hint">Loading…</div></div>
 
@@ -6024,37 +6023,42 @@ var _cvwData = {};   // accumulated wizard state
 async function drShowConfigVolumeWizard() {
   _cvwStep = 1;
   _cvwData = {};
-  document.getElementById('cvwStep1Result').innerHTML='';
-  document.getElementById('cvwStep2Result').innerHTML='';
-  document.getElementById('cvwStep3Result').innerHTML='';
+  ['cvwStep1Result','cvwStep2Result','cvwStep3Result'].forEach(function(id){ document.getElementById(id).innerHTML=''; });
   document.getElementById('cvwStep3MountCmd').style.display='none';
 
-  // Pre-load endpoints
   try {
     var d = await apiFetch('dr/config-volume/wizard/data');
     var eps = d.endpoints || [];
     var epOpts = eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join('');
-    document.getElementById('cvwEndpoint').innerHTML = epOpts || '<option value="">— no endpoints —</option>';
-    document.getElementById('cvwDrEndpoint').innerHTML = epOpts || '<option value="">— no endpoints —</option>';
+    document.getElementById('cvwEndpoint').innerHTML   = epOpts || '<option value="">— keine Endpoints —</option>';
+    document.getElementById('cvwDrEndpoint').innerHTML = epOpts || '<option value="">— keine Endpoints —</option>';
+
+    var volName = (d.config_volume && d.config_volume.volume_name) || 'vol_dr_config';
+    document.getElementById('cvwVolumeName').value   = volName;
+    document.getElementById('cvwJunction').value     = '/'+volName;
+    document.getElementById('cvwDrVolumeName').value = volName+'_dp';
+    document.getElementById('cvwMountPath').value    = (d.config_volume && d.config_volume.mount_path) || '/mnt/dr-config';
+
     cvwEndpointChanged();
     cvwDrEndpointChanged();
-
-    // Pre-fill if already configured
-    if(d.config_volume) {
-      document.getElementById('cvwVolumeName').value = d.config_volume.volume_name || 'vol_dr_config';
-      document.getElementById('cvwDrVolumeName').value = (d.config_volume.volume_name||'vol_dr_config')+'_dp';
-      document.getElementById('cvwMountPath').value = d.config_volume.mount_path || '/mnt/dr-config';
-    }
   } catch(e){}
 
   cvwRenderSteps();
   drShowModal('cvWizard');
 }
 
+function cvwVolumeNameChanged() {
+  var name = document.getElementById('cvwVolumeName').value.trim();
+  if(name) {
+    document.getElementById('cvwJunction').value = '/'+name;
+    document.getElementById('cvwDrVolumeName').value = name+'_dp';
+  }
+}
+
 function cvwRenderSteps() {
   [1,2,3].forEach(function(n){
     var panel = document.getElementById('cvwPanel'+n);
-    panel.style.display = n===_cvwStep ? '' : 'none';
+    panel.style.display = n===_cvwStep ? 'block' : 'none';
     var dot = document.getElementById('cvwDot'+n);
     dot.style.background = n < _cvwStep ? 'var(--success,#198754)' : n===_cvwStep ? 'var(--primary,#0d6efd)' : 'var(--border)';
     dot.style.color = n <= _cvwStep ? '#fff' : 'var(--muted)';
@@ -6066,28 +6070,38 @@ async function cvwEndpointChanged() {
   if(!epId) return;
   var svm = document.getElementById('cvwSvm');
   var agg = document.getElementById('cvwAggregate');
-  svm.innerHTML='<option value="">Loading…</option>';
-  agg.innerHTML='<option value="">Auto (recommended)</option>';
+  svm.innerHTML='<option value="">Lädt…</option>';
+  agg.innerHTML='<option value="">Auto (empfohlen)</option>';
   try {
     var svms = await apiFetch('dr/config-volume/wizard/svms?endpoint_id='+epId);
     svm.innerHTML = svms.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
-  } catch(e){ svm.innerHTML='<option value="">Error: '+esc(e.message)+'</option>'; }
+    cvwSvmChanged();
+  } catch(e){ svm.innerHTML='<option value="">Fehler: '+esc(e.message)+'</option>'; }
   try {
     var aggs = await apiFetch('dr/config-volume/wizard/aggregates?endpoint_id='+epId);
-    agg.innerHTML='<option value="">Auto (recommended)</option>'
-      +aggs.map(function(a){ return '<option value="'+esc(a.name)+'">'+esc(a.name)+' ('+Math.round((a.available_bytes||0)/1073741824)+'GB free)</option>'; }).join('');
+    agg.innerHTML='<option value="">Auto (empfohlen)</option>'
+      +aggs.map(function(a){ return '<option value="'+esc(a.name)+'">'+esc(a.name)+' ('+Math.round((a.available_bytes||0)/1073741824)+' GB frei)</option>'; }).join('');
   } catch(e){}
+}
+
+function cvwSvmChanged() {
+  var svmVal = document.getElementById('cvwSvm').value;
+  var drSvm = document.getElementById('cvwDrSvm');
+  if(svmVal && drSvm) {
+    var found = Array.from(drSvm.options).some(function(o){ return o.value===svmVal; });
+    if(found) drSvm.value = svmVal;
+  }
 }
 
 async function cvwDrEndpointChanged() {
   var epId = document.getElementById('cvwDrEndpoint').value;
   if(!epId) return;
   var svm = document.getElementById('cvwDrSvm');
-  svm.innerHTML='<option value="">Loading…</option>';
+  svm.innerHTML='<option value="">Lädt…</option>';
   try {
     var svms = await apiFetch('dr/config-volume/wizard/svms?endpoint_id='+epId);
     svm.innerHTML = svms.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
-  } catch(e){ svm.innerHTML='<option value="">Error: '+esc(e.message)+'</option>'; }
+  } catch(e){ svm.innerHTML='<option value="">Fehler: '+esc(e.message)+'</option>'; }
 }
 
 async function cvwStep1Run() {
@@ -7680,33 +7694,33 @@ loadSnapshots();
 
 <!-- Config Volume Wizard -->
 <div id="cvWizardModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('cvWizard')">
-  <div style="max-width:600px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700">🗄 DR Config Volume Setup</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('cvWizard')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
 
     <!-- Step indicator -->
-    <div style="display:flex;align-items:center;gap:0;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="display:flex;align-items:center;gap:.5rem;flex:1">
-        <div id="cvwDot1" style="width:24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0">1</div>
-        <span style="font-size:.82rem;font-weight:600">Create Volume</span>
+    <div style="display:flex;align-items:center;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--bg);gap:0">
+      <div style="display:flex;align-items:center;gap:.4rem;flex:1">
+        <div id="cvwDot1" style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0">1</div>
+        <span style="font-size:.8rem;font-weight:600">Create Volume</span>
       </div>
-      <div style="height:2px;width:32px;background:var(--border);flex-shrink:0"></div>
-      <div style="display:flex;align-items:center;gap:.5rem;flex:1;margin-left:.5rem">
-        <div id="cvwDot2" style="width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0">2</div>
-        <span style="font-size:.82rem;font-weight:600">SnapMirror</span>
+      <div style="height:1px;width:24px;background:var(--border);flex-shrink:0"></div>
+      <div style="display:flex;align-items:center;gap:.4rem;flex:1;margin-left:.4rem">
+        <div id="cvwDot2" style="width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0">2</div>
+        <span style="font-size:.8rem;font-weight:600">SnapMirror</span>
       </div>
-      <div style="height:2px;width:32px;background:var(--border);flex-shrink:0"></div>
-      <div style="display:flex;align-items:center;gap:.5rem;flex:1;margin-left:.5rem">
-        <div id="cvwDot3" style="width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0">3</div>
-        <span style="font-size:.82rem;font-weight:600">Mount &amp; Activate</span>
+      <div style="height:1px;width:24px;background:var(--border);flex-shrink:0"></div>
+      <div style="display:flex;align-items:center;gap:.4rem;flex:1;margin-left:.4rem">
+        <div id="cvwDot3" style="width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0">3</div>
+        <span style="font-size:.8rem;font-weight:600">Mount &amp; Activate</span>
       </div>
     </div>
 
     <!-- Step 1: Create Volume -->
-    <div id="cvwPanel1" style="padding:20px;display:grid;gap:.75rem">
-      <div style="font-size:.82rem;color:var(--muted)">Create a small dedicated NFS volume on the primary ONTAP cluster. This volume stores DR config JSON files and will be SnapMirror'd to the DR cluster.</div>
+    <div id="cvwPanel1" style="padding:20px">
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Create a small dedicated NFS volume on the primary ONTAP cluster. This volume stores DR config JSON files and will be SnapMirror'd to the DR cluster.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
         <div class="form-group">
           <label style="font-size:.82rem">Primary ONTAP Endpoint</label>
@@ -7714,36 +7728,36 @@ loadSnapshots();
         </div>
         <div class="form-group">
           <label style="font-size:.82rem">SVM</label>
-          <select id="cvwSvm" style="width:100%"></select>
+          <select id="cvwSvm" onchange="cvwSvmChanged()" style="width:100%"></select>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.5rem">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:.5rem">
         <div class="form-group">
           <label style="font-size:.82rem">Volume Name</label>
-          <input id="cvwVolumeName" value="vol_dr_config" autocomplete="off">
+          <input id="cvwVolumeName" value="vol_dr_config" autocomplete="off" oninput="cvwVolumeNameChanged()">
         </div>
         <div class="form-group">
           <label style="font-size:.82rem">Size (GB)</label>
           <input id="cvwSizeGb" type="number" value="1" min="1" max="100">
         </div>
-        <div class="form-group">
-          <label style="font-size:.82rem">Junction Path</label>
-          <input id="cvwJunction" placeholder="/vol_dr_config" autocomplete="off">
-        </div>
       </div>
       <div class="form-group">
-        <label style="font-size:.82rem">Aggregate <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-        <select id="cvwAggregate" style="width:100%"><option value="">Auto (recommended)</option></select>
+        <label style="font-size:.82rem">Junction Path</label>
+        <input id="cvwJunction" value="/vol_dr_config" autocomplete="off">
       </div>
-      <div id="cvwStep1Result"></div>
-      <div style="display:flex;justify-content:flex-end">
-        <button id="cvwStep1Btn" class="btn btn-primary" onclick="cvwStep1Run()">▶ Create Volume</button>
+      <div class="form-group">
+        <label style="font-size:.82rem">Aggregate <span style="font-weight:400;color:var(--muted)">(leer = automatisch)</span></label>
+        <select id="cvwAggregate" style="width:100%"><option value="">Auto (empfohlen)</option></select>
+      </div>
+      <div id="cvwStep1Result" style="margin-bottom:.5rem"></div>
+      <div style="display:flex;gap:.5rem">
+        <button id="cvwStep1Btn" class="btn btn-primary" onclick="cvwStep1Run()">▶ Volume anlegen</button>
       </div>
     </div>
 
     <!-- Step 2: SnapMirror -->
-    <div id="cvwPanel2" style="display:none;padding:20px;display:grid;gap:.75rem">
-      <div style="font-size:.82rem;color:var(--muted)">Create a SnapMirror relationship from the config volume to the DR cluster. Cluster peering must already be established.</div>
+    <div id="cvwPanel2" style="display:none;padding:20px">
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">SnapMirror-Beziehung vom Config-Volume zum DR-Cluster anlegen. Cluster-Peering muss bereits eingerichtet sein.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
         <div class="form-group">
           <label style="font-size:.82rem">DR ONTAP Endpoint</label>
@@ -7768,31 +7782,32 @@ loadSnapshots();
           </select>
         </div>
       </div>
-      <div id="cvwStep2Result"></div>
-      <div style="display:flex;justify-content:space-between">
-        <button class="btn btn-ghost" onclick="cvwStep2Skip()">⏭ Skip (configure later)</button>
-        <button id="cvwStep2Btn" class="btn btn-primary" onclick="cvwStep2Run()">▶ Create SnapMirror</button>
+      <div id="cvwStep2Result" style="margin-bottom:.5rem"></div>
+      <div style="display:flex;gap:.5rem">
+        <button id="cvwStep2Btn" class="btn btn-primary" onclick="cvwStep2Run()">▶ SnapMirror anlegen</button>
+        <button class="btn btn-ghost" onclick="cvwStep2Skip()">⏭ Überspringen</button>
       </div>
     </div>
 
     <!-- Step 3: Mount & Activate -->
-    <div id="cvwPanel3" style="display:none;padding:20px;display:grid;gap:.75rem">
-      <div style="font-size:.82rem;color:var(--muted)">Mount the config volume on this PegaProx server and activate it. Since PegaProx runs as a non-root user, the mount must be done manually by an admin.</div>
+    <div id="cvwPanel3" style="display:none;padding:20px">
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Config-Volume auf diesem PegaProx-Server mounten und aktivieren. Da PegaProx nicht als root läuft, muss der Mount manuell durch einen Admin erfolgen.</div>
       <div class="form-group">
-        <label style="font-size:.82rem">Mount Path on this server</label>
+        <label style="font-size:.82rem">Mount-Pfad auf diesem Server</label>
         <input id="cvwMountPath" value="/mnt/dr-config" autocomplete="off">
       </div>
-      <div id="cvwStep3Result"></div>
-      <div id="cvwStep3MountCmd" style="display:none;background:var(--code-bg,#0d1117);border-radius:6px;padding:.75rem;font-family:monospace;font-size:.8rem">
-        <div style="color:var(--muted);margin-bottom:.3rem">Run this command as root on the PegaProx server:</div>
+      <div id="cvwStep3Result" style="margin-bottom:.5rem"></div>
+      <div id="cvwStep3MountCmd" style="display:none;background:var(--code-bg,#0d1117);border-radius:6px;padding:.75rem;font-family:monospace;font-size:.8rem;margin-bottom:.5rem">
+        <div style="color:var(--muted);margin-bottom:.3rem">Als root auf dem PegaProx-Server ausführen:</div>
         <code style="color:var(--success,#3fb950);word-break:break-all"></code>
       </div>
-      <div style="display:flex;justify-content:flex-end">
-        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Activate</button>
+      <div style="display:flex;gap:.5rem">
+        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Aktivieren</button>
       </div>
     </div>
   </div>
 </div>
+
 
 <!-- Add DR Site -->
 <div id="drAddSiteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddSite')">
