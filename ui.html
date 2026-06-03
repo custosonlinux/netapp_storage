@@ -6172,27 +6172,65 @@ async function cvwStep1Run() {
   btn.disabled=false; btn.textContent='▶ Create Volume';
 }
 
+var _cvwSmPollTimer = null;
+
 async function cvwStep2Run() {
   var btn = document.getElementById('cvwStep2Btn');
   var res = document.getElementById('cvwStep2Result');
-  btn.disabled=true; btn.textContent='Creating…'; res.innerHTML='';
+  btn.disabled=true; btn.textContent='Starting…';
+  res.innerHTML='<div id="cvwSmLog" style="background:var(--code-bg,#0d1117);border-radius:6px;padding:.6rem .75rem;font-family:monospace;font-size:.78rem;max-height:200px;overflow-y:auto;color:var(--muted)"></div>';
+
   var payload = {
     dr_endpoint_id: document.getElementById('cvwDrEndpoint').value,
     dr_svm:         document.getElementById('cvwDrSvm').value,
     dr_volume_name: document.getElementById('cvwDrVolumeName').value.trim(),
     policy:         document.getElementById('cvwSmPolicy').value,
   };
-  if(!payload.dr_endpoint_id||!payload.dr_svm||!payload.dr_volume_name){ res.innerHTML=cvwErr('All DR fields required'); btn.disabled=false; btn.textContent='▶ Create SnapMirror'; return; }
+  if(!payload.dr_endpoint_id||!payload.dr_svm||!payload.dr_volume_name){
+    res.innerHTML=cvwErr('All DR fields required'); btn.disabled=false; btn.textContent='▶ Create SnapMirror'; return;
+  }
+
+  function _appendLog(entries) {
+    var logEl = document.getElementById('cvwSmLog');
+    if(!logEl) return;
+    logEl.innerHTML = entries.map(function(l){
+      var col = l.msg.includes('[ERR]') ? 'var(--error,#f85149)' : l.msg.includes('[WARN]') ? 'var(--warning,#e3a008)' : l.msg.includes('✅') ? 'var(--success,#3fb950)' : 'var(--muted)';
+      return '<div style="color:'+col+';margin-bottom:1px">'+esc(l.ts.slice(11,19))+' '+esc(l.msg)+'</div>';
+    }).join('');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
   try {
     var r = await apiPost('dr/config-volume/wizard/create-snapmirror', payload);
-    _cvwData.snapmirror = r;
-    res.innerHTML = cvwOk(r.message);
-    _cvwStep=3; cvwRenderSteps();
-  } catch(e){ res.innerHTML=cvwErr(e.message); }
-  btn.disabled=false; btn.textContent='▶ Create SnapMirror';
+    var jobId = r.job_id;
+    btn.textContent='Running…';
+
+    // Poll until done
+    if(_cvwSmPollTimer) clearInterval(_cvwSmPollTimer);
+    _cvwSmPollTimer = setInterval(async function(){
+      try {
+        var s = await apiFetch('dr/config-volume/wizard/sm-status?job_id='+jobId);
+        _appendLog(s.log||[]);
+        if(s.status !== 'running') {
+          clearInterval(_cvwSmPollTimer);
+          if(s.status === 'done') {
+            _cvwData.snapmirror = s;
+            setTimeout(function(){ _cvwStep=3; cvwRenderSteps(); }, 1200);
+          } else {
+            var errMsg = (s.log||[]).filter(function(l){ return l.msg.includes('[ERR]'); }).map(function(l){ return l.msg; }).join('\n');
+            res.innerHTML += cvwErr(errMsg || 'SnapMirror creation failed');
+          }
+          btn.disabled=false; btn.textContent='▶ Create SnapMirror';
+        }
+      } catch(e){ clearInterval(_cvwSmPollTimer); res.innerHTML+=cvwErr(e.message); btn.disabled=false; btn.textContent='▶ Create SnapMirror'; }
+    }, 2000);
+  } catch(e){
+    res.innerHTML=cvwErr(e.message); btn.disabled=false; btn.textContent='▶ Create SnapMirror';
+  }
 }
 
 function cvwStep2Skip() {
+  if(_cvwSmPollTimer) clearInterval(_cvwSmPollTimer);
   document.getElementById('cvwStep2Result').innerHTML='<div style="font-size:.82rem;color:var(--muted)">Skipped — configure SnapMirror later.</div>';
   _cvwStep=3; cvwRenderSteps();
 }

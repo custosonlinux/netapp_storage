@@ -493,7 +493,9 @@ def _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
 
 
 def _wizard_create_snapmirror():
-    """POST dr/config-volume/wizard/create-snapmirror — create SnapMirror for config volume."""
+    """POST dr/config-volume/wizard/create-snapmirror — create SnapMirror for config volume.
+    Returns a job_id; frontend polls dr/config-volume/wizard/sm-status?job_id=...
+    """
     err = _require_admin()
     if err: return err
     data = _body()
@@ -517,40 +519,112 @@ def _wizard_create_snapmirror():
     source_path = f"{vol['svm_name']}:{vol['volume_name']}"
     dest_path   = f"{dr_svm}:{dr_volume_name}"
 
+    username = request.session.get("user", "admin")
+    job_id = _dr_start_job("dr_cv_snapmirror", username)
+
+    threading.Thread(
+        target=_execute_cv_snapmirror,
+        args=(job_id, dr_endpoint_id, source_path, dest_path, policy),
+        daemon=True
+    ).start()
+
+    return jsonify({"job_id": job_id, "source_path": source_path, "dest_path": dest_path}), 202
+
+
+def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, policy):
+    """Async worker: create SnapMirror relationship for config volume."""
+    log_lines = []
+
+    def _log(msg):
+        log_lines.append({"ts": _now(), "msg": msg})
+        db = get_db()
+        db.execute("UPDATE netapp_jobs SET log_json=? WHERE id=?", (json.dumps(log_lines), job_id))
+
+    def _finish(ok, rel_uuid="", error=""):
+        status = "done" if ok else "failed"
+        db = get_db()
+        db.execute(
+            "UPDATE netapp_jobs SET status=?, completed_at=?, log_json=? WHERE id=?",
+            (status, _now(), json.dumps(log_lines), job_id)
+        )
+        if ok and rel_uuid:
+            db.execute("UPDATE netapp_jobs SET node=? WHERE id=?", (rel_uuid, job_id))
+
     try:
         from ..core._helpers import get_endpoint, build_ontap_client
+        db = get_db()
+
+        _log(f"[INFO] Source:      {source_path}")
+        _log(f"[INFO] Destination: {dest_path}")
+        _log(f"[INFO] Policy:      {policy}")
+
+        _log("[INFO] Connecting to DR ONTAP cluster...")
         dr_ep = get_endpoint(db, dr_endpoint_id)
         dr_client = build_ontap_client(dr_ep)
+        _log(f"[INFO] Connected to {dr_ep.get('host', dr_endpoint_id)}")
 
-        rel_uuid = dr_client.create_snapmirror_relationship(source_path, dest_path, policy)
+        _log("[INFO] Checking SVM peering...")
+
+        def _progress(msg):
+            _log(msg)
+
+        _log("[INFO] Creating SnapMirror relationship (destination volume will be created automatically)...")
+        _log("[INFO] This may take 30–120 seconds depending on cluster load...")
+        rel_uuid = dr_client.create_snapmirror_relationship(
+            source_path, dest_path, policy, progress_cb=_progress
+        )
+
         if not rel_uuid:
-            return {"error": "SnapMirror relationship created but UUID not returned"}, 500
+            _log("[ERR] Relationship created but UUID not returned — cannot initialize transfer")
+            _finish(False, error="No UUID returned")
+            return
 
-        # Trigger initial transfer
+        _log(f"[INFO] ✅ Relationship created (UUID: {rel_uuid[:8]}…)")
+        _log("[INFO] Triggering initial baseline transfer...")
         try:
             dr_client.initialize_snapmirror(rel_uuid)
+            _log("[INFO] ✅ Initial transfer initiated — baseline replication in progress")
         except Exception as exc:
-            log.warning(f"[netapp_storage] SM init warning: {exc}")
+            _log(f"[WARN] Initial transfer trigger: {exc} (relationship is created, transfer may start automatically)")
 
-        return jsonify({
-            "relationship_uuid": rel_uuid,
-            "source_path":       source_path,
-            "dest_path":         dest_path,
-            "message": f"SnapMirror created: {source_path} → {dest_path}. Initial transfer initiated."
-        })
+        _log(f"[INFO] ✅ SnapMirror setup complete: {source_path} → {dest_path}")
+        _finish(True, rel_uuid=rel_uuid)
+
     except Exception as exc:
         msg = str(exc)
-        if "13303886" in msg or "SVM peer permission" in msg.lower() or "peer" in msg.lower():
-            src_svm = source_path.split(":")[0]
-            dst_svm = dest_path.split(":")[0]
-            return {"error": (
-                f"SVM peering missing between '{src_svm}' and '{dst_svm}'. "
-                f"Please create SVM peering in ONTAP first:\n"
-                f"CLI (on source cluster): vserver peer create -vserver {src_svm} "
-                f"-peer-vserver {dst_svm} -applications snapmirror\n"
-                f"Or: System Manager → Storage → Storage VMs → Peers."
-            )}, 400
-        return {"error": msg}, 500
+        src_svm = source_path.split(":")[0]
+        dst_svm = dest_path.split(":")[0]
+        if "13303886" in msg or "peer permission" in msg.lower():
+            _log(f"[ERR] SVM peering missing between '{src_svm}' and '{dst_svm}'")
+            _log(f"[ERR] Run on source cluster:  vserver peer create -vserver {src_svm} -peer-vserver {dst_svm} -applications snapmirror")
+            _log(f"[ERR] Or: System Manager → Storage → Storage VMs → Peers")
+        else:
+            _log(f"[ERR] {msg}")
+        _finish(False, error=msg)
+
+
+def _wizard_sm_status():
+    """GET dr/config-volume/wizard/sm-status?job_id= — poll SnapMirror creation job."""
+    job_id = request.args.get("job_id", "")
+    if not job_id:
+        return {"error": "job_id required"}, 400
+    db = get_db()
+    row = db.query_one(
+        "SELECT id, status, log_json, completed_at, node FROM netapp_jobs WHERE id=?", (job_id,)
+    )
+    if not row:
+        return {"error": "Job not found"}, 404
+    try:
+        log_entries = json.loads(row["log_json"] or "[]")
+    except Exception:
+        log_entries = []
+    return jsonify({
+        "job_id":       row["id"],
+        "status":       row["status"],
+        "log":          log_entries,
+        "completed_at": row["completed_at"],
+        "rel_uuid":     row["node"] or "",  # stored in node field
+    })
 
 
 def _wizard_register_pve_storage():
@@ -1846,6 +1920,7 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/config-volume/wizard/aggregates",      _wizard_list_aggregates)
     rpr(PLUGIN_ID, "dr/config-volume/wizard/create-volume",     _wizard_create_volume)
     rpr(PLUGIN_ID, "dr/config-volume/wizard/create-snapmirror", _wizard_create_snapmirror)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/sm-status",         _wizard_sm_status)
     rpr(PLUGIN_ID, "dr/config-volume/wizard/register-storage",  _wizard_register_pve_storage)
 
     # DR Sites

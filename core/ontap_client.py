@@ -2077,26 +2077,41 @@ class OntapClient:
         )
 
     def create_snapmirror_relationship(self, source_path, dest_path,
-                                       policy="MirrorAllSnapshots"):
+                                       policy="MirrorAllSnapshots",
+                                       progress_cb=None):
         """Create a SnapMirror relationship and auto-create the destination volume.
 
         source_path / dest_path format: 'svm_name:volume_name'
         Cluster peering must already be established.
+        progress_cb(msg): optional callback for progress messages.
         Returns relationship UUID.
         """
+        def _cb(msg):
+            if progress_cb:
+                progress_cb(msg)
+
         body = {
             "source":      {"path": source_path},
             "destination": {"path": dest_path},
             "policy":      {"name": policy},
             "create_destination": {"enabled": True},
         }
+        # Use return_timeout=0 to get a job UUID immediately (avoids HTTP read timeout)
+        _cb(f"[INFO] Sending SnapMirror relationship request to ONTAP...")
         resp = self._post("snapmirror/relationships", body=body,
-                          params={"return_timeout": 60})
+                          params={"return_timeout": 0})
         rel_uuid = resp.get("uuid", "")
         job_uuid = (resp.get("job") or {}).get("uuid", "")
+
         if job_uuid:
-            self.poll_job(job_uuid, interval_s=3, timeout_s=300)
+            _cb(f"[INFO] ONTAP job started ({job_uuid[:8]}…) — waiting for completion...")
+            self.poll_job(job_uuid, interval_s=4, timeout_s=600)
+            _cb(f"[INFO] ONTAP job completed.")
+        elif rel_uuid:
+            _cb(f"[INFO] Relationship created directly (UUID: {rel_uuid[:8]}…)")
+
         if not rel_uuid:
+            _cb(f"[INFO] Looking up relationship by destination path...")
             rels = self._get_all_records("snapmirror/relationships", params={
                 "destination.path": dest_path, "fields": "uuid", "max_records": 5,
             })
