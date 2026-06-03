@@ -532,11 +532,11 @@ def _wizard_create_snapmirror():
             src_svm = source_path.split(":")[0]
             dst_svm = dest_path.split(":")[0]
             return {"error": (
-                f"SVM peering fehlt zwischen '{src_svm}' und '{dst_svm}'. "
-                f"Bitte zuerst SVM-Peering in ONTAP anlegen:\n"
-                f"CLI (auf Quell-Cluster): vserver peer create -vserver {src_svm} "
+                f"SVM peering missing between '{src_svm}' and '{dst_svm}'. "
+                f"Please create SVM peering in ONTAP first:\n"
+                f"CLI (on source cluster): vserver peer create -vserver {src_svm} "
                 f"-peer-vserver {dst_svm} -applications snapmirror\n"
-                f"Oder: System Manager → Storage → Storage VMs → Peers."
+                f"Or: System Manager → Storage → Storage VMs → Peers."
             )}, 400
         return {"error": msg}, 500
 

@@ -421,7 +421,7 @@ de:{
   lbl_new_vmid:'Neue VM-ID',lbl_target_node:'Ziel-Node',lbl_display_name:'Anzeigename',
   lbl_username:'Benutzername',lbl_password:'Passwort',lbl_ssl_verify:'SSL-Zertifikat prüfen',
   lbl_host_ip:'Host / IP',lbl_port:'Port',lbl_snapshot:'Snapshot',lbl_vm_id:'VM-ID',
-  lbl_name_hint:'(Snapshot heißt dann NPP_<em>Name</em>)',lbl_node_hint:'(leer = automatisch)',
+  lbl_name_hint:'(Snapshot heißt dann NPP_<em>Name</em>)',lbl_node_hint:'(optional)',
   lbl_start_after:'VM nach dem Klonen starten',lbl_mgmt_ip:'Cluster-Management-IP / FQDN',
   ct_create_snapshot:'Snapshot erstellen',ct_new_schedule:'Neuer Zeitplan',
   ct_edit_schedule:'Zeitplan bearbeiten',ct_start_restore:'Single-VM Restore',
@@ -6023,12 +6023,16 @@ async function drRemoveConfigVolume() {
     var overlay = document.createElement('div');
     overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
     overlay.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:400px">'
-      +'<div style="font-weight:600;margin-bottom:12px">🗑 Config Volume entfernen</div>'
-      +'<div style="font-size:.85rem;margin-bottom:16px">Wie soll das Config Volume entfernt werden?</div>'
+      +'<div style="font-weight:600;margin-bottom:12px">🗑 Remove Config Volume</div>'
+      +'<div style="font-size:.85rem;margin-bottom:16px">How should the config volume be removed?</div>'
       +'<div style="display:flex;flex-direction:column;gap:.5rem">'
-      +'<button id="cvr_db" class="btn btn-danger" style="text-align:left">Nur aus Datenbank entfernen<br><span style="font-size:.75rem;opacity:.8">Volume bleibt auf ONTAP erhalten</span></button>'
-      +'<button id="cvr_ontap" class="btn btn-danger" style="text-align:left">Aus Datenbank UND ONTAP löschen<br><span style="font-size:.75rem;opacity:.8">Volume wird auf ONTAP gelöscht</span></button>'
-      +'<button id="cvr_cancel" class="btn btn-ghost">Abbrechen</button>'
+      +'<div id="cvr_db" style="display:flex;align-items:flex-start;gap:.6rem;padding:.6rem .75rem;border:1px solid var(--error,#f85149);border-radius:6px;cursor:pointer">'
+      +'<span style="color:var(--error,#f85149);font-size:.85rem;flex-shrink:0">✕</span>'
+      +'<div><div style="font-weight:600;font-size:.85rem">Remove from database only</div><div style="font-size:.75rem;color:var(--muted)">Volume remains on ONTAP — can be re-linked</div></div></div>'
+      +'<div id="cvr_ontap" style="display:flex;align-items:flex-start;gap:.6rem;padding:.6rem .75rem;border:1px solid var(--error,#f85149);border-radius:6px;cursor:pointer">'
+      +'<span style="color:var(--error,#f85149);font-size:.85rem;flex-shrink:0">✕</span>'
+      +'<div><div style="font-weight:600;font-size:.85rem">Delete from database and ONTAP</div><div style="font-size:.75rem;color:var(--muted)">Volume will be permanently deleted on ONTAP</div></div></div>'
+      +'<button id="cvr_cancel" class="btn btn-ghost">Cancel</button>'
       +'</div></div>';
     document.body.appendChild(overlay);
     overlay.querySelector('#cvr_db').onclick    = function(){ document.body.removeChild(overlay); resolve('db'); };
@@ -6099,8 +6103,8 @@ async function cvwEndpointChanged() {
   if(!epId) return;
   var svm = document.getElementById('cvwSvm');
   var agg = document.getElementById('cvwAggregate');
-  svm.innerHTML='<option value="">Lädt…</option>';
-  agg.innerHTML='<option value="">Auto (empfohlen)</option>';
+  svm.innerHTML='<option value="">Loading…</option>';
+  agg.innerHTML='<option value="">Auto (recommended)</option>';
   try {
     var svms = await apiFetch('dr/config-volume/wizard/svms?endpoint_id='+epId);
     svm.innerHTML = svms.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
@@ -6108,7 +6112,7 @@ async function cvwEndpointChanged() {
   } catch(e){ svm.innerHTML='<option value="">Fehler: '+esc(e.message)+'</option>'; }
   try {
     var aggs = await apiFetch('dr/config-volume/wizard/aggregates?endpoint_id='+epId);
-    agg.innerHTML='<option value="">Auto (empfohlen)</option>'
+    agg.innerHTML='<option value="">Auto (recommended)</option>'
       +aggs.map(function(a){ return '<option value="'+esc(a.name)+'">'+esc(a.name)+' ('+Math.round((a.available_bytes||0)/1073741824)+' GB frei)</option>'; }).join('');
   } catch(e){}
 }
@@ -6126,7 +6130,7 @@ async function cvwDrEndpointChanged() {
   var epId = document.getElementById('cvwDrEndpoint').value;
   if(!epId) return;
   var svm = document.getElementById('cvwDrSvm');
-  svm.innerHTML='<option value="">Lädt…</option>';
+  svm.innerHTML='<option value="">Loading…</option>';
   try {
     var svms = await apiFetch('dr/config-volume/wizard/svms?endpoint_id='+epId);
     svm.innerHTML = svms.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
@@ -7775,18 +7779,18 @@ loadSnapshots();
         <input id="cvwJunction" value="/vol_dr_config" autocomplete="off">
       </div>
       <div class="form-group">
-        <label style="font-size:.82rem">Aggregate <span style="font-weight:400;color:var(--muted)">(leer = automatisch)</span></label>
-        <select id="cvwAggregate" style="width:100%"><option value="">Auto (empfohlen)</option></select>
+        <label style="font-size:.82rem">Aggregate <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <select id="cvwAggregate" style="width:100%"><option value="">Auto (recommended)</option></select>
       </div>
       <div id="cvwStep1Result" style="margin-bottom:.5rem"></div>
       <div style="display:flex;gap:.5rem">
-        <button id="cvwStep1Btn" class="btn btn-primary" onclick="cvwStep1Run()">▶ Volume anlegen</button>
+        <button id="cvwStep1Btn" class="btn btn-primary" onclick="cvwStep1Run()">▶ Create Volume</button>
       </div>
     </div>
 
     <!-- Step 2: SnapMirror -->
     <div id="cvwPanel2" style="display:none;padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">SnapMirror-Beziehung vom Config-Volume zum DR-Cluster anlegen. Cluster-Peering muss bereits eingerichtet sein.</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Create a SnapMirror relationship from the config volume to the DR cluster. Cluster peering must already be established.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
         <div class="form-group">
           <label style="font-size:.82rem">DR ONTAP Endpoint</label>
@@ -7813,25 +7817,25 @@ loadSnapshots();
       </div>
       <div id="cvwStep2Result" style="margin-bottom:.5rem"></div>
       <div style="display:flex;gap:.5rem">
-        <button id="cvwStep2Btn" class="btn btn-primary" onclick="cvwStep2Run()">▶ SnapMirror anlegen</button>
-        <button class="btn btn-ghost" onclick="cvwStep2Skip()">⏭ Überspringen</button>
+        <button id="cvwStep2Btn" class="btn btn-primary" onclick="cvwStep2Run()">▶ Create SnapMirror</button>
+        <button class="btn btn-ghost" onclick="cvwStep2Skip()">⏭ Skip (set up later)</button>
       </div>
     </div>
 
     <!-- Step 3: Mount & Activate -->
     <div id="cvwPanel3" style="display:none;padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Config-Volume auf diesem PegaProx-Server mounten und aktivieren. Da PegaProx nicht als root läuft, muss der Mount manuell durch einen Admin erfolgen.</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Mount the config volume on this PegaProx server and activate it. Since PegaProx runs as a non-root user, the NFS mount must be done manually by an admin.</div>
       <div class="form-group">
-        <label style="font-size:.82rem">Mount-Pfad auf diesem Server</label>
+        <label style="font-size:.82rem">Local mount path on this server</label>
         <input id="cvwMountPath" value="/mnt/dr-config" autocomplete="off">
       </div>
       <div id="cvwStep3Result" style="margin-bottom:.5rem"></div>
       <div id="cvwStep3MountCmd" style="display:none;background:var(--code-bg,#0d1117);border-radius:6px;padding:.75rem;font-family:monospace;font-size:.8rem;margin-bottom:.5rem">
-        <div style="color:var(--muted);margin-bottom:.3rem">Als root auf dem PegaProx-Server ausführen:</div>
+        <div style="color:var(--muted);margin-bottom:.3rem">Run as root on the PegaProx server:</div>
         <code style="color:var(--success,#3fb950);word-break:break-all"></code>
       </div>
       <div style="display:flex;gap:.5rem">
-        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Aktivieren</button>
+        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Activate</button>
       </div>
     </div>
   </div>
