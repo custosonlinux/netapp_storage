@@ -1557,6 +1557,21 @@ function applyI18n() {
     <!-- ════════════════════════ DISASTER RECOVERY ════════════════════════ -->
     <div id="tab-dr" class="tab-panel" style="display:none">
 
+      <!-- Role Banner -->
+      <div id="drRoleBanner" style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;border-radius:8px;margin-bottom:1.25rem;border:2px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <span id="drRoleIcon" style="font-size:1.8rem;line-height:1">🟢</span>
+          <div>
+            <div style="font-weight:700;font-size:1rem" id="drRoleLabel">MASTER</div>
+            <div style="font-size:.78rem;color:var(--muted)" id="drRoleSubtitle">Loading…</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span id="drConfigVolBadge" style="font-size:.75rem;color:var(--muted)"></span>
+          <button class="btn btn-ghost btn-sm" onclick="drShowRoleModal()">⚙ Role &amp; Config</button>
+        </div>
+      </div>
+
       <div class="sub-header">
         <span class="sub-header-title">🏢 DR Sites</span>
         <button class="btn btn-primary btn-sm" onclick="drShowAddSiteModal()">+ Add DR Site</button>
@@ -1573,8 +1588,7 @@ function applyI18n() {
         <div class="sub-header">
           <span class="sub-header-title" id="drPlanDetailTitle">Plan Detail</span>
           <div style="display:flex;gap:.5rem">
-            <button class="btn btn-ghost btn-sm" onclick="drSyncPlan()" title="Push DB export to DR site via SCP">☁️ Sync to DR</button>
-            <button class="btn btn-primary btn-sm" onclick="drShowFailoverModal()">▶ Failover</button>
+            <button class="btn btn-primary btn-sm" onclick="drShowFailoverModal()">▶ Start Failover</button>
             <button class="btn btn-ghost btn-sm" onclick="drClosePlanDetail()">✕ Close</button>
           </div>
         </div>
@@ -1586,14 +1600,14 @@ function applyI18n() {
         <div id="drSubTab-entries">
           <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
             <button class="btn btn-sm btn-ghost" onclick="drShowAddEntryModal()">+ Add Datastore</button>
-            <button class="btn btn-sm btn-ghost" onclick="drAutoDetect()" title="Auto-detect SnapMirror relationships">🔍 Auto-detect SnapMirror</button>
+            <button class="btn btn-sm btn-ghost" onclick="drAutoDetect()">🔍 Auto-detect</button>
           </div>
           <div id="drEntriesList"></div>
         </div>
         <div id="drSubTab-groups" style="display:none">
           <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
             <button class="btn btn-sm btn-ghost" onclick="drShowAddGroupModal()">+ Add Group</button>
-            <span class="muted-hint" style="font-size:.8rem">Groups start top → bottom. Auto groups start automatically; Manual require confirmation.</span>
+            <span class="muted-hint" style="font-size:.8rem">Groups run top → bottom. Core always first (auto). Manual groups wait for confirmation.</span>
           </div>
           <div id="drGroupsList"></div>
         </div>
@@ -5805,17 +5819,16 @@ var _drCurrentPlanSiteId = null;
 var _drActiveSubTab = 'entries';
 var _drSites = [];
 var _drCurrentGroupId = null;
-var _drModalIds = ['drAddSite','drAddPlan','drAddEntry','drAddGroup','drAddVm','drEditEntry','drFailover'];
+var _drEntriesMap = {};
+var _drModalIds = ['drAddSite','drAddPlan','drAddEntry','drAddGroup','drAddVm','drRole','drEditEntry','drFailover'];
 
 function drShowModal(id) { document.getElementById(id+'Modal').style.display='block'; }
 function drHideModal(id) {
   var el=document.getElementById(id+'Modal'); if(el) el.style.display='none';
-  // Restore DR plan sub-tabs after any modal closes (fixes disappearing tabs in PegaProx embedding)
   if(_drCurrentPlanId) { setTimeout(function(){ drShowSubTab(_drActiveSubTab, null); }, 0); }
 }
-function drCloseAllModals() { _drModalIds.forEach(function(id){ var el=document.getElementById(id+'Modal'); if(el) el.style.display='none'; }); document.body.style.overflow=''; }
 
-function drShowSubTab(name,el) {
+function drShowSubTab(name, el) {
   _drActiveSubTab = name;
   ['entries','groups'].forEach(function(t){ document.getElementById('drSubTab-'+t).style.display = t===name?'':'none'; });
   document.querySelectorAll('[data-dr-tab]').forEach(function(e){ e.classList.remove('active'); });
@@ -5823,270 +5836,294 @@ function drShowSubTab(name,el) {
   else { var btn=document.querySelector('[data-dr-tab="'+name+'"]'); if(btn) btn.classList.add('active'); }
 }
 
-function drStateBadge(state) {
-  var map={standby:'badge-info',failed_over:'badge-warning',failover_running:'badge-warning',failback_running:'badge-warning',test_running:'badge-success'};
-  return '<span class="badge '+(map[state]||'badge-info')+'">'+esc(state)+'</span>';
-}
-function drLagBadge(lagTime,healthy) {
-  if(healthy===null) return '<span class="badge badge-info">unknown</span>';
-  if(!healthy) return '<span class="badge badge-danger">unhealthy</span>';
-  if(!lagTime) return '<span class="badge badge-success">in sync</span>';
-  var pretty = formatLag(lagTime);
-  var cls = 'badge-success';
-  // warn if lag > 1h
-  var m = lagTime.match(/PT?(?:(\d+)H)?(?:(\d+)M)?/);
-  if(m && (parseInt(m[1]||0)>0)) cls='badge-warning';
-  return '<span class="badge '+cls+'">'+esc(pretty)+'</span>';
+// ── Role + Config Volume ──────────────────────────────────────────────────────
+
+async function drLoadRole() {
+  try {
+    var r = await apiFetch('dr/role');
+    var banner=document.getElementById('drRoleBanner');
+    var icon=document.getElementById('drRoleIcon');
+    var label=document.getElementById('drRoleLabel');
+    var sub=document.getElementById('drRoleSubtitle');
+    var badge=document.getElementById('drConfigVolBadge');
+    var role=r.role||'MASTER';
+    if(role==='MASTER'){
+      banner.style.borderColor='var(--success,#198754)';
+      icon.textContent='🟢'; label.textContent='MASTER'; label.style.color='var(--success,#198754)';
+      sub.textContent='This instance manages DR plans and writes config to the config volume.';
+    } else if(role==='DR_SLAVE'){
+      banner.style.borderColor='var(--warning,#ffc107)';
+      icon.textContent='🟡'; label.textContent='DR SLAVE'; label.style.color='var(--warning,#a07000)';
+      sub.textContent='Standby mode — reads config from SnapMirror\'d config volume. Ready for failover.';
+    } else {
+      banner.style.borderColor='var(--info,#0dcaf0)';
+      icon.textContent='🔵'; label.textContent='DR TEST'; label.style.color='var(--info,#0a5988)';
+      sub.textContent='Test mode — FlexClone-based isolated DR test.';
+    }
+    if(r.role_forced) sub.textContent+=' [forced override]';
+    if(r.config_volume){
+      badge.textContent='📁 '+esc(r.config_volume.volume_name);
+      badge.style.color='var(--success,#198754)';
+    } else {
+      badge.textContent='⚠ No config volume';
+      badge.style.color='var(--warning,#a07000)';
+    }
+  } catch(e){ document.getElementById('drRoleSubtitle').textContent='Could not load role info'; }
 }
 
+async function drShowRoleModal() {
+  try {
+    var r=await apiFetch('dr/role');
+    document.getElementById('drRoleSelect').value=r.role||'MASTER';
+    document.getElementById('drRoleForcedCheck').checked=!!r.role_forced;
+    var cv=await apiFetch('dr/config-volume');
+    var cvDiv=document.getElementById('drConfigVolStatus');
+    if(cv.configured){
+      cvDiv.innerHTML='<span style="color:var(--success,#198754)">✅ <strong>'+esc(cv.volume_name||cv.config_volume_id)+'</strong>'
+        +(cv.mount_accessible?' · mount accessible':' <span style="color:var(--warning)">⚠ mount not accessible</span>')
+        +'</span> <button class="btn btn-ghost btn-xs" onclick="drShowCVSetupForm()" style="margin-left:.5rem">Change</button>';
+    } else {
+      cvDiv.innerHTML='<span style="color:var(--warning,#a07000)">⚠ Not configured — config sync not active.</span>'
+        +' <button class="btn btn-ghost btn-xs" onclick="drShowCVSetupForm()" style="margin-left:.5rem">Setup</button>';
+    }
+    document.getElementById('drCVSetupForm').style.display='none';
+  } catch(e){}
+  drShowModal('drRole');
+}
+
+function drShowCVSetupForm() {
+  var form=document.getElementById('drCVSetupForm');
+  form.style.display='';
+  apiFetch('dr/config-volume/nfs-volumes').then(function(vols){
+    var sel=document.getElementById('drCVVolumeSelect');
+    sel.innerHTML='<option value="">— select NFS volume —</option>'
+      +vols.map(function(v){ return '<option value="'+esc(v.id)+'">'+esc(v.volume_name)+' ('+esc(v.endpoint_name)+' / '+esc(v.pve_storage_id)+')</option>'; }).join('');
+    sel.onchange=function(){
+      var found=vols.find(function(v){ return v.id===sel.value; });
+      if(found&&found.nfs_mount_path) document.getElementById('drCVMountPath').value=found.nfs_mount_path;
+    };
+  }).catch(function(){});
+}
+
+async function drSaveConfigVolume() {
+  var volume_id=document.getElementById('drCVVolumeSelect').value;
+  var mount_path=document.getElementById('drCVMountPath').value.trim();
+  if(!volume_id||!mount_path){ toast('Select a volume and enter the mount path','error'); return; }
+  try {
+    await apiPost('dr/config-volume/setup',{volume_id,mount_path});
+    toast('Config volume configured ✓','success');
+    drHideModal('drRole'); drLoadRole();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+async function drSaveRole() {
+  var role=document.getElementById('drRoleSelect').value;
+  var forced=document.getElementById('drRoleForcedCheck').checked;
+  try {
+    await apiPost('dr/role/set',{role,forced});
+    toast('Role set to '+role,'success');
+    drHideModal('drRole'); drLoadRole();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+async function drDetectRole() {
+  try {
+    var r=await apiPost('dr/role/detect',{});
+    toast('Detected: '+r.detected_role+' — '+r.reason, r.detected?'success':'info');
+    drHideModal('drRole'); drLoadRole();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// ── DR Sites ──────────────────────────────────────────────────────────────────
+
 async function drInit() {
+  drLoadRole();
   drLoadSites();
   drLoadPlans();
-  // Auto-import pending sync if trigger file exists (DR PegaProx side)
-  try {
-    var r = await apiFetch('dr/check-pending-sync');
-    if(r.pending && r.imported) {
-      toast('DR Sync imported: '+r.rows_imported+' rows — reloading…','success');
-      setTimeout(function(){ drLoadSites(); drLoadPlans(); }, 800);
-    } else if(r.pending && r.error) {
-      toast('DR Sync import failed: '+r.error,'error');
-    }
-  } catch(e){ /* not critical */ }
 }
 
 async function drLoadSites() {
   try {
-    _drSites = await apiFetch('dr/sites');
-    var el = document.getElementById('drSitesList');
-    if(!_drSites.length){ el.innerHTML='<div class="muted-hint">No DR sites configured.</div>'; return; }
-    el.innerHTML = _drSites.map(function(s){
-      var testLog = '';
-      if(s.last_test_result) {
-        var ok = s.last_test_result.startsWith('✅');
-        var ts = s.last_test_at ? s.last_test_at.slice(0,16).replace('T',' ') : '';
-        testLog = '<div style="margin-top:.35rem;font-size:.78rem;padding:.3rem .5rem;border-radius:4px;background:'+(ok?'rgba(22,163,74,.12)':'rgba(220,38,38,.12)')+';color:'+(ok?'var(--success)':'var(--danger)')+'">'+esc(s.last_test_result)+(ts?' <span style="opacity:.6">'+esc(ts)+'</span>':'')+'</div>';
-      }
-      return '<div class="list-row">'
-        +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-        +'<div>'
-        +'<strong>'+esc(s.name)+'</strong>'
-        +'<span class="muted-hint" style="margin-left:.75rem">'+esc(s.endpoint_name)+'</span>'
-        +'<span class="muted-hint" style="margin-left:.75rem">'+esc(s.sync_host||'kein Sync-Host')+'</span>'
-        +'<span class="muted-hint" style="margin-left:.75rem">'+s.plan_count+' Plan(s)</span>'
-        +'</div>'
-        +'<div style="display:flex;gap:.5rem">'
-        +'<button class="btn btn-ghost btn-sm" id="drTestBtn-'+esc(s.id)+'" onclick="drTestSiteSsh(\''+esc(s.id)+'\')">Test SSH</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="drPushSshKey(\''+esc(s.id)+'\')" title="SSH Key auf DR PegaProx pushen (Passwort erforderlich)">🔑 Push Key</button>'
-        +'<button class="btn btn-danger btn-sm" onclick="drDeleteSite(\''+esc(s.id)+'\',\''+esc(s.name)+'\')">Delete</button>'
-        +'</div></div>'
-        +testLog
-        +'</div>';
+    _drSites=await apiFetch('dr/sites');
+    var el=document.getElementById('drSitesList');
+    if(!_drSites.length){ el.innerHTML='<div class="muted-hint">No DR sites configured. Add a DR site to get started.</div>'; return; }
+    el.innerHTML=_drSites.map(function(s){
+      var epBadge='<span class="badge badge-info" style="font-size:.75rem">'+esc(s.endpoint_name||s.endpoint_id)+'</span>';
+      var hostBadges=(s.pve_hosts||[]).map(function(h){ return '<span class="badge" style="font-size:.72rem">🖥️ '+esc(h.name||h.host)+'</span>'; }).join(' ');
+      var planInfo=s.plan_count?s.plan_count+' plan(s)':'<span style="color:var(--muted)">no plans</span>';
+      return '<div class="card" style="margin-bottom:.5rem;padding:.75rem 1rem">'
+        +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">'
+        +'<div style="flex:1"><div style="font-weight:600;font-size:.95rem">🏢 '+esc(s.name)+'</div>'
+        +'<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">'+epBadge+' '+hostBadges+'</div>'
+        +(s.description?'<div style="font-size:.8rem;color:var(--muted);margin-top:.3rem">'+esc(s.description)+'</div>':'')
+        +'</div><div style="display:flex;gap:.4rem;align-items:center;white-space:nowrap">'
+        +'<span style="font-size:.78rem;color:var(--muted)">'+planInfo+'</span>'
+        +'<button class="btn btn-danger btn-xs" onclick="drDeleteSite(\''+esc(s.id)+'\')">Remove</button>'
+        +'</div></div></div>';
     }).join('');
   } catch(e){ document.getElementById('drSitesList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
 }
 
-var _drSiteInlineHostCount = 0;
-
-function drSiteHostModeChange(mode) {
-  ['existing','inline','cluster'].forEach(function(m){ document.getElementById('drSiteMode-'+m).style.display = m===mode?'':'none'; });
-  if(mode==='cluster') {
-    var sel=document.getElementById('drSiteCluster');
-    sel.innerHTML='<option>Loading…</option>';
-    apiFetch('dr/clusters').then(function(cls){
-      sel.innerHTML=cls.length
-        ? cls.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+' ('+esc(c.host)+')</option>'; }).join('')
-        : '<option value="">Keine Cluster gefunden</option>';
-    }).catch(function(){ sel.innerHTML='<option value="">Fehler beim Laden</option>'; });
-  }
-}
-
-function drSiteAddInlineHost() {
-  var idx = _drSiteInlineHostCount++;
-  var row = document.createElement('div');
-  row.id = 'drInlineHost-'+idx;
-  row.style.cssText = 'display:grid;grid-template-columns:1.5fr 2fr 1fr 1.5fr auto;gap:.4rem;align-items:end;margin-bottom:.4rem';
-  row.innerHTML =
-    '<div class="form-group" style="margin:0"><label style="font-size:.75rem">Name</label><input placeholder="dr-pmx01"></div>'
-   +'<div class="form-group" style="margin:0"><label style="font-size:.75rem">Host / IP</label><input placeholder="10.0.2.11"></div>'
-   +'<div class="form-group" style="margin:0"><label style="font-size:.75rem">User</label><input value="root"></div>'
-   +'<div class="form-group" style="margin:0"><label style="font-size:.75rem">Passwort</label><input type="password" placeholder="•••••"></div>'
-   +'<button class="btn btn-danger btn-sm" style="margin-bottom:0" onclick="document.getElementById(\'drInlineHost-'+idx+'\').remove()">✕</button>';
-  document.getElementById('drSiteInlineHosts').appendChild(row);
-}
-
-function drSiteGetInlineHosts() {
-  var hosts = [];
-  document.querySelectorAll('#drSiteInlineHosts > div').forEach(function(row) {
-    var inputs = row.querySelectorAll('input');
-    var host = inputs[1] ? inputs[1].value.trim() : '';
-    if(!host) return;
-    hosts.push({name: inputs[0]?inputs[0].value.trim():host, host:host, username: inputs[2]?inputs[2].value.trim():'root', password: inputs[3]?inputs[3].value:''});
-  });
-  return hosts;
-}
-
 function drShowAddSiteModal() {
   var epSel=document.getElementById('drSiteEndpoint');
-  epSel.innerHTML='<option>Loading…</option>';
   apiFetch('endpoints').then(function(eps){ epSel.innerHTML=eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join(''); }).catch(function(){ epSel.innerHTML=''; });
   var pveSel=document.getElementById('drSitePveHosts');
   apiFetch('pve-hosts').then(function(h){ pveSel.innerHTML=h.map(function(x){ return '<option value="'+esc(x.id)+'">'+esc(x.name)+' ('+esc(x.host)+')</option>'; }).join(''); }).catch(function(){ pveSel.innerHTML=''; });
-  ['drSiteName','drSiteSyncHost','drSiteDesc','drSiteSyncPassword','drSitePvApiToken'].forEach(function(id){ document.getElementById(id).value=''; });
-  document.getElementById('drSiteSyncUser').value='root';
-  document.getElementById('drSiteSyncPath').value='/opt/PegaProx/plugins/netapp_storage/';
-  document.getElementById('drSitePvPort').value='443';
-  // Reset host mode to existing
-  document.querySelector('input[name="drSiteHostMode"][value="existing"]').checked=true;
-  drSiteHostModeChange('existing');
-  document.getElementById('drSiteInlineHosts').innerHTML='';
-  _drSiteInlineHostCount=0;
+  ['drSiteName','drSiteDesc'].forEach(function(id){ document.getElementById(id).value=''; });
   drShowModal('drAddSite');
 }
 
 async function drCreateSite() {
-  var name = document.getElementById('drSiteName').value.trim();
-  var endpoint_id = document.getElementById('drSiteEndpoint').value;
-  if(!name||!endpoint_id){ toast('Name and endpoint are required','error'); return; }
-
-  var mode = document.querySelector('input[name="drSiteHostMode"]:checked').value;
-  var body = {
-    name: name,
-    endpoint_id: endpoint_id,
-    sync_host:     document.getElementById('drSiteSyncHost').value.trim(),
-    sync_user:     document.getElementById('drSiteSyncUser').value.trim(),
-    sync_path:     document.getElementById('drSiteSyncPath').value.trim(),
-    pv_port:       parseInt(document.getElementById('drSitePvPort').value) || 443,
-    sync_password: document.getElementById('drSiteSyncPassword').value,
-    pv_api_token:  document.getElementById('drSitePvApiToken').value,
-    description:   document.getElementById('drSiteDesc').value.trim(),
+  var pveHostIds=Array.from(document.getElementById('drSitePveHosts').selectedOptions).map(function(o){ return o.value; });
+  var payload={
+    name:document.getElementById('drSiteName').value.trim(),
+    endpoint_id:document.getElementById('drSiteEndpoint').value,
+    pve_host_ids:pveHostIds,
+    description:document.getElementById('drSiteDesc').value.trim(),
   };
-
-  if(mode==='existing') {
-    body.pve_host_ids = Array.from(document.getElementById('drSitePveHosts').selectedOptions).map(function(o){ return o.value; });
-  } else if(mode==='inline') {
-    body.pve_hosts_inline = drSiteGetInlineHosts();
-  } else if(mode==='cluster') {
-    body.pve_cluster_id = document.getElementById('drSiteCluster').value;
-  }
-
+  if(!payload.name||!payload.endpoint_id){ toast('Name and NetApp endpoint required','error'); return; }
   try {
-    var r = await apiPost('dr/sites/create', body);
-    drHideModal('drAddSite');
-    toast('DR site created'+(r.pve_host_ids&&r.pve_host_ids.length?' ('+r.pve_host_ids.length+' host(s) registered)':''), 'success');
-    drLoadSites();
+    await apiPost('dr/sites/create',payload);
+    drHideModal('drAddSite'); toast('DR site created','success'); drLoadSites();
   } catch(e){ toast(e.message,'error'); }
 }
 
-async function drDeleteSite(id,name) {
-  if(!await uiConfirm('Delete DR site "'+name+'"?')) return;
-  try { await apiPost('dr/sites/delete',{id:id}); toast('DR site deleted','success'); drLoadSites(); drLoadPlans(); } catch(e){ toast(e.message,'error'); }
+async function drDeleteSite(siteId) {
+  if(!await uiConfirm('Delete this DR site?')) return;
+  try { await apiPost('dr/sites/delete',{id:siteId}); toast('DR site deleted','success'); drLoadSites(); drLoadPlans(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
-async function drTestSiteSsh(id) {
-  var btn = document.getElementById('drTestBtn-'+id);
-  if(btn) { btn.disabled=true; btn.textContent='Testing…'; }
-  try {
-    var r = await apiPost('dr/sites/test-ssh',{id:id});
-    toast('SSH-Test gestartet — <a href="#" onclick="showTabByName(\'jobs\');return false">Jobs &amp; Logs</a> (Job: '+r.job_id+')', 'info');
-    setTimeout(drLoadSites, 3000);  // reload after test completes
-  } catch(e){
-    toast(e.message,'error');
-    if(btn) { btn.disabled=false; btn.textContent='Test SSH'; }
-  }
+// ── DR Plans ──────────────────────────────────────────────────────────────────
+
+function formatLag(lagStr) {
+  if(!lagStr) return '';
+  var m=lagStr.match(/PT?(?:(\d+)D)?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if(!m) return lagStr;
+  var d=parseInt(m[1]||0),h=parseInt(m[2]||0),min=parseInt(m[3]||0);
+  if(d>0) return d+'d '+h+'h';
+  if(h>0) return h+'h '+min+'m';
+  return min+'m';
 }
 
-async function drPushSshKey(id) {
-  try {
-    var r = await apiPost('dr/sites/push-ssh-key',{id:id});
-    toast('SSH Key Push gestartet — <a href="#" onclick="showTabByName(\'jobs\');return false">Jobs &amp; Logs</a> (Job: '+r.job_id+')', 'info');
-    setTimeout(drLoadSites, 5000);
-  } catch(e){
-    toast(e.message,'error');
-  }
+function drLagBadge(lagTime, healthy) {
+  if(healthy===false) return '<span class="badge badge-danger">❌ unhealthy</span>';
+  if(!lagTime) return '<span class="badge">—</span>';
+  var pretty=formatLag(lagTime);
+  var cls='badge-success';
+  var m=lagTime.match(/PT?(?:(\d+)H)?(?:(\d+)M)?/);
+  if(m&&parseInt(m[1]||0)>0) cls='badge-warning';
+  return '<span class="badge '+cls+'">'+esc(pretty)+'</span>';
+}
+
+function drStateBadge(state) {
+  var map={standby:'badge-info',failover_running:'badge-warning',failed_over:'badge-success',failback_running:'badge-warning'};
+  return '<span class="badge '+(map[state]||'')+'">'+esc(state||'standby')+'</span>';
 }
 
 async function drLoadPlans() {
   try {
     var plans=await apiFetch('dr/plans');
     var el=document.getElementById('drPlansList');
-    if(!plans.length){ el.innerHTML='<div class="muted-hint">No DR plans yet.</div>'; return; }
+    if(!plans.length){ el.innerHTML='<div class="muted-hint">No DR plans yet. Create a plan to get started.</div>'; return; }
     el.innerHTML=plans.map(function(p){
-      return '<div class="list-row" style="display:flex;justify-content:space-between;align-items:center">'
-        +'<div><strong style="cursor:pointer;text-decoration:underline" onclick="drOpenPlan(\''+esc(p.id)+'\')">'+esc(p.name)+'</strong> '+drStateBadge(p.state)
-        +'<span class="muted-hint" style="margin-left:.75rem">'+esc(p.site_name)+' · '+p.entry_count+' datastore(s) · '+p.group_count+' group(s)</span></div>'
-        +'<div style="display:flex;gap:.5rem">'
-        +'<button class="btn btn-ghost btn-sm" onclick="drOpenPlan(\''+esc(p.id)+'\')">Open</button>'
-        +'<button class="btn btn-danger btn-sm" onclick="drDeletePlan(\''+esc(p.id)+'\',\''+esc(p.name)+'\')">Delete</button>'
-        +'</div></div>';
+      return '<div class="card" style="margin-bottom:.5rem;cursor:pointer" onclick="drOpenPlanDetail(\''+esc(p.id)+'\',event)">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem">'
+        +'<div style="flex:1"><div style="font-weight:600">📋 '+esc(p.name)+' '+drStateBadge(p.state)+'</div>'
+        +'<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">'
+        +'🏢 '+esc(p.site_name||'—')+' · '+p.entry_count+' datastore(s) · '+p.group_count+' group(s)'
+        +(p.last_failover_at?'<span class="muted-hint"> · Last failover: '+p.last_failover_at.slice(0,16).replace('T',' ')+'</span>':'')
+        +'</div></div>'
+        +'<div style="display:flex;gap:.4rem" onclick="event.stopPropagation()">'
+        +'<button class="btn btn-ghost btn-xs" onclick="drOpenPlanDetail(\''+esc(p.id)+'\')">Open</button>'
+        +'<button class="btn btn-danger btn-xs" onclick="drDeletePlan(\''+esc(p.id)+'\')">Delete</button>'
+        +'</div></div></div>';
     }).join('');
   } catch(e){ document.getElementById('drPlansList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
 }
 
 function drShowAddPlanModal() {
   var sel=document.getElementById('drPlanSite');
-  sel.innerHTML=_drSites.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'; }).join('')||'<option value="">No sites configured</option>';
-  document.getElementById('drPlanName').value=''; document.getElementById('drPlanNotes').value='';
+  apiFetch('dr/sites').then(function(sites){ sel.innerHTML=sites.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'; }).join(''); }).catch(function(){ sel.innerHTML=''; });
+  document.getElementById('drPlanName').value='';
+  document.getElementById('drPlanNotes').value='';
   drShowModal('drAddPlan');
 }
 
 async function drCreatePlan() {
-  var body={name:document.getElementById('drPlanName').value.trim(),dr_site_id:document.getElementById('drPlanSite').value,notes:document.getElementById('drPlanNotes').value.trim()};
-  if(!body.name||!body.dr_site_id){ toast('Name and DR site are required','error'); return; }
-  try { await apiPost('dr/plans/create',body); drHideModal('drAddPlan'); toast('DR plan created','success'); drLoadPlans(); } catch(e){ toast(e.message,'error'); }
+  var payload={
+    name:document.getElementById('drPlanName').value.trim(),
+    dr_site_id:document.getElementById('drPlanSite').value,
+    notes:document.getElementById('drPlanNotes').value.trim(),
+  };
+  if(!payload.name||!payload.dr_site_id){ toast('Name and DR site required','error'); return; }
+  try {
+    await apiPost('dr/plans/create',payload);
+    drHideModal('drAddPlan'); toast('DR plan created (Core group auto-created)','success'); drLoadPlans();
+  } catch(e){ toast(e.message,'error'); }
 }
 
-async function drDeletePlan(id,name) {
-  if(!await uiConfirm('Delete DR plan "'+name+'"?')) return;
-  try { await apiPost('dr/plans/delete',{id:id}); toast('DR plan deleted','success'); if(_drCurrentPlanId===id) drClosePlanDetail(); drLoadPlans(); } catch(e){ toast(e.message,'error'); }
+async function drDeletePlan(planId) {
+  if(!await uiConfirm('Delete this DR plan, all its datastores and VM groups?')) return;
+  try { await apiPost('dr/plans/delete',{id:planId}); toast('DR plan deleted','success'); drLoadPlans(); drClosePlanDetail(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
-async function drOpenPlan(planId) {
+function drOpenPlanDetail(planId, evt) {
   _drCurrentPlanId=planId;
   document.getElementById('drPlanDetail').style.display='';
   document.getElementById('drPlanDetailTitle').textContent='Loading…';
-  drShowSubTab('entries',document.querySelector('[data-dr-tab="entries"]'));
-  await drRefreshPlanDetail();
   document.getElementById('drPlanDetail').scrollIntoView({behavior:'smooth',block:'start'});
+  drRefreshPlanDetail();
 }
 
-function drClosePlanDetail() { _drCurrentPlanId=null; document.getElementById('drPlanDetail').style.display='none'; }
+function drClosePlanDetail(){ _drCurrentPlanId=null; document.getElementById('drPlanDetail').style.display='none'; }
 
 async function drRefreshPlanDetail() {
   if(!_drCurrentPlanId) return;
   try {
     var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
-    _drCurrentPlanSiteId = plan.dr_site_id;
+    _drCurrentPlanSiteId=plan.dr_site_id;
     document.getElementById('drPlanDetailTitle').textContent='📋 '+plan.name;
     var status=await apiFetch('dr/plans/status?plan_id='+_drCurrentPlanId);
     var healthy=status.overall_healthy;
-    var syncInfo=plan.last_sync_at?'Last sync: '+plan.last_sync_at.slice(0,16).replace('T',' '):'Never synced';
+    var syncInfo=plan.last_failover_at?'Last failover: '+plan.last_failover_at.slice(0,16).replace('T',' '):'No failover yet';
     document.getElementById('drPlanStatusBar').className='alert '+(healthy?'alert-success':'alert-warning');
-    document.getElementById('drPlanStatusBar').innerHTML=drStateBadge(plan.state)+'&nbsp;'+(healthy?'✅ SnapMirror healthy':'⚠️ SnapMirror issues')+'&nbsp;·&nbsp;<span class="muted-hint">'+esc(syncInfo)+'</span>';
+    document.getElementById('drPlanStatusBar').innerHTML=drStateBadge(plan.state)+'&nbsp;'
+      +(healthy?'✅ SnapMirror healthy':'⚠️ SnapMirror issues')
+      +'&nbsp;·&nbsp;<span class="muted-hint">'+esc(syncInfo)+'</span>';
     drRenderEntries(plan.entries,status.entries);
     drRenderGroups(plan.vm_groups);
-    drShowSubTab(_drActiveSubTab, null);
-  } catch(e){ document.getElementById('drPlanStatusBar').className='alert alert-danger'; document.getElementById('drPlanStatusBar').textContent=e.message; }
+    drShowSubTab(_drActiveSubTab,null);
+  } catch(e){
+    document.getElementById('drPlanStatusBar').className='alert alert-danger';
+    document.getElementById('drPlanStatusBar').textContent=e.message;
+  }
 }
 
-function drRenderEntries(entries,statusEntries) {
+// ── Plan Entries ──────────────────────────────────────────────────────────────
+
+function drRenderEntries(entries, statusEntries) {
   var statusMap={}; (statusEntries||[]).forEach(function(s){ statusMap[s.entry_id]=s; });
   _drEntriesMap={};
   entries.forEach(function(e){ _drEntriesMap[e.id]=e; });
   var el=document.getElementById('drEntriesList');
-  if(!entries.length){ el.innerHTML='<div class="muted-hint">No datastores protected.</div>'; return; }
-  el.innerHTML='<table class="data-table" style="width:100%"><thead><tr><th>Source</th><th>DR Target</th><th>DR PVE Storage</th><th>SnapMirror</th><th></th></tr></thead><tbody>'
+  if(!entries.length){ el.innerHTML='<div class="muted-hint">No datastores protected. Add or auto-detect via SnapMirror.</div>'; return; }
+  el.innerHTML='<table class="data-table" style="width:100%"><thead><tr><th>Source</th><th>DR Target</th><th>Storage / Hosts</th><th>SnapMirror</th><th></th></tr></thead><tbody>'
     +entries.map(function(e){
       var s=statusMap[e.id]||{};
-      var srcLabel=esc(e.source_endpoint_name||e.source_endpoint_id)+' / '+esc(e.source_svm)+' / <strong>'+esc(e.source_volume)+'</strong>';
-      var dstLabel=e.dr_endpoint_id?esc(e.dr_endpoint_name||e.dr_endpoint_id)+' / '+esc(e.dr_svm)+' / <strong>'+esc(e.dr_volume)+'</strong>':'<span class="muted-hint">not configured</span>';
+      var srcLabel='<strong>'+esc(e.source_volume)+'</strong><br><span style="font-size:.75rem;color:var(--muted)">'+esc(e.source_endpoint_name||e.source_endpoint_id)+' / '+esc(e.source_svm)+'</span>';
+      var dstLabel=e.dr_endpoint_id
+        ?'<strong>'+esc(e.dr_volume)+'</strong><br><span style="font-size:.75rem;color:var(--muted)">'+esc(e.dr_endpoint_name||e.dr_endpoint_id)+' / '+esc(e.dr_svm)+'</span>'
+        :'<span class="muted-hint">not configured</span>';
       var storLabel=e.dr_pve_storage_id
-        ?'<code style="font-size:.82em">'+esc(e.dr_pve_storage_id)+'</code>'
-        :'<span style="font-size:.8em;color:var(--warning,#856404)">⚠ not found in Storage tab</span>';
-      var smBadge=drLagBadge(s.sm_lag_time,s.sm_healthy!==undefined?s.sm_healthy:null);
+        ?'<code style="font-size:.8em">'+esc(e.dr_pve_storage_id)+'</code>'
+        :'<span style="font-size:.78rem;color:var(--warning,#856404)">⚠ no storage ID</span>';
       var hostCount=(e.dr_pve_host_ids||[]).length;
-      var hostBadge=hostCount?'<span style="font-size:.8em;color:var(--muted)">'+hostCount+' host(s)</span>':'<span style="font-size:.8em;color:var(--warning,#856404)">⚠ no host</span>';
+      var hostBadge=hostCount?hostCount+' host(s)':'<span style="font-size:.78rem;color:var(--warning,#856404)">⚠ no host</span>';
+      var smBadge=drLagBadge(s.sm_lag_time,s.sm_healthy!==undefined?s.sm_healthy:null);
       return '<tr><td>'+srcLabel+'</td><td>'+dstLabel+'</td>'
-        +'<td>'+storLabel+'<br>'+hostBadge+'</td>'
+        +'<td>'+storLabel+'<br><span style="font-size:.75rem;color:var(--muted)">'+hostBadge+'</span></td>'
         +'<td>'+smBadge+'</td>'
         +'<td style="white-space:nowrap">'
         +'<button class="btn btn-ghost btn-xs" onclick="drShowEditEntryModal(\''+esc(e.id)+'\')">✏ Edit</button> '
@@ -6095,24 +6132,21 @@ function drRenderEntries(entries,statusEntries) {
     }).join('')+'</tbody></table>';
 }
 
-var _drEditEntryData = null;
-var _drEntriesMap = {};
+var _drEditEntryData=null;
 function drShowEditEntryModal(entryId) {
-  var entry = _drEntriesMap[entryId];
-  if(!entry) return;
-  _drEditEntryData = entry;
-  var storInfo = document.getElementById('drEditEntryStorageInfo');
-  if(entry.dr_pve_storage_id)
-    storInfo.innerHTML = '📦 PVE Storage ID: <strong><code>'+esc(entry.dr_pve_storage_id)+'</code></strong> <span style="color:var(--muted)">(derived from primary — cannot be changed)</span>';
-  else
-    storInfo.innerHTML = '<span style="color:var(--warning,#856404)">⚠ Primary storage not found in Storage tab. Discover or provision this datastore first.</span>';
-  var site = (_drSites||[]).find(function(s){ return s.id === _drCurrentPlanSiteId; }) || {};
-  var siteHostIds = site.pve_host_ids || [];
+  var entry=_drEntriesMap[entryId]; if(!entry) return;
+  _drEditEntryData=entry;
+  var storInfo=document.getElementById('drEditEntryStorageInfo');
+  storInfo.innerHTML=entry.dr_pve_storage_id
+    ?'📦 Storage ID: <strong><code>'+esc(entry.dr_pve_storage_id)+'</code></strong> <span style="color:var(--muted)">(auto-derived)</span>'
+    :'<span style="color:var(--warning,#856404)">⚠ No storage ID — run Discovery in the Storage tab first.</span>';
+  var site=(_drSites||[]).find(function(s){ return s.id===_drCurrentPlanSiteId; })||{};
+  var siteHostIds=site.pve_host_ids||[];
   apiFetch('pve-hosts').then(function(hosts){
-    var sel = document.getElementById('drEditEntryPveHosts');
-    sel.innerHTML = hosts.map(function(h){
-      var selected = (entry.dr_pve_host_ids||[]).indexOf(h.id)>=0 ? ' selected' : '';
-      var note = siteHostIds.indexOf(h.id)>=0 ? '' : ' ⚠ not in DR site';
+    var sel=document.getElementById('drEditEntryPveHosts');
+    sel.innerHTML=hosts.map(function(h){
+      var selected=(entry.dr_pve_host_ids||[]).indexOf(h.id)>=0?' selected':'';
+      var note=siteHostIds.indexOf(h.id)>=0?'':' (⚠ not in DR site)';
       return '<option value="'+esc(h.id)+'"'+selected+'>'+esc(h.name)+' ('+esc(h.host)+')'+note+'</option>';
     }).join('');
   }).catch(function(){});
@@ -6121,111 +6155,130 @@ function drShowEditEntryModal(entryId) {
 
 async function drSaveEntryEdit() {
   if(!_drEditEntryData) return;
-  var hostIds = Array.from(document.getElementById('drEditEntryPveHosts').selectedOptions).map(function(o){ return o.value; });
+  var hostIds=Array.from(document.getElementById('drEditEntryPveHosts').selectedOptions).map(function(o){ return o.value; });
   try {
-    await apiPost('dr/plans/entries/update', {
-      plan_id: _drCurrentPlanId,
-      entry_id: _drEditEntryData.id,
-      dr_pve_host_ids: hostIds
-    });
-    drHideModal('drEditEntry');
-    toast('Entry updated', 'success');
-    await drRefreshPlanDetail();
+    await apiPost('dr/plans/entries/update',{plan_id:_drCurrentPlanId,entry_id:_drEditEntryData.id,dr_pve_host_ids:hostIds});
+    drHideModal('drEditEntry'); toast('Entry updated','success'); drRefreshPlanDetail();
   } catch(e){ toast(e.message,'error'); }
 }
 
 function drShowAddEntryModal() {
   apiFetch('endpoints').then(function(eps){
     var opts=eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>'; }).join('');
-    document.getElementById('drEntrySourceEndpoint').innerHTML=opts;
-    document.getElementById('drEntryDrEndpoint').innerHTML='<option value="">— auto-detect —</option>'+opts;
-  });
-  var dsSel=document.getElementById('drEntryDatastore');
-  dsSel.innerHTML='<option value="">— auswählen oder manuell —</option>';
-  Promise.all([apiFetch('volume-mappings').catch(function(){ return []; }),apiFetch('provisioning/datastores').catch(function(){ return []; })]).then(function(results){
-    (results[0]||[]).forEach(function(m){ var opt=document.createElement('option'); opt.value=JSON.stringify({type:'mapping',ep:m.endpoint_id,svm:m.svm_name,vol:m.volume_name,id:m.id}); opt.textContent=m.pve_storage_id+' ('+m.svm_name+'/'+m.volume_name+')'; dsSel.appendChild(opt); });
-    (results[1]||[]).forEach(function(d){ var opt=document.createElement('option'); opt.value=JSON.stringify({type:'ds',ep:d.endpoint_id,svm:d.svm_name,vol:d.volume_name,id:d.id}); opt.textContent=d.name+' ('+d.svm_name+'/'+d.volume_name+')'; dsSel.appendChild(opt); });
-  });
-  ['drEntrySourceSvm','drEntrySourceVolume','drEntryDrSvm','drEntryDrVolume','drEntryDrPveStorageId'].forEach(function(id){ document.getElementById(id).value=''; });
+    document.getElementById('drEntryEndpoint').innerHTML=opts;
+  }).catch(function(){});
+  ['drEntrySvm','drEntryVolume'].forEach(function(id){ document.getElementById(id).value=''; });
   drShowModal('drAddEntry');
 }
 
-function drEntryFillFromDatastore(val) {
-  if(!val) return;
-  try { var d=JSON.parse(val); document.getElementById('drEntrySourceEndpoint').value=d.ep||''; document.getElementById('drEntrySourceSvm').value=d.svm||''; document.getElementById('drEntrySourceVolume').value=d.vol||''; } catch(e){}
-}
-
 async function drCreateEntry() {
-  var dsVal=document.getElementById('drEntryDatastore').value, mappingId='', dsId='';
-  if(dsVal){ try{ var d=JSON.parse(dsVal); if(d.type==='mapping') mappingId=d.id; else if(d.type==='ds') dsId=d.id; }catch(e){} }
-  var body={source_endpoint_id:document.getElementById('drEntrySourceEndpoint').value,source_svm:document.getElementById('drEntrySourceSvm').value.trim(),source_volume:document.getElementById('drEntrySourceVolume').value.trim(),dr_endpoint_id:document.getElementById('drEntryDrEndpoint').value,dr_svm:document.getElementById('drEntryDrSvm').value.trim(),dr_volume:document.getElementById('drEntryDrVolume').value.trim(),dr_pve_storage_id:document.getElementById('drEntryDrPveStorageId').value.trim(),mapping_id:mappingId,ds_id:dsId};
-  if(!body.source_endpoint_id||!body.source_svm||!body.source_volume){ toast('Source endpoint, SVM, and volume are required','error'); return; }
-  try { await apiPost('dr/plans/entries/add',Object.assign({plan_id:_drCurrentPlanId},body)); drHideModal('drAddEntry'); toast('Datastore added','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+  var payload={
+    plan_id:_drCurrentPlanId,
+    source_endpoint_id:document.getElementById('drEntryEndpoint').value,
+    source_svm:document.getElementById('drEntrySvm').value.trim(),
+    source_volume:document.getElementById('drEntryVolume').value.trim(),
+  };
+  if(!payload.source_endpoint_id||!payload.source_svm||!payload.source_volume){ toast('All fields required','error'); return; }
+  try {
+    await apiPost('dr/plans/entries/add',payload);
+    drHideModal('drAddEntry'); toast('Datastore entry added','success'); drRefreshPlanDetail();
+  } catch(e){ toast(e.message,'error'); }
 }
 
 async function drDeleteEntry(entryId) {
-  if(!await uiConfirm('Remove this datastore from the DR plan?')) return;
-  try { await apiPost('dr/plans/entries/delete',{plan_id:_drCurrentPlanId,entry_id:entryId}); toast('Entry removed','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+  if(!await uiConfirm('Remove this datastore from the plan?')) return;
+  try { await apiPost('dr/plans/entries/delete',{plan_id:_drCurrentPlanId,entry_id:entryId}); toast('Entry removed','success'); drRefreshPlanDetail(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 async function drAutoDetect() {
   toast('Auto-detecting SnapMirror relationships…','info');
   try {
     var r=await apiPost('dr/plans/auto-detect',{plan_id:_drCurrentPlanId});
-    if(r.added>0) toast('Added '+r.added+' datastore(s) from SnapMirror relationships'+(r.skipped?' ('+r.skipped+' already present)':''),'success');
-    else if(r.total===0) toast('No SnapMirror relationships found for this DR site endpoint — run "Scan Relationships" in the SnapMirror tab first.','warning');
-    else toast('No new entries added ('+r.skipped+' already present)','info');
-    drRefreshPlanDetail();
+    toast(r.message,r.added>0?'success':'info'); drRefreshPlanDetail();
   } catch(e){ toast(e.message,'error'); }
 }
 
+// ── VM Groups ─────────────────────────────────────────────────────────────────
+
 function drRenderGroups(groups) {
   var el=document.getElementById('drGroupsList');
-  if(!groups.length){ el.innerHTML='<div class="muted-hint">No VM groups defined.</div>'; return; }
+  if(!groups.length){ el.innerHTML='<div class="muted-hint">No VM groups. A Core group is auto-created with each plan.</div>'; return; }
   el.innerHTML=groups.map(function(g,idx){
-    var modeLabel=g.start_mode==='auto'?'<span class="badge badge-success">auto</span>':'<span class="badge badge-warning">manual</span>';
-    var vmRows=g.vms.length?'<div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem">'+g.vms.map(function(v){
-      return '<span class="badge badge-info" style="cursor:default">'+esc(v.vm_name||'VM '+v.vmid)+' ('+v.vmid+')'
-        +' <button style="background:none;border:none;cursor:pointer;color:inherit;padding:0 0 0 4px" onclick="drRemoveVm(\''+esc(g.id)+'\',\''+esc(v.id)+'\')">✕</button></span>';
-    }).join('')+'</div>':'<div class="muted-hint" style="margin-top:.4rem;font-size:.8rem">No VMs assigned</div>';
-    return '<div class="list-row" style="border-left:3px solid var(--primary)">'
-      +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-      +'<div><strong>'+(idx+1)+'. '+esc(g.name)+'</strong> '+modeLabel+'<span class="muted-hint" style="font-size:.8rem;margin-left:.75rem">delay '+g.startup_delay_sec+'s · health check '+g.health_check_timeout_sec+'s</span></div>'
-      +'<div style="display:flex;gap:.4rem">'
+    var isCore=g.group_type==='core';
+    var typeBadge=isCore
+      ?'<span class="badge badge-warning" style="font-size:.72rem">🔒 CORE</span>'
+      :'<span class="badge" style="font-size:.72rem">GROUP</span>';
+    var modeBadge=g.start_mode==='auto'
+      ?'<span class="badge badge-success" style="font-size:.72rem">AUTO</span>'
+      :'<span class="badge badge-info" style="font-size:.72rem">MANUAL</span>';
+    var parInfo='<span style="font-size:.72rem;color:var(--muted)">max '+g.max_parallel+' parallel</span>';
+    var delayInfo=g.startup_delay_sec>0?'<span style="font-size:.72rem;color:var(--muted)">+'+g.startup_delay_sec+'s</span>':'';
+    var vmRows=g.vms.map(function(v){
+      return '<div style="display:flex;align-items:center;gap:.4rem;padding:.25rem .4rem;background:var(--bg);border-radius:4px;margin-bottom:2px;font-size:.82rem">'
+        +'<span style="color:var(--muted)">VM</span> <strong>'+v.vmid+'</strong>'
+        +(v.vm_name?' <span style="color:var(--muted)">'+esc(v.vm_name)+'</span>':'')
+        +(v.target_node?' <span class="badge" style="font-size:.68rem">→ '+esc(v.target_node)+'</span>':'')
+        +'<button class="btn btn-danger btn-xs" style="margin-left:auto" onclick="drRemoveVm(\''+esc(g.id)+'\',\''+esc(v.id)+'\')">✕</button>'
+        +'</div>';
+    }).join('');
+    var moveUp=idx>0&&!isCore?'<button class="btn btn-ghost btn-xs" onclick="drMoveGroup(\''+esc(g.id)+'\',\'up\')">▲</button>':'';
+    var moveDown=idx<groups.length-1&&!isCore?'<button class="btn btn-ghost btn-xs" onclick="drMoveGroup(\''+esc(g.id)+'\',\'down\')">▼</button>':'';
+    return '<div class="card" style="margin-bottom:.5rem">'
+      +'<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.6rem .9rem">'
+      +'<div style="flex:1">'
+      +'<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">'
+      +'<span style="font-weight:600">'+esc(g.name)+'</span>'+typeBadge+modeBadge+parInfo+(delayInfo?'&nbsp;'+delayInfo:'')
+      +'</div>'
+      +(vmRows?'<div style="margin-top:.4rem">'+vmRows+'</div>':'<div style="font-size:.78rem;color:var(--muted);margin-top:.3rem">No VMs assigned</div>')
+      +'</div>'
+      +'<div style="display:flex;gap:.3rem;align-items:center">'
+      +moveUp+moveDown
       +'<button class="btn btn-ghost btn-xs" onclick="drShowAddVmModal(\''+esc(g.id)+'\')">+ VM</button>'
-      +'<button class="btn btn-ghost btn-xs" onclick="drMoveGroup(\''+esc(g.id)+'\',-1)" '+(idx===0?'disabled':'')+'>↑</button>'
-      +'<button class="btn btn-ghost btn-xs" onclick="drMoveGroup(\''+esc(g.id)+'\',1)" '+(idx===groups.length-1?'disabled':'')+'>↓</button>'
-      +'<button class="btn btn-danger btn-xs" onclick="drDeleteGroup(\''+esc(g.id)+'\')">✕</button>'
-      +'</div></div>'+vmRows+'</div>';
+      +(isCore?'':'<button class="btn btn-danger btn-xs" onclick="drDeleteGroup(\''+esc(g.id)+'\')">Remove</button>')
+      +'</div></div></div>';
   }).join('');
 }
 
 function drShowAddGroupModal() {
-  document.getElementById('drGroupName').value=''; document.getElementById('drGroupStartMode').value='auto';
-  document.getElementById('drGroupDelay').value=30; document.getElementById('drGroupTimeout').value=120;
+  document.getElementById('drGroupName').value='';
+  document.getElementById('drGroupStartMode').value='auto';
+  document.getElementById('drGroupDelay').value='30';
+  document.getElementById('drGroupMaxParallel').value='1';
   drShowModal('drAddGroup');
 }
 
 async function drCreateGroup() {
-  var body={name:document.getElementById('drGroupName').value.trim(),start_mode:document.getElementById('drGroupStartMode').value,startup_delay_sec:parseInt(document.getElementById('drGroupDelay').value)||30,health_check_timeout_sec:parseInt(document.getElementById('drGroupTimeout').value)||120};
-  if(!body.name){ toast('Group name is required','error'); return; }
-  try { await apiPost('dr/plans/groups/create',Object.assign({plan_id:_drCurrentPlanId},body)); drHideModal('drAddGroup'); toast('Group created','success'); drRefreshPlanDetail(); drShowSubTab('groups',document.querySelector('[data-dr-tab="groups"]')); } catch(e){ toast(e.message,'error'); }
+  var payload={
+    plan_id:_drCurrentPlanId,
+    name:document.getElementById('drGroupName').value.trim(),
+    start_mode:document.getElementById('drGroupStartMode').value,
+    startup_delay_sec:parseInt(document.getElementById('drGroupDelay').value)||30,
+    max_parallel:parseInt(document.getElementById('drGroupMaxParallel').value)||1,
+    group_type:'standard',
+  };
+  if(!payload.name){ toast('Group name required','error'); return; }
+  try {
+    await apiPost('dr/plans/groups/create',payload);
+    drHideModal('drAddGroup'); toast('VM group added','success'); drRefreshPlanDetail();
+  } catch(e){ toast(e.message,'error'); }
 }
 
 async function drDeleteGroup(groupId) {
-  if(!await uiConfirm('Delete this VM group?')) return;
-  try { await apiPost('dr/plans/groups/delete',{plan_id:_drCurrentPlanId,group_id:groupId}); toast('Group deleted','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
+  if(!await uiConfirm('Delete this VM group and remove all its VMs?')) return;
+  try { await apiPost('dr/plans/groups/delete',{plan_id:_drCurrentPlanId,group_id:groupId}); toast('Group deleted','success'); drRefreshPlanDetail(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 async function drMoveGroup(groupId,direction) {
-  try {
-    var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
-    var groups=plan.vm_groups, idx=groups.findIndex(function(g){ return g.id===groupId; }), swapIdx=idx+direction;
-    if(swapIdx<0||swapIdx>=groups.length) return;
-    var tmp=groups[idx]; groups[idx]=groups[swapIdx]; groups[swapIdx]=tmp;
-    await apiPost('dr/plans/groups/reorder',{plan_id:_drCurrentPlanId,order:groups.map(function(g){ return g.id; })});
-    drRefreshPlanDetail();
-  } catch(e){ toast(e.message,'error'); }
+  var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
+  var order=plan.vm_groups.map(function(g){ return g.id; });
+  var idx=order.indexOf(groupId);
+  if(idx<0) return;
+  if(direction==='up'&&idx>0){ var t=order[idx-1]; order[idx-1]=order[idx]; order[idx]=t; }
+  if(direction==='down'&&idx<order.length-1){ var t=order[idx+1]; order[idx+1]=order[idx]; order[idx]=t; }
+  try { await apiPost('dr/plans/groups/reorder',{plan_id:_drCurrentPlanId,order}); drRefreshPlanDetail(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 function drShowAddVmModal(groupId) {
@@ -6235,46 +6288,27 @@ function drShowAddVmModal(groupId) {
 }
 
 async function drAddVmToGroup() {
-  if(!_drCurrentGroupId) return;
-  var body={vmid:parseInt(document.getElementById('drVmVmid').value),vm_name:document.getElementById('drVmName').value.trim(),target_node:document.getElementById('drVmNode').value.trim()};
-  if(!body.vmid){ toast('VMID is required','error'); return; }
-  try { await apiPost('dr/plans/groups/vms/add',Object.assign({plan_id:_drCurrentPlanId,group_id:_drCurrentGroupId},body)); drHideModal('drAddVm'); toast('VM added','success'); drRefreshPlanDetail(); drShowSubTab('groups',document.querySelector('[data-dr-tab="groups"]')); } catch(e){ toast(e.message,'error'); }
+  var vmid=parseInt(document.getElementById('drVmVmid').value);
+  if(!vmid){ toast('VMID required','error'); return; }
+  try {
+    await apiPost('dr/plans/groups/vms/add',{
+      plan_id:_drCurrentPlanId,group_id:_drCurrentGroupId,
+      vmid,vm_name:document.getElementById('drVmName').value.trim(),
+      target_node:document.getElementById('drVmNode').value.trim(),
+    });
+    drHideModal('drAddVm'); toast('VM added to group','success'); drRefreshPlanDetail();
+  } catch(e){ toast(e.message,'error'); }
 }
 
 async function drRemoveVm(groupId,vmAssignmentId) {
-  try { await apiPost('dr/plans/groups/vms/delete',{plan_id:_drCurrentPlanId,group_id:groupId,vm_id:vmAssignmentId}); toast('VM removed','success'); drRefreshPlanDetail(); } catch(e){ toast(e.message,'error'); }
-}
-
-async function drSyncPlan() {
-  if(!_drCurrentPlanId) return;
-  if(!await uiConfirm('Push current plugin DB export to the DR PegaProx site via SCP?')) return;
-  toast('Sync started…','info');
-  try { var r=await apiPost('dr/plans/sync',{plan_id:_drCurrentPlanId}); toast('Sync started — see Jobs & Logs tab','success'); setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300); } catch(e){ toast(e.message,'error'); }
-}
-
-async function drLoadSyncLog() {
-  if(!_drCurrentPlanId) return;
-  try {
-    var jobs=await apiFetch('dr/plans/sync-status?plan_id='+_drCurrentPlanId);
-    var el=document.getElementById('drSyncLogList');
-    if(!jobs.length){ el.innerHTML='<div class="muted-hint">No sync jobs yet.</div>'; return; }
-    el.innerHTML=jobs.map(function(j){
-      var stateClass=j.state==='success'?'badge-success':j.state==='failed'?'badge-danger':'badge-warning';
-      var logHtml=j.log.map(function(l){ var cls=l.msg.includes('[ERR]')?'color:var(--danger)':l.msg.includes('[WARN]')?'color:var(--warning)':'color:var(--text-muted)'; return '<div style="'+cls+';font-size:.8rem;font-family:monospace">'+esc(l.ts.slice(11,19))+' '+esc(l.msg)+'</div>'; }).join('');
-      return '<div class="list-row" style="margin-bottom:.5rem">'
-        +'<div style="display:flex;justify-content:space-between;margin-bottom:.4rem"><span class="badge '+stateClass+'">'+esc(j.state)+'</span><span class="muted-hint" style="font-size:.8rem">'+esc(j.created_at.slice(0,16).replace('T',' '))+' by '+esc(j.created_by)+'</span></div>'
-        +'<div style="background:var(--code-bg,#1a1a2e);border-radius:4px;padding:.5rem">'+logHtml+'</div></div>';
-    }).join('');
-  } catch(e){ document.getElementById('drSyncLogList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
+  try { await apiPost('dr/plans/groups/vms/delete',{plan_id:_drCurrentPlanId,group_id:groupId,vm_id:vmAssignmentId}); toast('VM removed','success'); drRefreshPlanDetail(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 // ── Failover ─────────────────────────────────────────────────────────────────
 
-var _drFailoverJobId = null;
-var _drFailoverPollTimer = null;
-
-var _drFailoverEntries = [];
-var _drFailoverSnapshots = {}; // entry_id → [snap names]
+var _drFailoverEntries=[];
+var _drFailoverSnapshots={};
 
 async function drShowFailoverModal() {
   if(!_drCurrentPlanId) return;
@@ -6282,145 +6316,80 @@ async function drShowFailoverModal() {
   document.getElementById('drFailoverEntryList').innerHTML='<div class="muted-hint">Loading…</div>';
   document.getElementById('drFailoverStartBtn').disabled=true;
   document.getElementById('drFailoverType').value='planned';
-  _drFailoverEntries=[];
-  _drFailoverSnapshots={};
+  _drFailoverEntries=[]; _drFailoverSnapshots={};
   drShowModal('drFailover');
-
   try {
-    var plan = await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
-    _drFailoverEntries = plan.entries || [];
+    var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
+    _drFailoverEntries=plan.entries||[];
     drRenderFailoverEntries();
-
-    var r = await apiFetch('dr/plans/precheck?plan_id='+_drCurrentPlanId);
-    var hasError = r.checks.some(function(c){ return c.status==='error'; });
-    var html = r.checks.map(function(c){
-      var icon = c.status==='ok'?'✅':c.status==='warn'?'⚠️':'❌';
+    var r=await apiFetch('dr/plans/precheck?plan_id='+_drCurrentPlanId);
+    var hasError=r.checks.some(function(c){ return c.status==='error'; });
+    document.getElementById('drFailoverChecks').innerHTML=r.checks.map(function(c){
+      var icon=c.status==='ok'?'✅':c.status==='warn'?'⚠️':'❌';
       return '<div style="display:flex;gap:.5rem;align-items:flex-start">'
-        +'<span>'+icon+'</span>'
-        +'<span><strong>'+esc(c.name)+'</strong><br><span style="color:var(--muted);font-size:.82rem">'+esc(c.message)+'</span></span></div>';
+        +'<span>'+icon+'</span><span><strong>'+esc(c.name)+'</strong><br>'
+        +'<span style="color:var(--muted);font-size:.82rem">'+esc(c.message)+'</span></span></div>';
     }).join('');
-    document.getElementById('drFailoverChecks').innerHTML=html;
-    if(hasError) {
-      document.getElementById('drFailoverStartBtn').disabled=true;
-      document.getElementById('drFailoverStartBtn').title='Fix errors before starting failover';
-    }
-  } catch(e){
-    document.getElementById('drFailoverChecks').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>';
-  }
+    if(!hasError) document.getElementById('drFailoverStartBtn').disabled=false;
+  } catch(e){ document.getElementById('drFailoverChecks').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
 }
 
 function drRenderFailoverEntries() {
-  var el = document.getElementById('drFailoverEntryList');
+  var el=document.getElementById('drFailoverEntryList');
   if(!_drFailoverEntries.length){ el.innerHTML='<div class="muted-hint">No entries</div>'; return; }
-  var html = '<div style="display:flex;gap:.5rem;margin-bottom:.4rem">'
-    +'<button class="btn btn-ghost btn-xs" onclick="drSelectAllEntries(true)">☑ Select All</button>'
-    +'<button class="btn btn-ghost btn-xs" onclick="drSelectAllEntries(false)">☐ Deselect All</button>'
-    +'</div>';
-  html += _drFailoverEntries.map(function(e){
-    var lag = e.sm_lag_time ? formatLag(e.sm_lag_time) : '';
-    var health = e.sm_healthy===false ? ' ❌ unhealthy' : (lag ? ' · '+lag : '');
-    var color = e.sm_healthy===false ? 'color:var(--error)' : '';
-    var snaps = _drFailoverSnapshots[e.id] || [];
-    var snapSel = '<select id="drSnap-'+esc(e.id)+'" style="font-size:.75rem;margin-left:.5rem;max-width:180px">'
-      +'<option value="">— latest snapshot —</option>'
+  var html='<div style="display:flex;gap:.5rem;margin-bottom:.4rem">'
+    +'<button class="btn btn-ghost btn-xs" onclick="drSelectAllEntries(true)">☑ All</button>'
+    +'<button class="btn btn-ghost btn-xs" onclick="drSelectAllEntries(false)">☐ None</button></div>';
+  html+=_drFailoverEntries.map(function(e){
+    var snaps=_drFailoverSnapshots[e.id]||[];
+    var snapSel='<select id="drSnap-'+esc(e.id)+'" style="font-size:.75rem;margin-left:.5rem;max-width:180px">'
+      +'<option value="">— latest —</option>'
       +snaps.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+(s.created?' ('+s.created.slice(0,10)+')':'')+'</option>'; }).join('')
       +'</select>';
-    return '<div style="display:flex;align-items:center;gap:.5rem;padding:.35rem .4rem;border-radius:4px;background:var(--bg);margin-bottom:2px">'
+    return '<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;background:var(--bg);border-radius:4px;margin-bottom:2px">'
       +'<input type="checkbox" id="drChk-'+esc(e.id)+'" value="'+esc(e.id)+'" onchange="drUpdateFailoverBtn()" style="accent-color:var(--primary);flex-shrink:0">'
-      +'<label for="drChk-'+esc(e.id)+'" style="cursor:pointer;flex:1;'+color+'">'
-      +'<strong>'+esc(e.source_volume)+'</strong>'
-      +' <span style="color:var(--muted);font-size:.8rem">→ '+esc(e.dr_volume)+health+'</span>'
-      +'</label>'
-      +'<button class="btn btn-ghost btn-xs" onclick="drLoadSnaps(\''+esc(e.id)+'\')" title="Load available snapshots">🔄</button>'
-      +snapSel
-      +'</div>';
+      +'<label for="drChk-'+esc(e.id)+'" style="cursor:pointer;flex:1;font-size:.85rem"><strong>'+esc(e.source_volume)+'</strong>'
+      +' <span style="color:var(--muted)">→ '+esc(e.dr_volume)+'</span></label>'
+      +'<button class="btn btn-ghost btn-xs" onclick="drLoadSnaps(\''+esc(e.id)+'\')">🔄</button>'
+      +snapSel+'</div>';
   }).join('');
   el.innerHTML=html;
 }
 
-function drSelectAllEntries(checked) {
-  document.querySelectorAll('#drFailoverEntryList input[type=checkbox]').forEach(function(cb){ cb.checked=checked; });
-  drUpdateFailoverBtn();
-}
-
-function drUpdateFailoverBtn() {
-  var any = document.querySelectorAll('#drFailoverEntryList input[type=checkbox]:checked').length > 0;
-  var hasError = document.querySelector('#drFailoverChecks .badge-danger') !== null;
-  document.getElementById('drFailoverStartBtn').disabled = !any || hasError;
+function drSelectAllEntries(checked){ document.querySelectorAll('#drFailoverEntryList input[type=checkbox]').forEach(function(cb){ cb.checked=checked; }); drUpdateFailoverBtn(); }
+function drUpdateFailoverBtn(){
+  var any=document.querySelectorAll('#drFailoverEntryList input[type=checkbox]:checked').length>0;
+  var hasError=document.querySelector('#drFailoverChecks .badge-danger')!==null;
+  document.getElementById('drFailoverStartBtn').disabled=!any||hasError;
 }
 
 async function drLoadSnaps(entryId) {
-  var btn = document.querySelector('button[onclick="drLoadSnaps(\''+entryId+'\')"]');
-  if(btn) btn.disabled=true;
   try {
-    var snaps = await apiFetch('dr/plans/snapshots?plan_id='+_drCurrentPlanId+'&entry_id='+entryId);
-    _drFailoverSnapshots[entryId] = snaps;
-    drRenderFailoverEntries();
-    // re-check the checkbox that was checked before
-    var cb = document.getElementById('drChk-'+entryId);
-    if(cb) cb.checked = true;
+    var snaps=await apiFetch('dr/plans/snapshots?plan_id='+_drCurrentPlanId+'&entry_id='+entryId);
+    _drFailoverSnapshots[entryId]=snaps; drRenderFailoverEntries();
+    var cb=document.getElementById('drChk-'+entryId); if(cb) cb.checked=true;
     drUpdateFailoverBtn();
   } catch(e){ toast('Could not load snapshots: '+e.message,'error'); }
-  if(btn) btn.disabled=false;
 }
 
 async function drStartFailover() {
-  var ftype = document.getElementById('drFailoverType').value;
-  var selectedIds = Array.from(document.querySelectorAll('#drFailoverEntryList input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
+  var ftype=document.getElementById('drFailoverType').value;
+  var selectedIds=Array.from(document.querySelectorAll('#drFailoverEntryList input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
   if(!selectedIds.length){ toast('Select at least one datastore','error'); return; }
-  // Build snap_map: {entry_id: snap_name} for entries with explicit snapshot selected
-  var snapMap = {};
-  selectedIds.forEach(function(eid){
-    var sel = document.getElementById('drSnap-'+eid);
-    if(sel && sel.value) snapMap[eid] = sel.value;
-  });
-  var warn = ftype==='emergency'
-    ? 'EMERGENCY failover for '+selectedIds.length+' datastore(s): SnapMirror will be broken WITHOUT a final sync. Data since last transfer may be lost. Continue?'
-    : 'Start PLANNED failover for '+selectedIds.length+' datastore(s)? SnapMirror will be broken and storage mounted on the DR site.';
+  var snapMap={};
+  selectedIds.forEach(function(eid){ var sel=document.getElementById('drSnap-'+eid); if(sel&&sel.value) snapMap[eid]=sel.value; });
+  var warn=ftype==='emergency'
+    ?'⚠ EMERGENCY failover: SnapMirror will be broken WITHOUT a final sync. Data since last transfer may be lost. Continue?'
+    :'Start PLANNED failover? SnapMirror will be broken and storage mounted on the DR site.';
   if(!await uiConfirm(warn)) return;
   drHideModal('drFailover');
   try {
-    var r = await apiPost('dr/plans/failover',{plan_id:_drCurrentPlanId,failover_type:ftype,entry_ids:selectedIds,snap_map:snapMap});
-    _drFailoverJobId = r.job_id;
-    toast('Failover started — see Jobs & Logs tab','success');
+    var r=await apiPost('dr/plans/failover',{plan_id:_drCurrentPlanId,failover_type:ftype,entry_ids:selectedIds,snap_map:snapMap});
+    toast('Failover started — see Jobs & Logs tab for progress','success');
     setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
   } catch(e){ toast(e.message,'error'); }
 }
 
-function drPollFailoverLog() {
-  if(_drFailoverPollTimer) clearTimeout(_drFailoverPollTimer);
-  drLoadFailoverLog().then(function(done){
-    if(!done) _drFailoverPollTimer = setTimeout(drPollFailoverLog, 2000);
-    else { drRefreshPlanDetail(); }
-  });
-}
-
-async function drLoadFailoverLog() {
-  if(!_drCurrentPlanId) return true;
-  try {
-    var jobs = await apiFetch('dr/plans/failover-jobs?plan_id='+_drCurrentPlanId);
-    var el = document.getElementById('drFailoverLogList');
-    if(!el) return true;
-    if(!jobs.length){ el.innerHTML='<div class="muted-hint">No failover jobs yet.</div>'; return true; }
-    var j = jobs[0];
-    var stateClass = j.state==='success'?'badge-success':j.state==='failed'?'badge-danger':'badge-warning';
-    var logHtml = j.log.map(function(l){
-      var col = l.msg.includes('[ERR]')?'var(--error)':l.msg.includes('[WARN]')?'var(--warning)':'var(--muted)';
-      return '<div style="color:'+col+';font-size:.8rem;font-family:monospace;line-height:1.6">'
-        +esc(l.ts.slice(11,19))+' '+esc(l.msg)+'</div>';
-    }).join('');
-    el.innerHTML='<div style="display:flex;justify-content:space-between;margin-bottom:.4rem">'
-      +'<span class="badge '+stateClass+'">'+esc(j.state)+'</span>'
-      +'<span class="muted-hint" style="font-size:.8rem">'+esc(j.job_type.replace('_',' '))+' · '+esc(j.created_at.slice(0,16).replace('T',' '))+' by '+esc(j.created_by)+'</span></div>'
-      +'<div style="background:var(--code-bg,#0d1117);border-radius:4px;padding:.75rem;max-height:400px;overflow-y:auto">'+logHtml+'</div>';
-    // auto-scroll to bottom
-    var box = el.querySelector('div[style*="max-height"]');
-    if(box) box.scrollTop = box.scrollHeight;
-    return j.state !== 'running';
-  } catch(e){ return true; }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Initial load
 applyI18n();
@@ -7475,71 +7444,34 @@ loadSnapshots();
 </div><!-- /addPveHostForm -->
 
 <!-- ══════════════════════════ DR MODALS ══════════════════════════ -->
+
+<!-- Add DR Site -->
 <div id="drAddSiteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddSite')">
-  <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:520px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700">🏢 Add DR Site</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddSite')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:grid;gap:.75rem">
-      <div class="form-group"><label>Name</label><input id="drSiteName" placeholder="DR Frankfurt"></div>
-      <div class="form-group"><label>DR ONTAP Endpoint</label><select id="drSiteEndpoint"></select></div>
-
-      <!-- PVE Host Mode selector -->
-      <div style="border-top:1px solid var(--border);padding-top:.75rem">
-        <div style="font-size:.85rem;font-weight:600;color:var(--muted);margin-bottom:.5rem">DR PVE Hosts</div>
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem">
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer"><input type="radio" name="drSiteHostMode" value="existing" checked onchange="drSiteHostModeChange('existing')"> Aus registrierten Hosts</label>
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer"><input type="radio" name="drSiteHostMode" value="inline" onchange="drSiteHostModeChange('inline')"> Neu eintragen</label>
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer"><input type="radio" name="drSiteHostMode" value="cluster" onchange="drSiteHostModeChange('cluster')"> PegaProx-Cluster</label>
-        </div>
-
-        <!-- Mode: existing -->
-        <div id="drSiteMode-existing">
-          <select id="drSitePveHosts" multiple size="4" style="width:100%"></select>
-          <div class="muted-hint" style="font-size:.78rem;margin-top:.3rem">Ctrl/Cmd für Mehrfachauswahl</div>
-        </div>
-
-        <!-- Mode: inline -->
-        <div id="drSiteMode-inline" style="display:none">
-          <div id="drSiteInlineHosts"></div>
-          <button class="btn btn-ghost btn-sm" style="margin-top:.5rem" onclick="drSiteAddInlineHost()">+ Host hinzufügen</button>
-        </div>
-
-        <!-- Mode: cluster -->
-        <div id="drSiteMode-cluster" style="display:none">
-          <div class="form-group">
-            <label>PegaProx-Cluster auswählen</label>
-            <select id="drSiteCluster" style="width:100%"></select>
-          </div>
-          <div class="muted-hint" style="font-size:.78rem">Alle Nodes des Clusters werden als DR PVE Hosts importiert.</div>
-        </div>
-      </div>
-
-      <div style="border-top:1px solid var(--border);padding-top:.75rem;font-size:.85rem;font-weight:600;color:var(--muted)">DB Sync (SCP)</div>
-      <div class="form-group"><label>DR PegaProx Host</label><input id="drSiteSyncHost" placeholder="10.0.2.10"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 80px;gap:.5rem">
-        <div class="form-group"><label>SSH User</label><input id="drSiteSyncUser" value="root"></div>
-        <div class="form-group"><label>Remote Path</label><input id="drSiteSyncPath" value="/opt/PegaProx/plugins/netapp_storage/"></div>
-        <div class="form-group"><label>PV Port</label><input id="drSitePvPort" type="number" value="443" min="1" max="65535"></div>
+      <div class="form-group"><label>Site Name</label><input id="drSiteName" placeholder="DR Lab" autocomplete="off"></div>
+      <div class="form-group">
+        <label>NetApp ONTAP Endpoint (DR cluster)</label>
+        <select id="drSiteEndpoint"></select>
       </div>
       <div class="form-group">
-        <label>SSH Passwort <span style="font-weight:400;color:var(--muted)">(optional — für initialen Key-Push; danach leer lassen)</span></label>
-        <input id="drSiteSyncPassword" type="password" placeholder="leer = nur Key-Auth">
+        <label>DR PVE Host(s) <span style="font-weight:400;color:var(--muted)">(Ctrl+click for multiple)</span></label>
+        <select id="drSitePveHosts" multiple size="4" style="width:100%"></select>
       </div>
-      <div class="form-group">
-        <label>DR PegaProx API Token <span style="font-weight:400;color:var(--muted)">(Settings → API Tokens auf DR-PegaProx erstellen)</span></label>
-        <input id="drSitePvApiToken" type="password" placeholder="pgx_...">
-      </div>
-      <div class="form-group"><label>Description</label><input id="drSiteDesc" placeholder="optional"></div>
+      <div class="form-group"><label>Description <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="drSiteDesc" placeholder="optional"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drAddSite')">Cancel</button>
-      <button class="btn btn-primary" onclick="drCreateSite()">Create</button>
+      <button class="btn btn-primary" onclick="drCreateSite()">✅ Create DR Site</button>
     </div>
   </div>
 </div>
 
+<!-- Add DR Plan -->
 <div id="drAddPlanModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddPlan')">
   <div style="max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
@@ -7547,85 +7479,135 @@ loadSnapshots();
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddPlan')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:grid;gap:.75rem">
-      <div class="form-group"><label>Plan Name</label><input id="drPlanName" placeholder="Production DR Plan"></div>
+      <div class="alert alert-info" style="font-size:.82rem">A <strong>Core Infrastructure</strong> VM group will be created automatically.</div>
+      <div class="form-group"><label>Plan Name</label><input id="drPlanName" placeholder="Production DR" autocomplete="off"></div>
       <div class="form-group"><label>DR Site</label><select id="drPlanSite"></select></div>
-      <div class="form-group"><label>Notes</label><textarea id="drPlanNotes" rows="2" placeholder="optional"></textarea></div>
+      <div class="form-group"><label>Notes <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="drPlanNotes" placeholder="optional"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drAddPlan')">Cancel</button>
-      <button class="btn btn-primary" onclick="drCreatePlan()">Create</button>
+      <button class="btn btn-primary" onclick="drCreatePlan()">✅ Create Plan</button>
     </div>
   </div>
 </div>
 
+<!-- Add Datastore Entry -->
 <div id="drAddEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddEntry')">
-  <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700">📦 Add Protected Datastore</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddEntry')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:grid;gap:.75rem">
-      <div style="font-size:.85rem;color:var(--muted)">Wähle einen bestehenden Datastore oder trage ONTAP-Details manuell ein.</div>
-      <div class="form-group"><label>Source Datastore (Auto-Fill)</label><select id="drEntryDatastore" onchange="drEntryFillFromDatastore(this.value)"><option value="">— auswählen oder manuell —</option></select></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group"><label>Source Endpoint</label><select id="drEntrySourceEndpoint"></select></div>
-        <div class="form-group"><label>Source SVM</label><input id="drEntrySourceSvm" placeholder="svm-prod"></div>
-      </div>
-      <div class="form-group"><label>Source Volume</label><input id="drEntrySourceVolume" placeholder="vol_prod_01"></div>
-      <div style="border-top:1px solid var(--border);padding-top:.75rem;font-size:.85rem;font-weight:600;color:var(--muted)">DR Ziel (auto-detect wenn leer)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group"><label>DR Endpoint</label><select id="drEntryDrEndpoint"><option value="">— auto-detect —</option></select></div>
-        <div class="form-group"><label>DR SVM</label><input id="drEntryDrSvm" placeholder="auto-detect"></div>
-      </div>
-      <div class="form-group"><label>DR Volume</label><input id="drEntryDrVolume" placeholder="auto-detect"></div>
-      <div class="form-group"><label>DR PVE Storage ID</label><input id="drEntryDrPveStorageId" placeholder="netapp-dr-01"></div>
+      <div class="alert alert-info" style="font-size:.82rem">Tip: Use <strong>Auto-detect</strong> to find all SnapMirror relationships automatically.</div>
+      <div class="form-group"><label>Source Endpoint</label><select id="drEntryEndpoint"></select></div>
+      <div class="form-group"><label>Source SVM</label><input id="drEntrySvm" placeholder="svmlabnfs01" autocomplete="off"></div>
+      <div class="form-group"><label>Source Volume</label><input id="drEntryVolume" placeholder="vol_nfs_prod01" autocomplete="off"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drAddEntry')">Cancel</button>
-      <button class="btn btn-primary" onclick="drCreateEntry()">Hinzufügen</button>
+      <button class="btn btn-primary" onclick="drCreateEntry()">✅ Add Datastore</button>
     </div>
   </div>
 </div>
 
+<!-- Add VM Group -->
 <div id="drAddGroupModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddGroup')">
-  <div style="max-width:440px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:460px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700">🖥️ VM-Gruppe anlegen</div>
+      <div style="font-size:16px;font-weight:700">🖥️ Add VM Group</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddGroup')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:grid;gap:.75rem">
-      <div class="form-group"><label>Gruppenname</label><input id="drGroupName" placeholder="Core Infrastructure"></div>
-      <div class="form-group"><label>Startmodus</label><select id="drGroupStartMode"><option value="auto">Auto — startet automatisch beim Failover</option><option value="manual">Manuell — Admin-Bestätigung erforderlich</option></select></div>
+      <div class="form-group"><label>Group Name</label><input id="drGroupName" placeholder="Application Tier" autocomplete="off"></div>
+      <div class="form-group">
+        <label>Start Mode</label>
+        <select id="drGroupStartMode">
+          <option value="auto">Auto — starts automatically in sequence</option>
+          <option value="manual">Manual — waits for admin confirmation</option>
+        </select>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group"><label>Startverzögerung (s)</label><input id="drGroupDelay" type="number" value="30" min="0"></div>
-        <div class="form-group"><label>Health-Check Timeout (s)</label><input id="drGroupTimeout" type="number" value="120" min="10"></div>
+        <div class="form-group"><label>Startup Delay (s) <span style="font-weight:400;color:var(--muted)">after prev. group</span></label><input id="drGroupDelay" type="number" value="30" min="0"></div>
+        <div class="form-group"><label>Max Parallel VMs</label><input id="drGroupMaxParallel" type="number" value="1" min="1" max="20"></div>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drAddGroup')">Cancel</button>
-      <button class="btn btn-primary" onclick="drCreateGroup()">Gruppe erstellen</button>
+      <button class="btn btn-primary" onclick="drCreateGroup()">✅ Add Group</button>
     </div>
   </div>
 </div>
 
+<!-- Add VM to Group -->
 <div id="drAddVmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddVm')">
   <div style="max-width:420px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700">➕ VM zur Gruppe hinzufügen</div>
+      <div style="font-size:16px;font-weight:700">➕ Add VM to Group</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddVm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:grid;gap:.75rem">
-      <div class="form-group"><label>VMID</label><input id="drVmVmid" type="number" placeholder="100"></div>
-      <div class="form-group"><label>VM Name (optional)</label><input id="drVmName" placeholder="vm-dns01"></div>
-      <div class="form-group"><label>Ziel DR-Node (optional)</label><input id="drVmNode" placeholder="dr-pmx01"></div>
+      <div class="form-group"><label>VMID</label><input id="drVmVmid" type="number" placeholder="100" autocomplete="off"></div>
+      <div class="form-group"><label>VM Name <span style="font-weight:400;color:var(--muted)">(display only)</span></label><input id="drVmName" placeholder="my-vm" autocomplete="off"></div>
+      <div class="form-group"><label>Target Node <span style="font-weight:400;color:var(--muted)">(DR PVE node hostname)</span></label><input id="drVmNode" placeholder="ucnlabpmx03" autocomplete="off"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drAddVm')">Cancel</button>
-      <button class="btn btn-primary" onclick="drAddVmToGroup()">VM hinzufügen</button>
+      <button class="btn btn-primary" onclick="drAddVmToGroup()">✅ Add VM</button>
     </div>
   </div>
 </div>
 
+<!-- Role & Config Volume Settings -->
+<div id="drRoleModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drRole')">
+  <div style="max-width:540px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">⚙ Role &amp; Config Volume</div>
+      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drRole')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:1rem">
+      <div>
+        <div style="font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Config Volume</div>
+        <div id="drConfigVolStatus" style="padding:.5rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:.85rem"></div>
+        <div id="drCVSetupForm" style="display:none;margin-top:.75rem;padding:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px">
+          <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Setup Config Volume</div>
+          <div class="form-group"><label style="font-size:.82rem">NFS Volume (will store DR config JSON files)</label><select id="drCVVolumeSelect" style="width:100%"></select></div>
+          <div class="form-group"><label style="font-size:.82rem">Local NFS Mount Path</label><input id="drCVMountPath" placeholder="/mnt/pve/dr-config" autocomplete="off"></div>
+          <div style="display:flex;gap:.5rem;margin-top:.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('drCVSetupForm').style.display='none'">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="drSaveConfigVolume()">✅ Save Config Volume</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Plugin Role</div>
+        <div style="padding:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:grid;gap:.6rem">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.82rem">Role</label>
+            <select id="drRoleSelect">
+              <option value="MASTER">🟢 MASTER — manages plans, writes config</option>
+              <option value="DR_SLAVE">🟡 DR SLAVE — standby, reads config from volume</option>
+              <option value="DR_TEST">🔵 DR TEST — isolated FlexClone-based test (future)</option>
+            </select>
+          </div>
+          <label style="display:flex;align-items:center;gap:.5rem;font-size:.82rem;cursor:pointer">
+            <input type="checkbox" id="drRoleForcedCheck">
+            <span>Force override (prevent auto-detection from changing this)</span>
+          </label>
+          <div style="display:flex;gap:.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="drDetectRole()">🔍 Auto-detect from ONTAP</button>
+            <button class="btn btn-primary btn-sm" onclick="drSaveRole()">✅ Save Role</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drRole')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Failover Modal -->
 <div id="drFailoverModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drFailover')">
   <div style="max-width:520px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
@@ -7636,21 +7618,19 @@ loadSnapshots();
       <div class="form-group">
         <label>Failover Type</label>
         <select id="drFailoverType">
-          <option value="planned">Planned — triggers final SnapMirror update before break</option>
-          <option value="emergency">Emergency — breaks immediately (primary unreachable)</option>
+          <option value="planned">Planned — final SnapMirror sync before break</option>
+          <option value="emergency">Emergency — break immediately (primary unreachable)</option>
         </select>
       </div>
       <div>
-        <div style="font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em">Datastores to Failover</div>
-        <div id="drFailoverEntryList" style="display:grid;gap:.25rem;max-height:180px;overflow-y:auto;padding:2px"></div>
+        <div style="font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">Datastores</div>
+        <div id="drFailoverEntryList" style="max-height:180px;overflow-y:auto;padding:2px"></div>
       </div>
       <div>
-        <div style="font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em">Pre-Check Results</div>
+        <div style="font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">Pre-Check Results</div>
         <div id="drFailoverChecks" style="display:grid;gap:.3rem"></div>
       </div>
-      <div class="alert alert-warning" style="font-size:.82rem">
-        ⚠️ <strong>Irreversible:</strong> SnapMirror will be broken. Primary volumes remain unchanged. Use Failback to return.
-      </div>
+      <div class="alert alert-warning" style="font-size:.82rem">⚠️ <strong>Irreversible:</strong> SnapMirror will be broken. Use Failback to return.</div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drFailover')">Cancel</button>
@@ -7659,6 +7639,7 @@ loadSnapshots();
   </div>
 </div>
 
+<!-- Edit DR Entry -->
 <div id="drEditEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drEditEntry')">
   <div style="max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
@@ -7674,10 +7655,11 @@ loadSnapshots();
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-ghost" onclick="drHideModal('drEditEntry')">Cancel</button>
-      <button class="btn btn-primary" onclick="drSaveEntryEdit()">Save</button>
+      <button class="btn btn-primary" onclick="drSaveEntryEdit()">✅ Save</button>
     </div>
   </div>
 </div>
+
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.

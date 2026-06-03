@@ -20,6 +20,27 @@ PLUGIN_DIR  = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_ID   = os.path.basename(PLUGIN_DIR)
 
 
+def _migrate_dr_v2(db):
+    """Drop old DR schema (v1, identified by sync_host column) and recreate fresh."""
+    try:
+        rows = db.query("PRAGMA table_info(netapp_dr_sites)")
+        cols = {r["name"] for r in (rows or [])}
+        if "sync_host" in cols:
+            log.info("[netapp_storage] Migrating DR schema to v2 — dropping old DR tables …")
+            for tbl in [
+                "netapp_dr_vm_assignments", "netapp_dr_vm_groups",
+                "netapp_dr_plan_entries", "netapp_dr_plans",
+                "netapp_dr_sites", "netapp_dr_jobs",
+            ]:
+                try:
+                    db.execute(f"DROP TABLE IF EXISTS {tbl}")
+                except Exception:
+                    pass
+            log.info("[netapp_storage] Old DR tables dropped — new schema will be created from schema.sql")
+    except Exception as exc:
+        log.warning(f"[netapp_storage] DR v2 migration check failed: {exc}")
+
+
 def _init_db():
     """Creates plugin tables in the central pegaprox.db (idempotent).
 
@@ -30,6 +51,7 @@ def _init_db():
         with open(schema_path) as f:
             sql = f.read()
         db = get_db()
+        _migrate_dr_v2(db)  # drop old DR schema before creating new tables
         for stmt in sql.split(";"):
             stmt = stmt.strip()
             if stmt:

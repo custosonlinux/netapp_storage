@@ -165,34 +165,38 @@ CREATE TABLE IF NOT EXISTS netapp_provisioned_datastores (
 
 -- ── Disaster Recovery ─────────────────────────────────────────────────────
 
+-- Plugin-wide config: role (MASTER/DR_SLAVE/DR_TEST) and NFS config volume
+CREATE TABLE IF NOT EXISTS netapp_plugin_config (
+    id                TEXT PRIMARY KEY DEFAULT 'default',
+    role              TEXT NOT NULL DEFAULT 'MASTER',      -- MASTER | DR_SLAVE | DR_TEST
+    role_forced       INTEGER NOT NULL DEFAULT 0,          -- 1 = admin override, 0 = auto-detected
+    config_volume_id  TEXT NOT NULL DEFAULT '',            -- netapp_volume_mapping.id
+    config_mount_path TEXT NOT NULL DEFAULT '',            -- local NFS mount path for config volume
+    last_role_check   TEXT NOT NULL DEFAULT '',
+    updated_at        TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS netapp_dr_sites (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
     endpoint_id     TEXT NOT NULL REFERENCES netapp_endpoints(id) ON DELETE RESTRICT,
     pve_host_ids    TEXT NOT NULL DEFAULT '[]',
-    sync_host       TEXT NOT NULL DEFAULT '',
-    sync_user       TEXT NOT NULL DEFAULT 'root',
-    sync_path       TEXT NOT NULL DEFAULT '/opt/PegaProx/plugins/netapp_storage/',
-    pv_port                 INTEGER NOT NULL DEFAULT 443,
-    pv_api_token_encrypted  TEXT NOT NULL DEFAULT '',
-    description             TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS netapp_dr_plans (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,
-    dr_site_id      TEXT NOT NULL REFERENCES netapp_dr_sites(id) ON DELETE RESTRICT,
-    state           TEXT NOT NULL DEFAULT 'standby',
-    last_tested_at  TEXT NOT NULL DEFAULT '',
-    last_test_result TEXT NOT NULL DEFAULT '',
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    dr_site_id       TEXT NOT NULL REFERENCES netapp_dr_sites(id) ON DELETE RESTRICT,
+    state            TEXT NOT NULL DEFAULT 'standby',  -- standby | failover_running | failed_over | failback_running
+    notes            TEXT NOT NULL DEFAULT '',
     last_failover_at TEXT NOT NULL DEFAULT '',
-    last_sync_at    TEXT NOT NULL DEFAULT '',
-    notes           TEXT NOT NULL DEFAULT '',
-    created_by      TEXT NOT NULL,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    last_test_at     TEXT NOT NULL DEFAULT '',
+    created_by       TEXT NOT NULL,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS netapp_dr_plan_entries (
@@ -201,8 +205,6 @@ CREATE TABLE IF NOT EXISTS netapp_dr_plan_entries (
     source_endpoint_id  TEXT NOT NULL,
     source_svm          TEXT NOT NULL,
     source_volume       TEXT NOT NULL,
-    mapping_id          TEXT NOT NULL DEFAULT '',
-    ds_id               TEXT NOT NULL DEFAULT '',
     snapmirror_rel_uuid TEXT NOT NULL DEFAULT '',
     dr_endpoint_id      TEXT NOT NULL DEFAULT '',
     dr_svm              TEXT NOT NULL DEFAULT '',
@@ -214,14 +216,15 @@ CREATE TABLE IF NOT EXISTS netapp_dr_plan_entries (
 );
 
 CREATE TABLE IF NOT EXISTS netapp_dr_vm_groups (
-    id                       TEXT PRIMARY KEY,
-    plan_id                  TEXT NOT NULL REFERENCES netapp_dr_plans(id) ON DELETE CASCADE,
-    name                     TEXT NOT NULL,
-    sort_order               INTEGER NOT NULL DEFAULT 0,
-    start_mode               TEXT NOT NULL DEFAULT 'auto',
-    startup_delay_sec        INTEGER NOT NULL DEFAULT 30,
-    health_check_timeout_sec INTEGER NOT NULL DEFAULT 120,
-    created_at               TEXT NOT NULL
+    id                TEXT PRIMARY KEY,
+    plan_id           TEXT NOT NULL REFERENCES netapp_dr_plans(id) ON DELETE CASCADE,
+    name              TEXT NOT NULL,
+    group_type        TEXT NOT NULL DEFAULT 'standard',  -- core | standard
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    start_mode        TEXT NOT NULL DEFAULT 'auto',      -- auto | manual (core always auto)
+    startup_delay_sec INTEGER NOT NULL DEFAULT 30,
+    max_parallel      INTEGER NOT NULL DEFAULT 1,
+    created_at        TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS netapp_dr_vm_assignments (
@@ -232,17 +235,6 @@ CREATE TABLE IF NOT EXISTS netapp_dr_vm_assignments (
     target_node TEXT NOT NULL DEFAULT '',
     start_order INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS netapp_dr_jobs (
-    id          TEXT PRIMARY KEY,
-    plan_id     TEXT NOT NULL REFERENCES netapp_dr_plans(id) ON DELETE CASCADE,
-    job_type    TEXT NOT NULL,
-    state       TEXT NOT NULL DEFAULT 'running',
-    log_json    TEXT NOT NULL DEFAULT '[]',
-    created_by  TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    completed_at TEXT NOT NULL DEFAULT ''
 );
 
 -- ── Snapshot Schedules ─────────────────────────────────────────────────────
