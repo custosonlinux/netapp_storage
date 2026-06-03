@@ -649,9 +649,10 @@ def _wizard_register_pve_storage():
     if not cfg.get("config_volume_id"):
         return {"error": "Create the config volume first (Step 1)"}, 400
 
-    vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
-    if not vol:
+    vol_row = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
+    if not vol_row:
         return {"error": "Config volume mapping not found"}, 404
+    vol = dict(vol_row)
 
     nfs_ip   = vol.get("nfs_export_ip", "")
     junction = vol.get("junction_path", "")
