@@ -205,27 +205,35 @@ def _config_volume_status():
     """GET dr/config-volume"""
     import os
     cfg = _get_plugin_config()
+    db = get_db()
+    pve_host_ids = _json_field(cfg.get("config_pve_host_ids"))
+    storage_id   = cfg.get("config_storage_id", "")
+    configured   = bool(cfg.get("config_volume_id") and storage_id and pve_host_ids)
+
     result = {
-        "configured":       bool(cfg.get("config_volume_id")),
-        "config_volume_id": cfg.get("config_volume_id", ""),
-        "config_mount_path": cfg.get("config_mount_path", ""),
+        "configured":          configured,
+        "config_volume_id":    cfg.get("config_volume_id", ""),
+        "config_storage_id":   storage_id,
+        "config_pve_host_ids": pve_host_ids,
     }
     if cfg.get("config_volume_id"):
-        db = get_db()
         vol = db.query_one(
-            "SELECT volume_name, pve_storage_id, nfs_export_ip FROM netapp_volume_mapping WHERE id=?",
+            "SELECT volume_name, nfs_export_ip, junction_path FROM netapp_volume_mapping WHERE id=?",
             (cfg["config_volume_id"],)
         )
         if vol:
             result.update({
                 "volume_name": vol["volume_name"],
-                "storage_id":  vol["pve_storage_id"],
                 "nfs_ip":      vol["nfs_export_ip"],
+                "junction":    vol["junction_path"],
             })
-    mount_path = cfg.get("config_mount_path", "")
-    if mount_path:
-        result["mount_accessible"]  = os.path.isdir(mount_path)
-        result["config_dir_exists"] = os.path.isdir(f"{mount_path}/.netapp-dr")
+    # Resolve PVE host names
+    hosts = []
+    for hid in pve_host_ids:
+        h = db.query_one("SELECT name, host FROM netapp_pve_hosts WHERE id=?", (hid,))
+        if h:
+            hosts.append({"id": hid, "name": h["name"], "host": h["host"]})
+    result["pve_hosts"] = hosts
     return jsonify(result)
 
 
@@ -348,10 +356,14 @@ def _config_volume_wizard_data():
                 "mounted":     bool(mount_path and os.path.isdir(mount_path)),
             }
 
+    pve_hosts = db.query("SELECT id, name, host FROM netapp_pve_hosts ORDER BY name") or []
+
     return jsonify({
-        "endpoints": [dict(e) for e in eps],
+        "endpoints":   [dict(e) for e in eps],
+        "pve_hosts":   [dict(h) for h in pve_hosts],
         "config_volume": cv_details,
-        "config_mount_path": cfg.get("config_mount_path", ""),
+        "config_storage_id":   cfg.get("config_storage_id", ""),
+        "config_pve_host_ids": _json_field(cfg.get("config_pve_host_ids")),
     })
 
 
@@ -541,15 +553,22 @@ def _wizard_create_snapmirror():
         return {"error": msg}, 500
 
 
-def _wizard_activate_mount():
-    """POST dr/config-volume/wizard/activate — save mount path and check accessibility."""
-    import os
+def _wizard_register_pve_storage():
+    """POST dr/config-volume/wizard/register-storage
+    Register the config volume as a pvesm NFS storage on the selected PVE hosts.
+    Tries each host, reports per-host result. Saves succeeded hosts to plugin_config.
+    """
+    import shlex
     err = _require_admin()
     if err: return err
     data = _body()
-    mount_path = (data.get("mount_path") or "").strip().rstrip("/")
-    if not mount_path:
-        return {"error": "mount_path is required"}, 400
+    pve_host_ids = data.get("pve_host_ids") or []
+    storage_id   = (data.get("storage_id") or "dr-config").strip()
+
+    if not pve_host_ids:
+        return {"error": "Select at least one PVE host"}, 400
+    if not storage_id:
+        return {"error": "storage_id is required"}, 400
 
     db = get_db()
     cfg = _get_plugin_config()
@@ -557,74 +576,131 @@ def _wizard_activate_mount():
         return {"error": "Create the config volume first (Step 1)"}, 400
 
     vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
+    if not vol:
+        return {"error": "Config volume mapping not found"}, 404
 
-    _get_plugin_config()
-    db.execute(
-        "UPDATE netapp_plugin_config SET config_mount_path=?, updated_at=? WHERE id='default'",
-        (mount_path, _now())
+    nfs_ip   = vol.get("nfs_export_ip", "")
+    junction = vol.get("junction_path", "")
+    if not nfs_ip or not junction:
+        return {"error": "NFS IP or junction path missing — did Step 1 complete?"}, 400
+
+    from ..core._helpers import build_pve_client, get_ssh_creds, ssh_run
+
+    sid_q  = shlex.quote(storage_id)
+    ip_q   = shlex.quote(nfs_ip)
+    path_q = shlex.quote(junction)
+    pvesm_add = (
+        f"pvesm status {sid_q} 2>/dev/null && echo ALREADY_EXISTS || "
+        f"(pvesm add nfs {sid_q} --server {ip_q} --export {path_q} "
+        f"--content none --options vers=3 && echo ADDED)"
     )
-    # Also update nfs_mount_path in the mapping for consistency
-    if vol:
-        db.execute("UPDATE netapp_volume_mapping SET nfs_mount_path=? WHERE id=?",
-                   (mount_path, vol["id"]))
 
-    mounted = os.path.isdir(mount_path)
-    if mounted:
-        config_dir = f"{mount_path}/.netapp-dr"
+    results   = []
+    succeeded = []
+
+    for pve_host_id in pve_host_ids:
         try:
-            os.makedirs(f"{config_dir}/plans", exist_ok=True)
-            _write_config_to_volume()
+            pve = build_pve_client(db, pve_host_id)
+            su, sp, sk = get_ssh_creds(pve)
+            sh = pve.host
+            out = ssh_run(sh, su, sp, pvesm_add, capture=True, key_material=sk, timeout=30)
+            status = "already_registered" if "ALREADY_EXISTS" in out else "registered"
+            # Create config dir on this host
+            mount_path = f"/mnt/pve/{storage_id}"
+            ssh_run(sh, su, sp,
+                    f"mkdir -p {shlex.quote(mount_path)}/.netapp-dr/plans",
+                    key_material=sk, timeout=10)
+            results.append({"host": sh, "host_id": pve_host_id, "status": status})
+            succeeded.append(pve_host_id)
         except Exception as exc:
-            return jsonify({"mounted": True, "warning": f"Mount accessible but config dir failed: {exc}",
-                            "mount_path": mount_path})
-        return jsonify({"mounted": True, "message": "Config volume activated ✓ — config files written.",
-                        "mount_path": mount_path})
+            results.append({"host": pve_host_id, "host_id": pve_host_id,
+                            "status": "failed", "error": str(exc)[:200]})
 
-    # Not mounted yet — build mount command for admin
-    mount_cmd = ""
-    if vol:
-        nfs_ip  = vol.get("nfs_export_ip", "")
-        jpath   = vol.get("junction_path", "")
-        if nfs_ip and jpath:
-            mount_cmd = f"mkdir -p {mount_path} && mount -t nfs -o vers=3 {nfs_ip}:{jpath} {mount_path}"
+    if not succeeded:
+        return {"error": "Storage registration failed on all selected PVE hosts",
+                "results": results}, 500
+
+    db.execute(
+        "UPDATE netapp_plugin_config "
+        "SET config_storage_id=?, config_pve_host_ids=?, updated_at=? WHERE id='default'",
+        (storage_id, json.dumps(succeeded), _now())
+    )
+
+    # Write initial config via SSH
+    written = _write_config_to_volume()
+
     return jsonify({
-        "mounted": False,
-        "mount_path": mount_path,
-        "mount_command": mount_cmd,
-        "message": f"Mount path '{mount_path}' not yet accessible. Run the mount command below, then click Activate again."
+        "message": f"Storage '{storage_id}' registered on {len(succeeded)}/{len(pve_host_ids)} host(s)."
+                   + (" Config files written." if written else " Warning: config write failed."),
+        "results":    results,
+        "storage_id": storage_id,
+        "written":    written,
     })
 
 
 def _write_config_to_volume():
-    """Write plan configs + role/site info as JSON files to the config volume NFS mount."""
-    import os
+    """Write plan configs + role/site info as JSON files to the config volume via PVE SSH.
+
+    Tries each registered PVE host in order. Returns True on first success.
+    A failed write is non-fatal — the previous config remains on the volume.
+    """
+    import base64, shlex
     db = get_db()
     cfg = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
-    if not cfg or not cfg.get("config_mount_path"):
+    if not cfg:
         return False
-    mount_path = cfg["config_mount_path"].rstrip("/")
+    pve_host_ids = _json_field(cfg.get("config_pve_host_ids"))
+    storage_id   = cfg.get("config_storage_id", "")
+    if not pve_host_ids or not storage_id:
+        return False
+
+    mount_path = f"/mnt/pve/{storage_id}"
     config_dir = f"{mount_path}/.netapp-dr"
-    try:
-        os.makedirs(f"{config_dir}/plans", exist_ok=True)
-        with open(f"{config_dir}/role.json", "w") as f:
-            json.dump({"role": cfg.get("role", "MASTER"), "last_updated": _now()}, f, indent=2)
-        sites = db.query("SELECT * FROM netapp_dr_sites") or []
-        eps   = db.query("SELECT id, name, host FROM netapp_endpoints") or []
-        with open(f"{config_dir}/config.json", "w") as f:
-            json.dump({
-                "plugin": "netapp_storage", "exported_at": _now(),
-                "sites": [dict(s) for s in sites],
-                "endpoints": [dict(e) for e in eps],
-            }, f, indent=2)
-        plans = db.query("SELECT * FROM netapp_dr_plans") or []
-        for plan_row in plans:
-            plan_data = _build_plan_export_data(plan_row["id"], db)
-            with open(f"{config_dir}/plans/{plan_row['id']}.json", "w") as f:
-                json.dump(plan_data, f, indent=2)
-        return True
-    except Exception as exc:
-        log.warning(f"[netapp_storage] Config volume write failed: {exc}")
-        return False
+
+    # Build all files to write
+    sites = db.query("SELECT * FROM netapp_dr_sites") or []
+    eps   = db.query("SELECT id, name, host FROM netapp_endpoints") or []
+    plans = db.query("SELECT * FROM netapp_dr_plans") or []
+
+    files = {
+        f"{config_dir}/role.json": json.dumps(
+            {"role": cfg.get("role", "MASTER"), "last_updated": _now()}, indent=2
+        ),
+        f"{config_dir}/config.json": json.dumps({
+            "plugin": "netapp_storage", "exported_at": _now(),
+            "sites": [dict(s) for s in sites],
+            "endpoints": [dict(e) for e in eps],
+        }, indent=2),
+    }
+    for plan_row in plans:
+        files[f"{config_dir}/plans/{plan_row['id']}.json"] = json.dumps(
+            _build_plan_export_data(plan_row["id"], db), indent=2
+        )
+
+    from ..core._helpers import build_pve_client, get_ssh_creds, ssh_run
+
+    for pve_host_id in pve_host_ids:
+        try:
+            pve = build_pve_client(db, pve_host_id)
+            su, sp, sk = get_ssh_creds(pve)
+            sh = pve.host
+
+            ssh_run(sh, su, sp, f"mkdir -p {shlex.quote(config_dir)}/plans",
+                    key_material=sk, timeout=10)
+
+            for filepath, content in files.items():
+                b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+                ssh_run(sh, su, sp,
+                        f"printf '%s' {shlex.quote(b64)} | base64 -d > {shlex.quote(filepath)}",
+                        key_material=sk, timeout=15)
+
+            log.info(f"[netapp_storage] Config written via {sh}:{config_dir} ({len(files)} files)")
+            return True
+        except Exception as exc:
+            log.warning(f"[netapp_storage] Config write failed on host {pve_host_id}: {exc}")
+
+    log.warning("[netapp_storage] Config write failed on all PVE hosts")
+    return False
 
 
 def _build_plan_export_data(plan_id, db):
@@ -1768,9 +1844,9 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/config-volume/wizard/data",            _config_volume_wizard_data)
     rpr(PLUGIN_ID, "dr/config-volume/wizard/svms",            _wizard_list_svms)
     rpr(PLUGIN_ID, "dr/config-volume/wizard/aggregates",      _wizard_list_aggregates)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/create-volume",   _wizard_create_volume)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/create-volume",     _wizard_create_volume)
     rpr(PLUGIN_ID, "dr/config-volume/wizard/create-snapmirror", _wizard_create_snapmirror)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/activate",        _wizard_activate_mount)
+    rpr(PLUGIN_ID, "dr/config-volume/wizard/register-storage",  _wizard_register_pve_storage)
 
     # DR Sites
     rpr(PLUGIN_ID, "dr/sites",                   _list_dr_sites)

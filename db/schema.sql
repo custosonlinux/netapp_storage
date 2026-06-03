@@ -167,13 +167,14 @@ CREATE TABLE IF NOT EXISTS netapp_provisioned_datastores (
 
 -- Plugin-wide config: role (MASTER/DR_SLAVE/DR_TEST) and NFS config volume
 CREATE TABLE IF NOT EXISTS netapp_plugin_config (
-    id                TEXT PRIMARY KEY DEFAULT 'default',
-    role              TEXT NOT NULL DEFAULT 'MASTER',      -- MASTER | DR_SLAVE | DR_TEST
-    role_forced       INTEGER NOT NULL DEFAULT 0,          -- 1 = admin override, 0 = auto-detected
-    config_volume_id  TEXT NOT NULL DEFAULT '',            -- netapp_volume_mapping.id
-    config_mount_path TEXT NOT NULL DEFAULT '',            -- local NFS mount path for config volume
-    last_role_check   TEXT NOT NULL DEFAULT '',
-    updated_at        TEXT NOT NULL DEFAULT ''
+    id                  TEXT PRIMARY KEY DEFAULT 'default',
+    role                TEXT NOT NULL DEFAULT 'MASTER',      -- MASTER | DR_SLAVE | DR_TEST
+    role_forced         INTEGER NOT NULL DEFAULT 0,          -- 1 = admin override, 0 = auto-detected
+    config_volume_id    TEXT NOT NULL DEFAULT '',            -- netapp_volume_mapping.id
+    config_storage_id   TEXT NOT NULL DEFAULT '',            -- pvesm storage ID on PVE hosts
+    config_pve_host_ids TEXT NOT NULL DEFAULT '[]',          -- JSON: PVE host IDs with config storage
+    last_role_check     TEXT NOT NULL DEFAULT '',
+    updated_at          TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS netapp_dr_sites (

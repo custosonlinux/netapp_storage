@@ -80,6 +80,10 @@ def _init_db():
         _add_column_if_missing(db, "netapp_endpoints", "skip_nfs",      "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(db, "netapp_endpoints", "san_optimized", "INTEGER NOT NULL DEFAULT 0")
 
+        # v2: plugin_config new columns (config via PVE SSH)
+        _add_column_if_missing(db, "netapp_plugin_config", "config_storage_id",   "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(db, "netapp_plugin_config", "config_pve_host_ids", "TEXT NOT NULL DEFAULT '[]'")
+
         # v1.1: recovery bind
         _add_column_if_missing(db, "netapp_provisioned_datastores", "imported_from",
                                "TEXT NOT NULL DEFAULT ''")

@@ -5993,19 +5993,23 @@ async function drLoadConfigVolSection() {
         +'</div>';
       return;
     }
-    var mountBadge = cv.mounted
-      ? '<span class="badge badge-success" style="font-size:.75rem">✅ mounted</span>'
-      : '<span class="badge badge-warning" style="font-size:.75rem">⚠ not mounted</span>';
+    var pveHosts = cv.pve_hosts || [];
+    var hostBadges = pveHosts.map(function(h){
+      return '<span class="badge" style="font-size:.72rem">🖥 '+esc(h.name||h.host)+'</span>';
+    }).join(' ');
+    var storBadge = cv.config_storage_id
+      ? '<span class="badge badge-info" style="font-size:.72rem">pvesm: '+esc(cv.config_storage_id)+'</span>'
+      : '';
     el.innerHTML = '<div class="card" style="padding:.75rem 1rem">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">'
       +'<div style="display:flex;align-items:center;gap:.75rem">'
       +'<span style="font-size:1.4rem">🗄</span>'
       +'<div>'
-      +'<div style="font-weight:600">'+esc(cv.volume_name)+'</div>'
+      +'<div style="font-weight:600">'+esc(cv.volume_name||'')+'</div>'
       +'<div style="font-size:.78rem;color:var(--muted)">'
-      +'NFS '+esc(cv.nfs_ip)+':'+esc(cv.junction)
-      +' &nbsp;·&nbsp; '+mountBadge
-      +(cv.mounted?'&nbsp; <span style="color:var(--muted);font-size:.75rem">'+esc(cv.mount_path)+'</span>':'')
+      +'NFS '+esc(cv.nfs_ip||'')+':'+esc(cv.junction||'')
+      +(storBadge ? ' &nbsp; '+storBadge : '')
+      +(hostBadges ? '<br>'+hostBadges : '')
       +'</div>'
       +'</div></div>'
       +'<div style="display:flex;gap:.4rem">'
@@ -6057,20 +6061,27 @@ async function drShowConfigVolumeWizard() {
   _cvwStep = 1;
   _cvwData = {};
   ['cvwStep1Result','cvwStep2Result','cvwStep3Result'].forEach(function(id){ document.getElementById(id).innerHTML=''; });
-  document.getElementById('cvwStep3MountCmd').style.display='none';
-
   try {
     var d = await apiFetch('dr/config-volume/wizard/data');
     var eps = d.endpoints || [];
     var epOpts = eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join('');
-    document.getElementById('cvwEndpoint').innerHTML   = epOpts || '<option value="">— keine Endpoints —</option>';
-    document.getElementById('cvwDrEndpoint').innerHTML = epOpts || '<option value="">— keine Endpoints —</option>';
+    document.getElementById('cvwEndpoint').innerHTML   = epOpts || '<option value="">— no endpoints —</option>';
+    document.getElementById('cvwDrEndpoint').innerHTML = epOpts || '<option value="">— no endpoints —</option>';
 
     var volName = (d.config_volume && d.config_volume.volume_name) || 'vol_dr_config';
     document.getElementById('cvwVolumeName').value   = volName;
     document.getElementById('cvwJunction').value     = '/'+volName;
     document.getElementById('cvwDrVolumeName').value = volName+'_dp';
-    document.getElementById('cvwMountPath').value    = (d.config_volume && d.config_volume.mount_path) || '/mnt/dr-config';
+    document.getElementById('cvwStorageId').value    = d.config_storage_id || 'dr-config';
+
+    // Load PVE hosts for Step 3
+    var pveHosts = d.pve_hosts || [];
+    var prevSelected = d.config_pve_host_ids || [];
+    var pveSel = document.getElementById('cvwPveHosts');
+    pveSel.innerHTML = pveHosts.map(function(h){
+      var sel = prevSelected.indexOf(h.id)>=0 ? ' selected' : '';
+      return '<option value="'+esc(h.id)+'"'+sel+'>'+esc(h.name)+' ('+esc(h.host)+')</option>';
+    }).join('');
 
     cvwEndpointChanged();
     cvwDrEndpointChanged();
@@ -6189,25 +6200,24 @@ function cvwStep2Skip() {
 async function cvwStep3Run() {
   var btn = document.getElementById('cvwStep3Btn');
   var res = document.getElementById('cvwStep3Result');
-  btn.disabled=true; btn.textContent='Checking…'; res.innerHTML='';
-  var mount_path = document.getElementById('cvwMountPath').value.trim();
-  if(!mount_path){ res.innerHTML=cvwErr('Enter mount path'); btn.disabled=false; btn.textContent='▶ Activate'; return; }
+  btn.disabled=true; btn.textContent='Registering…'; res.innerHTML='';
+  var storage_id = document.getElementById('cvwStorageId').value.trim();
+  var pve_host_ids = Array.from(document.getElementById('cvwPveHosts').selectedOptions).map(function(o){ return o.value; });
+  if(!storage_id){ res.innerHTML=cvwErr('Enter a storage ID'); btn.disabled=false; btn.textContent='▶ Register Storage on PVE hosts'; return; }
+  if(!pve_host_ids.length){ res.innerHTML=cvwErr('Select at least one PVE host'); btn.disabled=false; btn.textContent='▶ Register Storage on PVE hosts'; return; }
   try {
-    var r = await apiPost('dr/config-volume/wizard/activate', {mount_path});
-    if(r.mounted) {
-      res.innerHTML=cvwOk(r.message);
-      document.getElementById('cvwStep3MountCmd').style.display='none';
-      setTimeout(function(){ drHideModal('cvWizard'); drLoadRole(); drLoadConfigVolSection(); }, 1500);
-    } else {
-      res.innerHTML='<div style="color:var(--warning,#a07000);font-size:.82rem">⚠ '+esc(r.message)+'</div>';
-      if(r.mount_command) {
-        var mc = document.getElementById('cvwStep3MountCmd');
-        mc.style.display='';
-        mc.querySelector('code').textContent = r.mount_command;
-      }
+    var r = await apiPost('dr/config-volume/wizard/register-storage', {storage_id, pve_host_ids});
+    var hostResults = (r.results||[]).map(function(h){
+      var icon = h.status==='failed' ? '❌' : '✅';
+      var detail = h.status==='already_registered' ? ' (already registered)' : h.status==='registered' ? ' (registered)' : ' — '+esc(h.error||'');
+      return icon+' '+esc(h.host)+detail;
+    }).join('<br>');
+    res.innerHTML = cvwOk(esc(r.message)) + (hostResults ? '<div style="font-size:.78rem;margin-top:.3rem">'+hostResults+'</div>' : '');
+    if(r.written !== false) {
+      setTimeout(function(){ drHideModal('cvWizard'); drLoadRole(); drLoadConfigVolSection(); }, 2000);
     }
   } catch(e){ res.innerHTML=cvwErr(e.message); }
-  btn.disabled=false; btn.textContent='▶ Activate';
+  btn.disabled=false; btn.textContent='▶ Register Storage on PVE hosts';
 }
 
 function cvwOk(msg){ return '<div style="color:var(--success,#198754);font-size:.82rem;padding:.3rem 0">✅ '+msg+'</div>'; }
@@ -7822,20 +7832,20 @@ loadSnapshots();
       </div>
     </div>
 
-    <!-- Step 3: Mount & Activate -->
+    <!-- Step 3: Register on PVE hosts -->
     <div id="cvwPanel3" style="display:none;padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Mount the config volume on this PegaProx server and activate it. Since PegaProx runs as a non-root user, the NFS mount must be done manually by an admin.</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Register the config volume as a PVE NFS storage on one or more PVE hosts. PegaProx writes config files via SSH to whichever host is reachable — no direct NFS access from the PegaProx VM needed.</div>
       <div class="form-group">
-        <label style="font-size:.82rem">Local mount path on this server</label>
-        <input id="cvwMountPath" value="/mnt/dr-config" autocomplete="off">
+        <label style="font-size:.82rem">Storage ID <span style="font-weight:400;color:var(--muted)">(pvesm name on PVE hosts)</span></label>
+        <input id="cvwStorageId" value="dr-config" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label style="font-size:.82rem">PVE Host(s) <span style="font-weight:400;color:var(--muted)">(Ctrl+click for multiple — all selected hosts get the storage registered)</span></label>
+        <select id="cvwPveHosts" multiple size="4" style="width:100%"></select>
       </div>
       <div id="cvwStep3Result" style="margin-bottom:.5rem"></div>
-      <div id="cvwStep3MountCmd" style="display:none;background:var(--code-bg,#0d1117);border-radius:6px;padding:.75rem;font-family:monospace;font-size:.8rem;margin-bottom:.5rem">
-        <div style="color:var(--muted);margin-bottom:.3rem">Run as root on the PegaProx server:</div>
-        <code style="color:var(--success,#3fb950);word-break:break-all"></code>
-      </div>
       <div style="display:flex;gap:.5rem">
-        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Activate</button>
+        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Register Storage on PVE hosts</button>
       </div>
     </div>
   </div>
