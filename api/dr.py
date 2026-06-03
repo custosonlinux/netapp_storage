@@ -488,7 +488,18 @@ def _wizard_create_snapmirror():
             "message": f"SnapMirror created: {source_path} → {dest_path}. Initial transfer initiated."
         })
     except Exception as exc:
-        return {"error": str(exc)}, 500
+        msg = str(exc)
+        if "13303886" in msg or "SVM peer permission" in msg.lower() or "peer" in msg.lower():
+            src_svm = source_path.split(":")[0]
+            dst_svm = dest_path.split(":")[0]
+            return {"error": (
+                f"SVM peering fehlt zwischen '{src_svm}' und '{dst_svm}'. "
+                f"Bitte zuerst SVM-Peering in ONTAP anlegen:\n"
+                f"CLI (auf Quell-Cluster): vserver peer create -vserver {src_svm} "
+                f"-peer-vserver {dst_svm} -applications snapmirror\n"
+                f"Oder: System Manager → Storage → Storage VMs → Peers."
+            )}, 400
+        return {"error": msg}, 500
 
 
 def _wizard_activate_mount():
