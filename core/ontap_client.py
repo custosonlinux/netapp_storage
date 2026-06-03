@@ -2078,23 +2078,30 @@ class OntapClient:
 
     def create_snapmirror_relationship(self, source_path, dest_path,
                                        policy="MirrorAllSnapshots",
-                                       progress_cb=None):
+                                       progress_cb=None,
+                                       encrypt_destination=False):
         """Create a SnapMirror relationship and auto-create the destination volume.
 
         source_path / dest_path format: 'svm_name:volume_name'
         Cluster peering must already be established.
         progress_cb(msg): optional callback for progress messages.
+        encrypt_destination: False (default) avoids failures on clusters without
+                             encryption license. Set to None to inherit source setting.
         Returns relationship UUID.
         """
         def _cb(msg):
             if progress_cb:
                 progress_cb(msg)
 
+        create_dest = {"enabled": True}
+        if encrypt_destination is not None:
+            create_dest["encrypt"] = encrypt_destination
+
         body = {
             "source":      {"path": source_path},
             "destination": {"path": dest_path},
             "policy":      {"name": policy},
-            "create_destination": {"enabled": True},
+            "create_destination": create_dest,
         }
         # Use return_timeout=0 to get a job UUID immediately (avoids HTTP read timeout)
         _cb(f"[INFO] Sending SnapMirror relationship request to ONTAP...")
@@ -2105,7 +2112,7 @@ class OntapClient:
 
         if job_uuid:
             _cb(f"[INFO] ONTAP job started ({job_uuid[:8]}…) — waiting for completion...")
-            self.poll_job(job_uuid, interval_s=4, timeout_s=600)
+            self.poll_job(job_uuid, interval_s=4, timeout_s=90)
             _cb(f"[INFO] ONTAP job completed.")
         elif rel_uuid:
             _cb(f"[INFO] Relationship created directly (UUID: {rel_uuid[:8]}…)")
