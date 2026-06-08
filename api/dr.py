@@ -214,7 +214,7 @@ def _peer_status():
         "has_token":        bool(peer.get("sync_token", "")),
     }
     # Live ping
-    resp, err = _peer_call("GET", "dr/peer/heartbeat", peer=peer)
+    resp, err = _peer_call("POST", "dr/peer/heartbeat", {}, peer=peer, timeout=5)
     result["online"] = err is None
     if err:
         result["ping_error"] = err
@@ -290,8 +290,10 @@ def _peer_call(method, path, payload=None, peer=None, timeout=15):
     if not token:
         return None, "Peer sync token not set"
 
+    _PEER_RECV_PATHS = {"dr/peer/heartbeat", "dr/peer/sync/receive", "dr/peer/role-notify"}
     base = peer["url"].rstrip("/")
-    url  = f"{base}/api/plugins/netapp_storage/api/{path}"
+    ns = "peer" if path in _PEER_RECV_PATHS else "api"
+    url  = f"{base}/api/plugins/netapp_storage/{ns}/{path}"
     ssl  = bool(peer.get("ssl_verify", 0))
     headers = {_SYNC_TOKEN_HEADER: token, "Content-Type": "application/json"}
     try:
