@@ -1889,6 +1889,8 @@ function showAddEndpointForm() {
   document.body.style.overflow = 'hidden';
 }
 
+var _endpointCache = {};
+
 async function loadEndpoints() {
   try {
     var rows = await apiFetch('endpoints');
@@ -1897,6 +1899,8 @@ async function loadEndpoints() {
       tbody.innerHTML = '<tr><td colspan="5" class="empty">'+t('empty_endpoints')+'</td></tr>';
       return;
     }
+    _endpointCache = {};
+    rows.forEach(function(ep){ _endpointCache[ep.id] = ep; });
     tbody.innerHTML = rows.map(function(ep) {
       return '<tr>' +
         '<td><strong>'+esc(ep.name)+'</strong></td>' +
@@ -1906,6 +1910,7 @@ async function loadEndpoints() {
         '<td><div class="row-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="testEndpoint(\''+ep.id+'\',\''+esc(ep.name)+'\')">'+t('btn_test')+'</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="discoverOne(\''+ep.id+'\')">'+t('btn_detect')+'</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="showEditEndpointForm(\''+ep.id+'\')">'+t('act_edit')+'</button>' +
           '<button class="btn btn-danger btn-sm" onclick="deleteEndpoint(\''+ep.id+'\',\''+esc(ep.name)+'\')">'+t('act_delete')+'</button>' +
         '</div></td></tr>';
     }).join('');
@@ -1960,6 +1965,47 @@ async function testEndpoint(id, name) {
     if (d.success) toast('✓ '+d.cluster_name+' – ONTAP '+d.ontap_version, 'success');
     else toast(d.error, 'error');
   } catch(e) { toast(e.message,'error'); }
+}
+
+function showEditEndpointForm(id) {
+  var ep = _endpointCache[id];
+  if (!ep) { toast('Endpoint not found', 'error'); return; }
+  document.getElementById('edit_ep_id').value         = ep.id;
+  document.getElementById('edit_ep_name').value       = ep.name     || '';
+  document.getElementById('edit_ep_host').value       = ep.host     || '';
+  document.getElementById('edit_ep_user').value       = ep.username || '';
+  document.getElementById('edit_ep_pass').value       = '';
+  document.getElementById('edit_ep_ssl').checked      = !!ep.ssl_verify;
+  document.getElementById('edit_ep_skip_nfs').checked = !!ep.skip_nfs;
+  document.getElementById('editEpResult').textContent = '';
+  document.getElementById('editEndpointForm').style.display = '';
+  document.body.style.overflow = 'hidden';
+}
+
+async function saveEditEndpoint() {
+  var id       = document.getElementById('edit_ep_id').value;
+  var name     = document.getElementById('edit_ep_name').value.trim();
+  var host     = document.getElementById('edit_ep_host').value.trim();
+  var username = document.getElementById('edit_ep_user').value.trim();
+  var password = document.getElementById('edit_ep_pass').value;
+  var ssl_verify = document.getElementById('edit_ep_ssl').checked;
+  var skip_nfs   = document.getElementById('edit_ep_skip_nfs').checked;
+  if (!name || !host || !username) { toast('Name, Host and Username are required.','error'); return; }
+  var sp  = document.getElementById('editEpSpinner');
+  var res = document.getElementById('editEpResult');
+  sp.style.display = '';
+  res.textContent  = '';
+  try {
+    await apiPost('endpoints/update', {id, name, host, username, password, ssl_verify, skip_nfs});
+    sp.style.display = 'none';
+    toast(t('msg_ep_saved'), 'success');
+    hideForm('editEndpointForm');
+    loadEndpoints();
+  } catch(e) {
+    sp.style.display = 'none';
+    res.innerHTML = '<span style="color:var(--danger)">❌ '+esc(e.message)+'</span>';
+    toast(e.message, 'error');
+  }
 }
 
 async function discoverOne(id) {
@@ -6744,6 +6790,56 @@ loadSnapshots();
     </div>
   </div>
 </div><!-- /addEndpointForm -->
+
+<!-- ── Edit Endpoint Modal ───────────────────────────────────────── -->
+<div id="editEndpointForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)hideForm('editEndpointForm')">
+  <div style="max-width:560px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">✏️ Edit NetApp System</div>
+      <button class="btn btn-ghost btn-sm" onclick="hideForm('editEndpointForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px">
+      <input type="hidden" id="edit_ep_id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Name <span style="font-weight:400;color:var(--muted)">(friendly label)</span></label>
+          <input id="edit_ep_name">
+        </div>
+        <div class="form-group">
+          <label>Cluster Mgmt IP / FQDN</label>
+          <input id="edit_ep_host">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Username</label>
+          <input id="edit_ep_user">
+        </div>
+        <div class="form-group">
+          <label>Password <span style="font-weight:400;color:var(--muted)">(leave blank to keep existing)</span></label>
+          <input id="edit_ep_pass" type="password" placeholder="unchanged">
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 18px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="edit_ep_ssl">
+          Verify SSL certificate
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="edit_ep_skip_nfs">
+          SAN-only (skip NFS scan)
+        </label>
+      </div>
+      <div id="editEpResult" style="font-size:12px;margin-bottom:10px"></div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveEditEndpoint()">
+          Save Changes <span id="editEpSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+        </button>
+        <button class="btn btn-ghost" onclick="hideForm('editEndpointForm')">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div><!-- /editEndpointForm -->
 
 <!-- ── Add PVE Host Modal ─────────────────────────────────────────── -->
 <div id="addPveHostForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addPveHostBackdropClick(event)">
