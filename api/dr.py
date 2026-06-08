@@ -74,6 +74,15 @@ _BG_LOCK = threading.Lock()
 
 # ── Basic helpers ─────────────────────────────────────────────────────────────
 
+def _spawn(fn, *args, **kwargs):
+    """Spawn fn in background, gevent-aware (avoids BlockingSwitchOutError)."""
+    try:
+        import gevent
+        gevent.spawn(fn, *args, **kwargs)
+    except ImportError:
+        threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True).start()
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -672,8 +681,8 @@ def _start_background_threads():
         if _BG_STARTED:
             return
         _BG_STARTED = True
-    threading.Thread(target=_heartbeat_loop, daemon=True, name="dr-heartbeat").start()
-    threading.Thread(target=_sync_loop,      daemon=True, name="dr-sync").start()
+    _spawn(_heartbeat_loop)
+    _spawn(_sync_loop)
     log.info("[netapp_dr] Background threads started (heartbeat + sync)")
 
 
@@ -743,7 +752,7 @@ def _create_dr_plan():
         "VALUES (?,?,?,?,?,?,?,?,?)",
         (core_id, pid, "Core Infrastructure", "core", 0, "auto", 0, 2, now)
     )
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"id": pid, "message": "DR plan created"}), 201
 
 
@@ -788,7 +797,7 @@ def _update_dr_plan():
         return {"error": "No fields to update"}, 400
     updates.append("updated_at=?"); params.extend([_now(), plan_id])
     db.execute(f"UPDATE netapp_dr_plans SET {', '.join(updates)} WHERE id=?", params)
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "DR plan updated"})
 
 
@@ -804,7 +813,7 @@ def _delete_dr_plan():
     if row["state"] not in ("standby",):
         return {"error": f"Cannot delete plan in state '{row['state']}'"}, 409
     db.execute("DELETE FROM netapp_dr_plans WHERE id=?", (plan_id,))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "DR plan deleted"})
 
 
@@ -912,7 +921,7 @@ def _add_plan_entry():
     )
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
     entry = dict(db.query_one("SELECT * FROM netapp_dr_plan_entries WHERE id=?", (eid,)))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify(_enrich_entry(entry, db)), 201
 
 
@@ -937,7 +946,7 @@ def _update_plan_entry():
     db.execute(f"UPDATE netapp_dr_plan_entries SET {', '.join(updates)} WHERE id=?", params)
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
     entry = dict(db.query_one("SELECT * FROM netapp_dr_plan_entries WHERE id=?", (entry_id,)))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify(_enrich_entry(entry, db))
 
 
@@ -952,7 +961,7 @@ def _delete_plan_entry():
         return {"error": "Entry not found"}, 404
     db.execute("DELETE FROM netapp_dr_plan_entries WHERE id=?", (entry_id,))
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "Entry removed"})
 
 
@@ -967,7 +976,7 @@ def _auto_detect_entries():
     rels = db.query("SELECT * FROM netapp_snapmirror_relationships") or []
     added = 0
     skipped = 0
-    for rel in rels:
+    for rel in [dict(r) for r in rels]:
         existing = db.query_one(
             "SELECT id FROM netapp_dr_plan_entries WHERE plan_id=? AND source_svm=? AND source_volume=?",
             (plan_id, rel["source_svm"], rel["source_volume"])
@@ -994,7 +1003,7 @@ def _auto_detect_entries():
         )
         added += 1
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"added": added, "skipped": skipped})
 
 
@@ -1024,7 +1033,7 @@ def _create_vm_group():
          int(data.get("max_parallel", 1)),
          _now())
     )
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"id": gid, "message": "VM group created"}), 201
 
 
@@ -1045,7 +1054,7 @@ def _update_vm_group():
         return {"error": "No fields to update"}, 400
     params.append(group_id)
     db.execute(f"UPDATE netapp_dr_vm_groups SET {', '.join(updates)} WHERE id=?", params)
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "VM group updated"})
 
 
@@ -1061,7 +1070,7 @@ def _delete_vm_group():
     if grp["group_type"] == "core":
         return {"error": "Cannot delete Core group"}, 409
     db.execute("DELETE FROM netapp_dr_vm_groups WHERE id=?", (group_id,))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "VM group deleted"})
 
 
@@ -1073,7 +1082,7 @@ def _reorder_vm_groups():
     db = get_db()
     for i, gid in enumerate(order):
         db.execute("UPDATE netapp_dr_vm_groups SET sort_order=? WHERE id=?", (i, gid))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "Groups reordered"})
 
 
@@ -1099,7 +1108,7 @@ def _add_vm_assignment():
         (aid, group_id, int(vmid), data.get("vm_name", ""),
          data.get("target_node", ""), start_order, _now())
     )
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"id": aid, "message": "VM added to group"}), 201
 
 
@@ -1112,7 +1121,7 @@ def _remove_vm_assignment():
     if not db.query_one("SELECT id FROM netapp_dr_vm_assignments WHERE id=?", (assignment_id,)):
         return {"error": "VM assignment not found"}, 404
     db.execute("DELETE FROM netapp_dr_vm_assignments WHERE id=?", (assignment_id,))
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "VM removed from group"})
 
 
@@ -1139,7 +1148,7 @@ def _update_vm_assignment():
         return {"error": "No fields to update"}, 400
     params.append(assignment_id)
     db.execute(f"UPDATE netapp_dr_vm_assignments SET {', '.join(updates)} WHERE id=?", params)
-    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    _spawn(_peer_push_sync)
     return jsonify({"message": "VM assignment updated"})
 
 
@@ -1291,7 +1300,7 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
                 (_now(),)
             )
             # Notify peer to become SECONDARY
-            threading.Thread(target=_peer_push_role_notify, args=("PRIMARY",), daemon=True).start()
+            _spawn(_peer_push_role_notify, "PRIMARY")
 
     try:
         db = get_db()
