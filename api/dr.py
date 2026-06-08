@@ -75,12 +75,18 @@ _BG_LOCK = threading.Lock()
 # ── Basic helpers ─────────────────────────────────────────────────────────────
 
 def _spawn(fn, *args, **kwargs):
-    """Spawn fn in background, gevent-aware (avoids BlockingSwitchOutError)."""
+    """Spawn fn in a real OS thread, bypassing gevent monkey-patching.
+
+    gevent patches threading.Thread to greenlets, but SQLCipher DB calls go
+    through ctypes (not patched) and block the hub. Using the original Thread
+    class keeps background work in a true OS thread without starving the hub.
+    """
     try:
-        import gevent
-        gevent.spawn(fn, *args, **kwargs)
-    except ImportError:
-        threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True).start()
+        from gevent.monkey import get_original
+        Thread = get_original('threading', 'Thread')
+    except (ImportError, AttributeError):
+        Thread = threading.Thread
+    Thread(target=fn, args=args, kwargs=kwargs, daemon=True).start()
 
 
 def _now():
