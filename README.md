@@ -2,7 +2,7 @@
 
 A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that adds VM-consistent NetApp® ONTAP® snapshot management directly to the PegaProx UI — for **NFS**, **iSCSI**, and **NVMe-oF** (NVMe/TCP, NVMe/FC) datastores.
 
-**Current version: 1.1.0** · [Changelog](CHANGELOG.md) · [Known Issues](KNOWN_ISSUES.md)
+**Current version: 1.1.2** · [Changelog](CHANGELOG.md) · [Known Issues](KNOWN_ISSUES.md)
 
 ---
 
@@ -147,7 +147,7 @@ The plugin directory must be placed inside the `plugins/` subdirectory of your P
 **Clone the latest stable release from GitHub:**
 ```bash
 # Adjust the path to match your PegaProx installation
-git clone --branch v1.1.0 --depth 1 \
+git clone --branch v1.1.2 --depth 1 \
     https://github.com/custosonlinux/netapp_storage \
     /opt/PegaProx/plugins/netapp_storage
 
@@ -174,7 +174,7 @@ usermod -d /home/pegaprox pegaprox
 ```bash
 cd /opt/PegaProx/plugins/netapp_storage
 git fetch --tags
-git checkout v1.1.0   # replace with the latest tag
+git checkout v1.1.2   # replace with the latest tag
 ```
 
 Alternatively, use the built-in updater in the plugin UI: **Settings → ⬆️ Plugin Update → Check for Update → Update Now**. No shell access required; PegaProx must be restarted after the update.
@@ -692,6 +692,7 @@ All routes are relative to `/api/plugins/netapp_storage/api/`.
 |---|---|---|
 | GET | `endpoints` | List ONTAP endpoints |
 | POST | `endpoints/add` | Add endpoint |
+| POST | `endpoints/update` | Update endpoint (name, host, credentials, flags) |
 | POST | `endpoints/delete` | Delete endpoint |
 | POST | `endpoints/test` | Test connectivity |
 | GET | `pve-hosts` | List Proxmox hosts |
@@ -759,15 +760,40 @@ All routes are relative to `/api/plugins/netapp_storage/api/`.
 
 ## Roadmap
 
-### Full DR Scenario *(Planned)*
+### v1.2 — Full Disaster Recovery *(In Development)*
 
-Building on SnapMirror DR restore/clone and Datastore Recovery, the planned Full DR Scenario adds orchestrated failover and failback:
+Building on SnapMirror DR restore/clone, v1.2.x adds a fully orchestrated DR workflow driven from the DR-side PegaProx — avoiding the chicken-and-egg problem of needing the primary site to trigger failover.
 
-- **DR site activation:** Break SnapMirror, activate secondary volumes as writable datastores, import all VMs in one operation — site is operational within minutes.
-- **DR test environment:** Use FlexClone to bring up a DR test cluster without breaking SnapMirror replication (non-disruptive, read/write isolated clone of the secondary volume). Tear down with one click.
-- **Planned failover:** Quiesce primary VMs → final SnapMirror sync → break → activate on DR site → update DNS/IP as needed.
-- **Failback:** Reverse-resync the DR volume back to the primary site once the primary is available again.
-- **DR runbook integration:** Pre/post-hooks and per-VM startup ordering so complex multi-tier applications come up in the correct sequence.
+#### v1.2.0 — DR Configuration & Plan Management *(implemented, not yet released)*
+
+- **DR Sites** — group a DR ONTAP endpoint with its DR PVE hosts; SSH test, key push, and `pv_port` configuration.
+- **DR Plans** — link source datastores to their SnapMirror destinations; dashboard shows lag and health per datastore.
+- **VM Start Groups** — define ordered startup groups (DNS/AD → app servers → optional services) with per-group startup delay and auto/manual release.
+- **DB Sync** — replicate the plugin database to the DR PegaProx via SCP; auto-import on next tab open.
+
+#### v1.2.1 — Failover *(implemented, full end-to-end test pending)*
+
+- **Planned failover** — final SnapMirror sync → break → mount volumes on DR PVE → restore VM configs from snapmanifest → start VMs in group order.
+- **Emergency failover** — immediate break without a final sync (for complete primary site loss).
+- Pre-checks cover plan completeness, SnapMirror health, and DR host reachability.
+- Per-datastore snapshot selection (automatic latest or manual pick from ONTAP snapshot list).
+
+#### v1.2.2 — DR Test via FlexClone *(planned)*
+
+Bring up a DR test environment without breaking SnapMirror: FlexClone each DR volume → mount clones on DR PVE with isolated storage IDs → optionally start VMs with a VMID offset to avoid conflicts → one-click cleanup.
+
+#### v1.2.3 — Failback *(planned)*
+
+Guided return to primary: reverse-SnapMirror (DR → primary), final resync, re-mount on primary PVE, restore SnapMirror in the original direction. Covers the case where the primary ONTAP system was replaced entirely.
+
+---
+
+### v1.3 — Deep PegaProx Integration *(Planned)*
+
+- **VM context panel** — snapshot status and single-VM restore directly in the PegaProx VM detail view, without switching tabs.
+- **Datastore context** — snapshot history, SnapMirror status, and resize in the PegaProx storage view.
+- **Single host configuration** — eliminate dual-entry of PVE hosts; plugin reads cluster topology directly from PegaProx.
+- **Tamper-proof snapshots** — ONTAP Snapshot Locking (compliance / governance) for ransomware protection and regulatory requirements (GDPR, BSI). Includes conflict validation between lock duration and schedule retention.
 
 ---
 

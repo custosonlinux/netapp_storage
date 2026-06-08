@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.2] – 2026-06-08
+
+### Fixed
+- **Edit NetApp System** — ONTAP endpoints could not be updated without deleting and re-adding them. Added `endpoints/update` API route and edit modal in the UI (name, host, username, password, SSL verify, SAN-only flag). Password field is optional — leave blank to keep the existing encrypted credential.
+- **Endpoint list missing `skip_nfs` field** — `_list_endpoints` did not include `skip_nfs` in the SELECT query; the field was silently absent from API responses, causing the edit form to misread the current SAN-only setting.
+- **AES-256-GCM decryption error message blank** — `InvalidTag` exceptions have an empty `str()` representation; the error logged on a failed credential decrypt was cryptically blank. The log message now includes the exception type name so the cause is identifiable.
+
+## [1.1.1] – 2026-06-02
+
+### Fixed
+- **NVMe +Add Host: device not found after 60s** — `_add_host_nvme` used `find_new_nvme_device` which only detected brand-new devices. When the host NQN was already in the subsystem (e.g. from a previous run), `nvme connect-all` created no new device and the job timed out. Fixed by using `find_nvme_device_for_subsystem_nqn` (NQN-based lookup via `nvme list-subsys` + sysfs) and direct per-LIF connect instead of `connect-all`.
+- **NVMe datastores lose connection after host reboot** — Plugin did not write NVMe LIF IPs to `/etc/nvme/discovery.conf` on PVE hosts. After a reboot, `nvme connect-all` could not find datastores whose LIFs were not already listed. Plugin now calls `ensure_nvme_discovery_entries()` during both initial NVMe provisioning and `+Add Host`, matching each LIF to the correct host interface by /16 subnet. Idempotent — only missing entries are appended.
+
 ## [1.1.0] – 2026-05-29
 
 ### Added
