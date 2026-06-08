@@ -50,7 +50,7 @@ def _require_admin():
 
 def _list_endpoints():
     db = get_db()
-    rows = db.query("SELECT id, name, host, username, ssl_verify, san_optimized, created_at, updated_at "
+    rows = db.query("SELECT id, name, host, username, ssl_verify, skip_nfs, san_optimized, created_at, updated_at "
                     "FROM netapp_endpoints ORDER BY name")
     return [dict(r) for r in rows]
 
@@ -143,6 +143,44 @@ def _test_endpoint():
                 "ontap_version": version, "san_optimized": san_optimized}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+def _update_endpoint():
+    err = _require_admin()
+    if err:
+        return err
+    data = request.get_json() or {}
+    eid = data.get("id")
+    if not eid:
+        return {"error": "id required"}, 400
+
+    db = get_db()
+    row = db.query_one("SELECT * FROM netapp_endpoints WHERE id=?", (eid,))
+    if not row:
+        return {"error": "Endpoint not found"}, 404
+
+    name       = data.get("name", "").strip() or dict(row)["name"]
+    host       = data.get("host", "").strip() or dict(row)["host"]
+    username   = data.get("username", "").strip() or dict(row)["username"]
+    ssl_verify = bool(data["ssl_verify"]) if "ssl_verify" in data else bool(dict(row)["ssl_verify"])
+    skip_nfs   = bool(data["skip_nfs"])   if "skip_nfs"   in data else bool(dict(row)["skip_nfs"])
+    now        = datetime.now(timezone.utc).isoformat()
+
+    password = data.get("password", "").strip()
+    if password:
+        db.execute(
+            "UPDATE netapp_endpoints SET name=?, host=?, username=?, password_encrypted=?, "
+            "ssl_verify=?, skip_nfs=?, updated_at=? WHERE id=?",
+            (name, host, username, db._encrypt(password), 1 if ssl_verify else 0,
+             1 if skip_nfs else 0, now, eid),
+        )
+    else:
+        db.execute(
+            "UPDATE netapp_endpoints SET name=?, host=?, username=?, "
+            "ssl_verify=?, skip_nfs=?, updated_at=? WHERE id=?",
+            (name, host, username, 1 if ssl_verify else 0, 1 if skip_nfs else 0, now, eid),
+        )
+    return {"success": True}
 
 
 # ── PVE-Hosts ─────────────────────────────────────────────────────────────────
@@ -838,6 +876,7 @@ def _serve_ui():
 def register_routes():
     register_plugin_route(PLUGIN_ID, "endpoints", _list_endpoints)
     register_plugin_route(PLUGIN_ID, "endpoints/add", _add_endpoint)
+    register_plugin_route(PLUGIN_ID, "endpoints/update", _update_endpoint)
     register_plugin_route(PLUGIN_ID, "endpoints/delete", _delete_endpoint)
     register_plugin_route(PLUGIN_ID, "endpoints/test", _test_endpoint)
 
