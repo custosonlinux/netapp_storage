@@ -230,36 +230,27 @@ def _configure_peer():
     if not url:
         return {"error": "url is required"}, 400
     name        = (data.get("name") or "DR Site").strip()
-    username    = (data.get("username") or "").strip()
-    password    = data.get("password", "")
     ssl_verify  = int(bool(data.get("ssl_verify", False)))
     sync_token  = (data.get("sync_token") or "").strip()
-    # Generate token if not provided
     if not sync_token:
         sync_token = str(uuid.uuid4())
 
     db = get_db()
     existing = db.query_one("SELECT id FROM netapp_dr_peer WHERE id='default'")
     now = _now()
-    if password:
-        pw_enc = db._encrypt(password)
-    else:
-        old = db.query_one("SELECT password_encrypted FROM netapp_dr_peer WHERE id='default'")
-        pw_enc = old["password_encrypted"] if old else ""
 
     if existing:
         db.execute(
-            "UPDATE netapp_dr_peer SET name=?, url=?, username=?, password_encrypted=?, "
-            "ssl_verify=?, sync_token=?, updated_at=? WHERE id='default'",
-            (name, url, username, pw_enc, ssl_verify, sync_token, now)
+            "UPDATE netapp_dr_peer SET name=?, url=?, ssl_verify=?, sync_token=?, updated_at=? WHERE id='default'",
+            (name, url, ssl_verify, sync_token, now)
         )
     else:
         db.execute(
             "INSERT INTO netapp_dr_peer "
-            "(id, name, url, username, password_encrypted, ssl_verify, sync_token, "
+            "(id, name, url, ssl_verify, sync_token, "
             "peer_role, last_seen, last_sync_sent, last_sync_received, sync_status, sync_error, paired_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            ("default", name, url, username, pw_enc, ssl_verify, sync_token,
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("default", name, url, ssl_verify, sync_token,
              "", "", "", "", "unconfigured", "", now, now)
         )
 
