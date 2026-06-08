@@ -236,6 +236,62 @@ def _dr_snap_vms():
         return {"error": str(exc)}, 500
 
 
+def _snapmirror_policy_labels():
+    """Returns SM relationship status and policy retention labels for a mapping."""
+    mapping_id = request.args.get("mapping_id")
+    if not mapping_id:
+        return {"error": "mapping_id required"}, 400
+
+    db = get_db()
+    mapping = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (mapping_id,))
+    if not mapping:
+        return {"error": "Mapping not found"}, 404
+    mapping = dict(mapping)
+
+    rel = db.query_one(
+        "SELECT * FROM netapp_snapmirror_relationships WHERE source_volume_uuid=?",
+        (mapping["volume_uuid"],)
+    )
+    if not rel:
+        return {"has_relationship": False, "labels": []}
+    rel = dict(rel)
+
+    from ..core._helpers import get_endpoint, build_ontap_client
+    try:
+        # Relationship UUID is valid on the destination cluster (where the scan ran).
+        ep_id = rel.get("dest_endpoint_id") or rel["source_endpoint_id"]
+        ep = get_endpoint(db, ep_id)
+        client = build_ontap_client(ep)
+        labels = client.get_snapmirror_policy_labels(rel["relationship_uuid"])
+        return {
+            "has_relationship": True,
+            "labels": labels,
+            "source_svm": rel.get("source_svm", ""),
+            "source_volume": rel.get("source_volume", ""),
+            "dest_cluster": rel.get("dest_cluster_name", ""),
+            "dest_svm": rel.get("dest_svm", ""),
+            "dest_volume": rel.get("dest_volume", ""),
+            "policy_type": rel.get("policy_type", ""),
+            "state": rel.get("state", ""),
+            "healthy": bool(rel.get("healthy", 1)),
+        }
+    except Exception as exc:
+        log.warning(f"[netapp_storage] policy-labels for {mapping_id}: {exc}")
+        return {
+            "has_relationship": True,
+            "labels": [],
+            "source_svm": rel.get("source_svm", ""),
+            "source_volume": rel.get("source_volume", ""),
+            "dest_cluster": rel.get("dest_cluster_name", ""),
+            "dest_svm": rel.get("dest_svm", ""),
+            "dest_volume": rel.get("dest_volume", ""),
+            "policy_type": rel.get("policy_type", ""),
+            "state": rel.get("state", ""),
+            "healthy": bool(rel.get("healthy", 1)),
+            "warning": str(exc),
+        }
+
+
 def register_routes():
     register_plugin_route(PLUGIN_ID, "snapmirror/scan", _scan_relationships)
     register_plugin_route(PLUGIN_ID, "snapmirror/relationships", _list_relationships)
@@ -244,3 +300,4 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, "snapmirror/ensure-export", _ensure_export)
     register_plugin_route(PLUGIN_ID, "snapmirror/check-secondary", _check_secondary)
     register_plugin_route(PLUGIN_ID, "snapmirror/dr-snap-vms", _dr_snap_vms)
+    register_plugin_route(PLUGIN_ID, "snapmirror/policy-labels", _snapmirror_policy_labels)

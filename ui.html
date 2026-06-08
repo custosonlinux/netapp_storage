@@ -459,7 +459,7 @@ de:{
   hint_no_discovery:'Noch keine Erkennung durchgeführt.',hint_cron_prefix:'Zeitplan:',
   badge_active:'Aktiv',badge_inactive:'Inaktiv',badge_done:'Fertig',badge_failed:'Fehlgeschlagen',
   badge_running:'Läuft',badge_cancelling:'Wird abgebrochen',badge_cancelled:'Abgebrochen',badge_schedule:'Zeitplan',badge_ontap:'ONTAP-nativ',badge_running_dots:'läuft …',
-  act_restore:'Full-Restore',act_delete:'Löschen',act_activate:'Aktivieren',
+  act_restore:'Restore',act_clone:'Clone',act_delete:'Löschen',act_activate:'Aktivieren',
   act_deactivate:'Deaktivieren',act_run_now:'Jetzt',act_edit:'Bearbeiten',
   pg_prev:'← Zurück',pg_next:'Weiter →',
   empty_snapshots:'Keine Snapshots vorhanden.',empty_schedules:'Keine Zeitpläne konfiguriert.',
@@ -573,7 +573,7 @@ en:{
   hint_no_discovery:'No discovery run yet.',hint_cron_prefix:'Schedule:',
   badge_active:'Active',badge_inactive:'Inactive',badge_done:'Done',badge_failed:'Failed',
   badge_running:'Running',badge_cancelling:'Cancelling',badge_cancelled:'Cancelled',badge_schedule:'Schedule',badge_ontap:'ONTAP-native',badge_running_dots:'running …',
-  act_restore:'Full Restore',act_delete:'Delete',act_activate:'Activate',
+  act_restore:'Restore',act_clone:'Clone',act_delete:'Delete',act_activate:'Activate',
   act_deactivate:'Deactivate',act_run_now:'Run now',act_edit:'Edit',
   pg_prev:'← Back',pg_next:'Next →',
   empty_snapshots:'No snapshots available.',empty_schedules:'No schedules configured.',
@@ -687,7 +687,7 @@ fr:{
   hint_no_discovery:'Aucune détection effectuée.',hint_cron_prefix:'Planification :',
   badge_active:'Actif',badge_inactive:'Inactif',badge_done:'Terminé',badge_failed:'Échoué',
   badge_running:'En cours',badge_cancelling:'Annulation en cours',badge_cancelled:'Annulé',badge_schedule:'Planification',badge_ontap:'ONTAP-natif',badge_running_dots:'en cours …',
-  act_restore:'Full Restore',act_delete:'Supprimer',act_activate:'Activer',
+  act_restore:'Restore',act_clone:'Clone',act_delete:'Supprimer',act_activate:'Activer',
   act_deactivate:'Désactiver',act_run_now:'Exécuter',act_edit:'Modifier',
   pg_prev:'← Précédent',pg_next:'Suivant →',
   empty_snapshots:'Aucun snapshot disponible.',empty_schedules:'Aucune planification configurée.',
@@ -801,7 +801,7 @@ es:{
   hint_no_discovery:'Aún no se ha ejecutado ninguna detección.',hint_cron_prefix:'Programa:',
   badge_active:'Activo',badge_inactive:'Inactivo',badge_done:'Completado',badge_failed:'Fallido',
   badge_running:'Ejecutando',badge_cancelling:'Cancelando',badge_cancelled:'Cancelado',badge_schedule:'Programa',badge_ontap:'ONTAP-nativo',badge_running_dots:'ejecutando …',
-  act_restore:'Full Restore',act_delete:'Eliminar',act_activate:'Activar',
+  act_restore:'Restore',act_clone:'Clonar',act_delete:'Eliminar',act_activate:'Activar',
   act_deactivate:'Desactivar',act_run_now:'Ejecutar',act_edit:'Editar',
   pg_prev:'← Anterior',pg_next:'Siguiente →',
   empty_snapshots:'No hay snapshots disponibles.',empty_schedules:'No hay programas configurados.',
@@ -915,7 +915,7 @@ pt:{
   hint_no_discovery:'Nenhuma detecção executada ainda.',hint_cron_prefix:'Agendamento:',
   badge_active:'Ativo',badge_inactive:'Inativo',badge_done:'Concluído',badge_failed:'Falhou',
   badge_running:'Executando',badge_cancelling:'Cancelando',badge_cancelled:'Cancelado',badge_schedule:'Agendamento',badge_ontap:'ONTAP-nativo',badge_running_dots:'executando …',
-  act_restore:'Full Restore',act_delete:'Excluir',act_activate:'Ativar',
+  act_restore:'Restore',act_clone:'Clonar',act_delete:'Excluir',act_activate:'Ativar',
   act_deactivate:'Desativar',act_run_now:'Executar',act_edit:'Editar',
   pg_prev:'← Anterior',pg_next:'Próximo →',
   empty_snapshots:'Nenhum snapshot disponível.',empty_schedules:'Nenhum agendamento configurado.',
@@ -1029,7 +1029,7 @@ ko:{
   hint_no_discovery:'아직 검색이 실행되지 않았습니다.',hint_cron_prefix:'일정:',
   badge_active:'활성',badge_inactive:'비활성',badge_done:'완료',badge_failed:'실패',
   badge_running:'실행 중',badge_cancelling:'취소 중',badge_cancelled:'취소됨',badge_schedule:'일정',badge_ontap:'ONTAP 네이티브',badge_running_dots:'실행 중 …',
-  act_restore:'Full Restore',act_delete:'삭제',act_activate:'활성화',
+  act_restore:'Restore',act_clone:'Clone',act_delete:'삭제',act_activate:'활성화',
   act_deactivate:'비활성화',act_run_now:'실행',act_edit:'편집',
   pg_prev:'← 이전',pg_next:'다음 →',
   empty_snapshots:'Snapshot이 없습니다.',empty_schedules:'구성된 일정이 없습니다.',
@@ -1143,7 +1143,7 @@ it:{
   hint_no_discovery:'Nessun rilevamento eseguito.',hint_cron_prefix:'Pianificazione:',
   badge_active:'Attivo',badge_inactive:'Inattivo',badge_done:'Completato',badge_failed:'Fallito',
   badge_running:'In esecuzione',badge_cancelling:'Annullamento in corso',badge_cancelled:'Annullato',badge_schedule:'Pianificazione',badge_ontap:'ONTAP-nativo',badge_running_dots:'in esecuzione …',
-  act_restore:'Full Restore',act_delete:'Elimina',act_activate:'Attiva',
+  act_restore:'Restore',act_clone:'Clona',act_delete:'Elimina',act_activate:'Attiva',
   act_deactivate:'Disattiva',act_run_now:'Esegui',act_edit:'Modifica',
   pg_prev:'← Indietro',pg_next:'Avanti →',
   empty_snapshots:'Nessuno snapshot disponibile.',empty_schedules:'Nessuna pianificazione configurata.',
@@ -2339,15 +2339,71 @@ async function populateMappingSelect(selId) {
 async function showCreateSnapshotForm() {
   document.getElementById('createSnapshotForm').style.display = '';
   document.body.style.overflow = 'hidden';
+  document.getElementById('snap_sm_section').style.display = 'none';
   await populateMappingSelect('snap_mapping');
-  updateSnapCluster();
+  updateSnapMapping();
 }
 
-async function updateSnapCluster() {
+function _smInfoHtml(data) {
+  var src = esc((data.source_svm||'') + ':' + (data.source_volume||''));
+  var dst = esc((data.dest_cluster||data.dest_svm||'') + (data.dest_volume ? ':'+data.dest_volume : ''));
+  var pt  = data.policy_type ? ' <span style="opacity:.6">('+esc(data.policy_type)+')</span>' : '';
+  var ok  = data.healthy !== false;
+  var col = ok ? '#22c55e' : '#f59e0b';
+  return '<span style="background:'+col+'22;color:'+col+';border:1px solid '+col+'44;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;letter-spacing:.03em;margin-right:8px">SnapMirror®</span>'
+       + src + ' → ' + dst + pt;
+}
+
+async function updateSnapMapping() {
   var selId = document.getElementById('snap_mapping').value;
-  var m = _mappingsCache.find(function(x){ return x.id===selId; });
-  document.getElementById('snap_cluster').value = m ? (m.pve_host_name || m.pve_cluster_id) : '';
   await loadVmsForMapping(selId);
+  var smSection = document.getElementById('snap_sm_section');
+  if (!selId) { smSection.style.display = 'none'; return; }
+  try {
+    var data = await apiFetch('snapmirror/policy-labels?mapping_id=' + encodeURIComponent(selId));
+    if (data.has_relationship) {
+      document.getElementById('snap_sm_info').innerHTML = _smInfoHtml(data);
+      var labels = data.labels || [];
+      var labelSel = document.getElementById('snap_label');
+      labelSel.innerHTML = '<option value="">— no label —</option>' +
+        labels.map(function(l){ return '<option value="'+esc(l)+'">'+esc(l)+'</option>'; }).join('');
+      smSection.style.display = 'flex';
+    } else {
+      smSection.style.display = 'none';
+    }
+  } catch(e) {
+    smSection.style.display = 'none';
+  }
+}
+
+async function updateSchedMapping(mappingId) {
+  await loadVmsForSchedule(mappingId);
+  await updateSchedSMSection(mappingId, '');
+}
+
+async function updateSchedSMSection(mappingId, preselectedLabel) {
+  _schedWizHasSM = false;
+  schedWizUpdateSMPill();
+  if (!mappingId) return;
+  try {
+    var data = await apiFetch('snapmirror/policy-labels?mapping_id=' + encodeURIComponent(mappingId));
+    if (data.has_relationship) {
+      _schedWizHasSM = true;
+      document.getElementById('sched_sm_info').innerHTML = _smInfoHtml(data);
+      var labels = data.labels || [];
+      var labelSel = document.getElementById('sched_label');
+      labelSel.innerHTML = '<option value="">— no label —</option>' +
+        labels.map(function(l){
+          return '<option value="'+esc(l)+'"'+(l===preselectedLabel?' selected':'')+'>'+esc(l)+'</option>';
+        }).join('');
+      if (preselectedLabel && labels.indexOf(preselectedLabel) === -1 && preselectedLabel !== '') {
+        labelSel.innerHTML += '<option value="'+esc(preselectedLabel)+'" selected>'+esc(preselectedLabel)+'</option>';
+      }
+    } else {
+      document.getElementById('sched_label').innerHTML = '<option value="">— no label —</option>';
+    }
+  } catch(e) { /* silent */ }
+  schedWizUpdateSMPill();
 }
 
 async function loadVmsForMapping(mappingId) {
@@ -2406,12 +2462,18 @@ function renderSnapshots() {
     if (ds && sDs !== ds) return false;
     if (text && s.snap_name.toLowerCase().indexOf(text) < 0 &&
                sDs.toLowerCase().indexOf(text) < 0 &&
-               (s.label||'').toLowerCase().indexOf(text) < 0) return false;
+               (s.label||'').toLowerCase().indexOf(text) < 0 &&
+               !Object.values(s.vm_names||{}).some(function(n){ return (n||'').toLowerCase().indexOf(text) >= 0; })) return false;
     return true;
   });
 
   // Sorting
   filtered.sort(function(a, b) {
+    if (_snapSortCol === 'created_at') {
+      var ta = a.created_at ? Date.parse(a.created_at) : 0;
+      var tb = b.created_at ? Date.parse(b.created_at) : 0;
+      return (tb - ta) * -_snapSortDir;
+    }
     var va = (a[_snapSortCol] == null ? '' : a[_snapSortCol]).toString().toLowerCase();
     var vb = (b[_snapSortCol] == null ? '' : b[_snapSortCol]).toString().toLowerCase();
     return va < vb ? -_snapSortDir : va > vb ? _snapSortDir : 0;
@@ -2463,6 +2525,9 @@ function renderSnapshots() {
     var actions = '';
     if (s.status==='done') {
       actions += '<button class="btn btn-ghost btn-sm" onclick="prepareRestore(\''+s.id+'\')">'+t('act_restore')+'</button>';
+      if (!isNative) {
+        actions += '<button class="btn btn-ghost btn-sm" onclick="prepareClone(\''+s.id+'\')">'+t('act_clone')+'</button>';
+      }
     }
     var delCall = isNative
       ? 'deleteSnapshotNative(\''+esc(s.ontap_snap_uuid)+'\',\''+esc(s.mapping_id)+'\',\''+esc(s.snap_name)+'\')'
@@ -2492,18 +2557,19 @@ function renderSnapshots() {
 
 async function createSnapshot() {
   var mapping_id  = document.getElementById('snap_mapping').value;
-  var node        = document.getElementById('snap_node').value.trim();
   var sel         = document.getElementById('snap_vmids_select');
   var vmids       = Array.from(sel.selectedOptions).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
   var consistency = document.getElementById('snap_consistency').value;
-  var label       = document.getElementById('snap_label').value.trim();
+  var labelEl     = document.getElementById('snap_label');
+  var label       = labelEl ? labelEl.value : '';
   var name        = document.getElementById('snap_name').value.trim();
-  var sm_update   = document.getElementById('snap_sm_update') && document.getElementById('snap_sm_update').checked;
+  var smUpdEl     = document.getElementById('snap_sm_update');
+  var sm_update   = smUpdEl ? smUpdEl.checked : false;
   if (!mapping_id) { toast(t('msg_snap_mapping_req'),'error'); return; }
   if (!vmids.length) { toast(t('msg_snap_vm_req'),'error'); return; }
   if (!name) { toast(t('msg_snap_name_req'),'error'); return; }
   try {
-    await apiPost('snapshots/create', {mapping_id, node, vmids, consistency, label, name, snapmirror_update: sm_update});
+    await apiPost('snapshots/create', {mapping_id, vmids, consistency, label, name, snapmirror_update: sm_update});
     toast(t('msg_snap_started'),'success');
     hideForm('createSnapshotForm');
     document.getElementById('snap_name').value = '';
@@ -2797,6 +2863,8 @@ async function startClone() {
 // ═══════════════════════════ SCHEDULES ════════════════════════════════════
 
 var _schedulesCache = [];
+var _schedWizStep = 1;
+var _schedWizHasSM = false;
 
 async function loadSchedules() {
   try {
@@ -2924,9 +2992,9 @@ async function showAddScheduleForm() {
   document.getElementById('sched_name').value = '';
   document.getElementById('sched_retention').value = 7;
   document.getElementById('sched_consistency').value = 'crash';
-  document.getElementById('sched_label').value = '';
   document.getElementById('sched_pre_script').value = '';
   document.getElementById('sched_post_script').value = '';
+  _schedWizHasSM = false;
   if (document.getElementById('sched_sm_update')) document.getElementById('sched_sm_update').checked = false;
   if (document.getElementById('sched_sync_vmids')) {
     document.getElementById('sched_sync_vmids').checked = false;
@@ -2940,12 +3008,17 @@ async function showAddScheduleForm() {
   }
   document.getElementById('sched_freq').value = 'daily';
   document.getElementById('sched_time').value = '02:00';
+  document.getElementById('schedWizSaveBtn').textContent = 'Save Schedule';
   updateSchedCron();
   document.getElementById('addScheduleForm').style.display = '';
   document.body.style.overflow = 'hidden';
+  schedWizShowStep(1);
   await populateMappingSelect('sched_mapping');
   var mid = document.getElementById('sched_mapping').value;
-  if (mid) await loadVmsForSchedule(mid);
+  if (mid) {
+    await loadVmsForSchedule(mid);
+    await updateSchedSMSection(mid, '');
+  }
 }
 
 function editSchedule(id) {
@@ -2964,9 +3037,9 @@ async function showEditScheduleForm(s) {
   document.getElementById('sched_name').value = s.name || '';
   document.getElementById('sched_retention').value = s.retention_count || 7;
   document.getElementById('sched_consistency').value = s.consistency || 'crash';
-  document.getElementById('sched_label').value = s.label || '';
   document.getElementById('sched_pre_script').value  = s.pre_script  || '';
   document.getElementById('sched_post_script').value = s.post_script || '';
+  _schedWizHasSM = false;
   if (document.getElementById('sched_sm_update')) document.getElementById('sched_sm_update').checked = !!s.snapmirror_update;
   if (document.getElementById('sched_sync_vmids')) {
     document.getElementById('sched_sync_vmids').checked = !!s.sync_vmids;
@@ -2977,14 +3050,19 @@ async function showEditScheduleForm(s) {
     document.getElementById('sched_notify_enabled').checked    = notifyOn;
     document.getElementById('sched_notify_on').value           = s.notify_on || 'all';
     document.getElementById('sched_notify_recipients').value   = s.notify_recipients || '';
-    document.getElementById('sched_notify_fields').style.display = notifyOn ? 'block' : 'none';
+    document.getElementById('sched_notify_fields').style.display = notifyOn ? 'flex' : 'none';
   }
   parseCronToForm(s.cron_expr);
+  document.getElementById('schedWizSaveBtn').textContent = 'Update Schedule';
   document.getElementById('addScheduleForm').style.display = '';
   document.body.style.overflow = 'hidden';
+  schedWizShowStep(1);
   await populateMappingSelect('sched_mapping');
   document.getElementById('sched_mapping').value = s.mapping_id;
-  if (s.mapping_id) await loadVmsForSchedule(s.mapping_id, s.vmids || []);
+  if (s.mapping_id) {
+    await loadVmsForSchedule(s.mapping_id, s.vmids || []);
+    await updateSchedSMSection(s.mapping_id, s.label || '');
+  }
 }
 
 function parseCronToForm(expr) {
@@ -3032,7 +3110,118 @@ function _schedNotifyPayload() {
 
 function toggleNotifyFields() {
   var on = document.getElementById('sched_notify_enabled').checked;
-  document.getElementById('sched_notify_fields').style.display = on ? 'block' : 'none';
+  document.getElementById('sched_notify_fields').style.display = on ? 'flex' : 'none';
+}
+
+// ── Schedule Wizard ───────────────────────────────────────────────────────────
+
+function schedWizUpdateSMPill() {
+  var pill = document.getElementById('swpill4');
+  if (!pill) return;
+  if (_schedWizHasSM) {
+    pill.style.opacity = '';
+    pill.style.cursor = '';
+    pill.style.pointerEvents = '';
+    pill.title = '';
+  } else {
+    pill.style.opacity = '0.4';
+    pill.style.cursor = 'not-allowed';
+    pill.style.pointerEvents = 'none';
+    pill.title = 'No SnapMirror relationship for this datastore';
+  }
+}
+
+function schedWizShowStep(n) {
+  _schedWizStep = n;
+  for (var i = 1; i <= 6; i++) {
+    var card = document.getElementById('schedStep' + i);
+    var pill = document.getElementById('swpill' + i);
+    if (card) card.style.display = (i === n) ? '' : 'none';
+    if (pill) {
+      pill.classList.remove('active', 'done');
+      if (i === n) pill.classList.add('active');
+      else if (i < n) pill.classList.add('done');
+    }
+  }
+  if (n === 6) schedWizUpdateSummary();
+  schedWizUpdateSMPill();
+}
+
+function schedWizGoStep(n) {
+  if (n === 4 && !_schedWizHasSM) return;
+  schedWizShowStep(n);
+}
+
+function schedWizNext() {
+  var next = _schedWizStep + 1;
+  if (_schedWizStep === 1) {
+    var name = (document.getElementById('sched_name').value || '').trim();
+    var mid  = document.getElementById('sched_mapping').value;
+    if (!name || !mid) { toast(t('msg_fill_required'), 'error'); return; }
+  }
+  if (_schedWizStep === 3 && !_schedWizHasSM) next = 5;
+  if (next > 6) { saveSchedule(); return; }
+  schedWizShowStep(next);
+}
+
+function schedWizPrev() {
+  var prev = _schedWizStep - 1;
+  if (_schedWizStep === 5 && !_schedWizHasSM) prev = 3;
+  if (prev < 1) return;
+  schedWizShowStep(prev);
+}
+
+function schedWizUpdateSummary() {
+  var name = document.getElementById('sched_name').value || '—';
+  var mappingSel = document.getElementById('sched_mapping');
+  var mappingText = mappingSel.options[mappingSel.selectedIndex] ? mappingSel.options[mappingSel.selectedIndex].text : '—';
+  var cronHuman = document.getElementById('sched_cron_human').textContent || '—';
+  var retention = document.getElementById('sched_retention').value || '7';
+  var consistencyVal = document.getElementById('sched_consistency').value;
+  var consistency = consistencyVal === 'app' ? 'App-consistent (QEMU Guest Agent)' : 'Crash-consistent';
+  var syncVmids = document.getElementById('sched_sync_vmids').checked;
+  var vmSel = document.getElementById('sched_vmids_select');
+  var selectedVmNames = Array.from(vmSel.selectedOptions).map(function(o){ return o.text; });
+  var vmsText = syncVmids ? 'All (auto-sync)' : (selectedVmNames.length ? selectedVmNames.join(', ') : 'All');
+  var preScript  = (document.getElementById('sched_pre_script').value  || '').trim();
+  var postScript = (document.getElementById('sched_post_script').value || '').trim();
+  var notifyEnabled = document.getElementById('sched_notify_enabled').checked;
+  var notifyOn  = document.getElementById('sched_notify_on').value;
+  var notifyMap = {all: 'All events', failed: 'Failures only', success: 'Success only'};
+  var notifyRecipients = (document.getElementById('sched_notify_recipients').value || '').trim();
+
+  function row(label, valueHtml) {
+    return '<tr style="border-bottom:1px solid var(--border)">'
+      + '<td style="padding:8px 12px 8px 0;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;vertical-align:top;width:150px">'+esc(label)+'</td>'
+      + '<td style="padding:8px 0;font-size:13px;color:var(--text)">'+valueHtml+'</td>'
+      + '</tr>';
+  }
+
+  var html = '<table style="width:100%;border-collapse:collapse">';
+  html += row('Name', esc(name));
+  html += row('Datastore', esc(mappingText));
+  html += row('Schedule', esc(cronHuman));
+  html += row('Retention', esc(retention) + ' snapshots');
+  html += row('Consistency', esc(consistency));
+  html += row('VMs', esc(vmsText));
+  if (preScript)  html += row('Pre-Script',  '<code style="font-size:11px;word-break:break-all">'+esc(preScript)+'</code>');
+  if (postScript) html += row('Post-Script', '<code style="font-size:11px;word-break:break-all">'+esc(postScript)+'</code>');
+  if (_schedWizHasSM) {
+    html += row('SnapMirror', document.getElementById('sched_sm_info').innerHTML || '<span style="opacity:.5">—</span>');
+    var smLabel = document.getElementById('sched_label').value || '— no label —';
+    html += row('SM Label', esc(smLabel));
+    var smUpdate = document.getElementById('sched_sm_update').checked;
+    html += row('SM Update', smUpdate ? '<span style="color:var(--success)">✓ Yes — transfer after snapshot</span>' : '<span style="opacity:.5">✗ No</span>');
+  } else {
+    html += row('SnapMirror', '<span style="opacity:.5">No relationship configured</span>');
+  }
+  if (notifyEnabled) {
+    html += row('Notifications', esc(notifyMap[notifyOn] || notifyOn) + (notifyRecipients ? ' → <span style="font-family:monospace;font-size:12px">'+esc(notifyRecipients)+'</span>' : ''));
+  } else {
+    html += row('Notifications', '<span style="opacity:.5">Disabled</span>');
+  }
+  html += '</table>';
+  document.getElementById('schedWizSummary').innerHTML = html;
 }
 
 function toggleSchedSyncVmids() {
@@ -3474,6 +3663,23 @@ function prepareRestore(snapId) {
     }
     document.getElementById('restore_snap').value = snapId;
     updateRestoreVmList();
+  });
+}
+
+function prepareClone(snapId) {
+  document.querySelectorAll('.subtab').forEach(function(x){ x.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(x){ x.style.display='none'; });
+  document.querySelector('[data-tab="clone"]').classList.add('active');
+  document.getElementById('tab-clone').style.display = 'block';
+  loadCloneSnapshots().then(function(){
+    var snap = _allSnapshots.find(function(s){ return String(s.id) === String(snapId); });
+    if (snap && snap.mapping_id) {
+      var dsSel = document.getElementById('clone_datastore');
+      dsSel.value = snap.mapping_id;
+      onCloneDatastoreChange();
+    }
+    document.getElementById('clone_snap').value = snapId;
+    prepareCloneFromSelect();
   });
 }
 
@@ -7143,58 +7349,54 @@ loadSnapshots();
 
 <!-- ── Create Snapshot Modal ─────────────────────────────────────── -->
 <div id="createSnapshotForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="createSnapshotBackdropClick(event)">
-  <div style="max-width:700px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:960px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700" data-i18n="ct_create_snapshot">Create Snapshot</div>
       <button class="btn btn-ghost btn-sm" onclick="hideForm('createSnapshotForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
-    <div style="padding:20px">
-      <div class="form-grid">
-        <div class="form-group">
-          <label data-i18n="lbl_volume_mapping">Volume Mapping</label>
-          <select id="snap_mapping" onchange="updateSnapCluster()"></select>
-        </div>
-        <div class="form-group">
-          <label data-i18n="lbl_pve_cluster">PVE Cluster</label>
-          <input id="snap_cluster" data-i18n-placeholder="ph_cluster_auto" placeholder="Determined from mapping" readonly>
-        </div>
-        <div class="form-group">
-          <label><span data-i18n="lbl_node">Node</span> <span style="opacity:.6" data-i18n="lbl_node_hint">(empty = automatic)</span></label>
-          <input id="snap_node" placeholder="pve01">
-        </div>
-        <div class="form-group">
-          <label><span data-i18n="lbl_vms">VMs</span> &nbsp;<button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="selectAllVms()" data-i18n="btn_all">All</button></label>
-          <select id="snap_vmids_select" multiple size="8" style="min-height:160px">
-            <option disabled data-i18n="hint_mapping_first">Select mapping …</option>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div class="form-group">
+        <label>Datastore</label>
+        <select id="snap_mapping" onchange="updateSnapMapping()"></select>
+      </div>
+      <div class="form-group">
+        <label><span data-i18n="lbl_vms">VMs</span> &nbsp;<button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="selectAllVms()" data-i18n="btn_all">All</button></label>
+        <select id="snap_vmids_select" multiple size="12" style="min-height:220px">
+          <option disabled data-i18n="hint_mapping_first">Select mapping …</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label><span data-i18n="lbl_name">Name</span> <span style="opacity:.6" data-i18n-html="lbl_name_hint">(snapshot will be named NPP_<em>Name</em>)</span></label>
+        <input id="snap_name" placeholder="e.g. before-update, test-migration">
+      </div>
+      <div class="form-group">
+        <label data-i18n="lbl_consistency">Consistency</label>
+        <select id="snap_consistency">
+          <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
+          <option value="app" data-i18n="opt_app_qemu">App-consistent (QEMU guest-agent)</option>
+        </select>
+      </div>
+      <!-- SnapMirror section — shown only when an SM relationship exists for the selected mapping -->
+      <div id="snap_sm_section" style="display:none;flex-direction:column;gap:10px;border:1px solid var(--border);border-radius:6px;padding:14px;background:var(--bg)">
+        <div id="snap_sm_info" style="font-size:12px;color:var(--muted)"></div>
+        <div class="form-group" style="margin:0">
+          <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional)</span></label>
+          <select id="snap_label">
+            <option value="">— no label —</option>
           </select>
         </div>
-        <div class="form-group">
-          <label><span data-i18n="lbl_name">Name</span> <span style="opacity:.6" data-i18n-html="lbl_name_hint">(snapshot will be named NPP_<em>Name</em>)</span></label>
-          <input id="snap_name" placeholder="e.g. before-update, test-migration">
-        </div>
-        <div class="form-group">
-          <label data-i18n="lbl_consistency">Consistency</label>
-          <select id="snap_consistency">
-            <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
-            <option value="app" data-i18n="opt_app_qemu">App-consistent (QEMU guest-agent)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional, for vault/replication)</span></label>
-          <input id="snap_label" placeholder="e.g. daily, weekly, monthly">
-        </div>
-        <div class="form-group">
+        <div class="form-group" style="margin:0">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" id="snap_sm_update">
             <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
           </label>
         </div>
-        <p class="hint" style="margin-top:6px">
-          ⚠️ All disks of a VM must reside on the <strong>same datastore</strong> to be included in a consistent snapshot.
-          VMs with disks spread across multiple datastores are not snapshotted consistently.
-        </p>
       </div>
-      <div class="form-actions">
+      <p class="hint" style="margin:0">
+        ⚠️ All disks of a VM must reside on the <strong>same datastore</strong> to be included in a consistent snapshot.
+        VMs with disks spread across multiple datastores are not snapshotted consistently.
+      </p>
+      <div class="form-actions" style="margin:0">
         <button class="btn btn-primary" onclick="createSnapshot()" data-i18n="btn_start_snapshot">Start Snapshot</button>
         <button class="btn btn-ghost"   onclick="hideForm('createSnapshotForm')" data-i18n="btn_cancel">Cancel</button>
       </div>
@@ -7204,152 +7406,234 @@ loadSnapshots();
 
 <!-- ── Add/Edit Schedule Modal ───────────────────────────────────── -->
 <div id="addScheduleForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addScheduleBackdropClick(event)">
-  <div style="max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:960px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+
+    <!-- Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div id="sched_form_title" style="font-size:16px;font-weight:700" data-i18n="ct_new_schedule">New Schedule</div>
+      <div id="sched_form_title" style="font-size:16px;font-weight:700">New Schedule</div>
       <button class="btn btn-ghost btn-sm" onclick="hideForm('addScheduleForm')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
+
+    <!-- Body -->
     <div style="padding:20px">
+
+      <!-- Progress strip -->
+      <div style="display:flex;gap:0;margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+        <div class="setup-step-pill" id="swpill1" onclick="schedWizGoStep(1)">① Basics</div>
+        <div class="setup-step-pill" id="swpill2" onclick="schedWizGoStep(2)">② Schedule</div>
+        <div class="setup-step-pill" id="swpill3" onclick="schedWizGoStep(3)">③ VMs &amp; Scripts</div>
+        <div class="setup-step-pill" id="swpill4" onclick="schedWizGoStep(4)">④ SnapMirror</div>
+        <div class="setup-step-pill" id="swpill5" onclick="schedWizGoStep(5)">⑤ Notifications</div>
+        <div class="setup-step-pill" id="swpill6" onclick="schedWizGoStep(6)">⑥ Summary</div>
+      </div>
+
       <input type="hidden" id="sched_edit_id" value="">
-      <div class="form-grid">
-        <div class="form-group">
-          <label data-i18n="lbl_name">Name</label>
-          <input id="sched_name" placeholder="Nightly Backup">
-        </div>
-        <div class="form-group">
-          <label data-i18n="lbl_volume_mapping">Volume Mapping</label>
-          <select id="sched_mapping" onchange="loadVmsForSchedule(this.value)"></select>
-        </div>
-        <div class="form-group">
-          <label data-i18n="lbl_retention">Retention (keep snapshots)</label>
-          <input id="sched_retention" type="number" value="7" min="1" max="99">
-        </div>
-        <div class="form-group">
-          <label data-i18n="lbl_consistency">Consistency</label>
-          <select id="sched_consistency">
-            <option value="crash" data-i18n="opt_crash">Crash-consistent</option>
-            <option value="app" data-i18n="opt_app_sched">App-consistent (QEMU with Guest Agent)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label><span data-i18n="lbl_snapmirror_label">SnapMirror Label</span> <span style="opacity:.6" data-i18n="lbl_snapmirror_hint">(optional, for vault/replication)</span></label>
-          <input id="sched_label" placeholder="e.g. daily, weekly, monthly">
-        </div>
-      </div>
 
-      <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_sched_builder">Schedule</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div class="form-group" style="flex:0 0 auto">
-          <label data-i18n="lbl_frequency">Frequency</label>
-          <select id="sched_freq" onchange="updateSchedCron()">
-            <option value="hourly" data-i18n="opt_hourly">Hourly</option>
-            <option value="daily" selected data-i18n="opt_daily">Daily</option>
-            <option value="weekly" data-i18n="opt_weekly">Weekly</option>
-            <option value="monthly" data-i18n="opt_monthly">Monthly</option>
-            <option value="interval" data-i18n="opt_every_n_h">Every N Hours</option>
-          </select>
-        </div>
-        <div id="sched_time_group" class="form-group" style="flex:0 0 auto">
-          <label data-i18n="lbl_at_time">At time</label>
-          <input id="sched_time" type="time" value="02:00" style="width:110px" onchange="updateSchedCron()">
-        </div>
-        <div id="sched_dow_group" class="form-group" style="flex:0 0 auto;display:none">
-          <label data-i18n="lbl_weekday">Weekday</label>
-          <select id="sched_dow" onchange="updateSchedCron()">
-            <option value="1" data-i18n="day_mon">Monday</option><option value="2" data-i18n="day_tue">Tuesday</option>
-            <option value="3" data-i18n="day_wed">Wednesday</option><option value="4" data-i18n="day_thu">Thursday</option>
-            <option value="5" data-i18n="day_fri">Friday</option><option value="6" data-i18n="day_sat">Saturday</option>
-            <option value="0" data-i18n="day_sun">Sunday</option>
-          </select>
-        </div>
-        <div id="sched_dom_group" class="form-group" style="flex:0 0 auto;display:none">
-          <label data-i18n="lbl_day_of_month">Day of month</label>
-          <select id="sched_dom" onchange="updateSchedCron()"></select>
-        </div>
-        <div id="sched_interval_group" class="form-group" style="flex:0 0 auto;display:none">
-          <label data-i18n="lbl_interval">Interval</label>
-          <select id="sched_interval_val" onchange="updateSchedCron()">
-            <option value="1" data-i18n="opt_int_1h">every hour</option><option value="2" data-i18n="opt_int_2h">every 2 hours</option>
-            <option value="3" data-i18n="opt_int_3h">every 3 hours</option><option value="4" data-i18n="opt_int_4h">every 4 hours</option>
-            <option value="6" data-i18n="opt_int_6h">every 6 hours</option><option value="8" data-i18n="opt_int_8h">every 8 hours</option>
-            <option value="12" data-i18n="opt_int_12h">every 12 hours</option>
-          </select>
-        </div>
-      </div>
-      <p class="hint" style="margin-top:6px">
-        <span data-i18n="hint_cron_prefix">Schedule:</span> <strong id="sched_cron_human" style="color:var(--text)">Daily at 02:00</strong>
-        <input id="sched_cron" type="hidden" value="0 2 * * *">
-      </p>
-
-      <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em" data-i18n="sect_vms_include">Include VMs</div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:10px">
-        <input type="checkbox" id="sched_sync_vmids" onchange="toggleSchedSyncVmids()">
-        <span>Automatically include all VMs in this datastore</span>
-      </label>
-      <div id="sched_vmids_manual">
-        <select id="sched_vmids_select" multiple size="6" style="width:100%;min-height:120px;margin-bottom:4px">
-          <option disabled data-i18n="hint_select_mapping">← Select mapping first</option>
-        </select>
-        <div style="display:flex;gap:6px;margin-bottom:4px">
-          <button class="btn btn-ghost btn-sm" onclick="schedSelectAll()" data-i18n="btn_all">All</button>
-          <button class="btn btn-ghost btn-sm" onclick="schedSelectNone()" data-i18n="btn_none">None</button>
-        </div>
-        <p class="hint" data-i18n="hint_no_select">No selection = all VMs of the datastore are included.</p>
-      </div>
-
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:12px">
-        <input type="checkbox" id="sched_sm_update">
-        <span data-i18n="sm_update_after_snap">Update SnapMirror® after snapshot</span>
-      </label>
-
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:8px">
-        <input type="checkbox" id="sched_notify_enabled" onchange="toggleNotifyFields()">
-        <span data-i18n="lbl_notify_enabled">Send email notifications</span>
-      </label>
-
-      <div id="sched_notify_fields" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
-        <div class="form-grid" style="margin-bottom:10px">
+      <!-- ── Step 1: Basics ── -->
+      <div class="card setup-step-card" id="schedStep1">
+        <div class="card-title">① Basics</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Give this schedule a name and select the datastore (NFS volume) to protect.</p>
+        <div style="display:flex;flex-direction:column;gap:14px">
           <div class="form-group" style="margin:0">
-            <label data-i18n="lbl_notify_on">Notify on</label>
-            <select id="sched_notify_on">
-              <option value="all"     data-i18n="opt_notify_all">All events (success &amp; failure)</option>
-              <option value="failed"  data-i18n="opt_notify_failed">Failures only</option>
-              <option value="success" data-i18n="opt_notify_success">Success only</option>
+            <label>Name</label>
+            <input id="sched_name" placeholder="e.g. Nightly Backup">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Datastore</label>
+            <select id="sched_mapping" onchange="updateSchedMapping(this.value)"></select>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:20px">
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 2: Schedule & Retention ── -->
+      <div class="card setup-step-card" id="schedStep2" style="display:none">
+        <div class="card-title">② Schedule &amp; Retention</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Define when snapshots are taken and how many to keep.</p>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div>
+            <div style="margin-bottom:10px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Timing</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-group" style="flex:0 0 auto;margin:0">
+                <label>Frequency</label>
+                <select id="sched_freq" onchange="updateSchedCron()">
+                  <option value="hourly">Hourly</option>
+                  <option value="daily" selected>Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="interval">Every N Hours</option>
+                </select>
+              </div>
+              <div id="sched_time_group" class="form-group" style="flex:0 0 auto;margin:0">
+                <label>At time</label>
+                <input id="sched_time" type="time" value="02:00" style="width:110px" onchange="updateSchedCron()">
+              </div>
+              <div id="sched_dow_group" class="form-group" style="flex:0 0 auto;margin:0;display:none">
+                <label>Weekday</label>
+                <select id="sched_dow" onchange="updateSchedCron()">
+                  <option value="1">Monday</option><option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option><option value="4">Thursday</option>
+                  <option value="5">Friday</option><option value="6">Saturday</option>
+                  <option value="0">Sunday</option>
+                </select>
+              </div>
+              <div id="sched_dom_group" class="form-group" style="flex:0 0 auto;margin:0;display:none">
+                <label>Day of month</label>
+                <select id="sched_dom" onchange="updateSchedCron()"></select>
+              </div>
+              <div id="sched_interval_group" class="form-group" style="flex:0 0 auto;margin:0;display:none">
+                <label>Interval</label>
+                <select id="sched_interval_val" onchange="updateSchedCron()">
+                  <option value="1">every hour</option><option value="2">every 2 hours</option>
+                  <option value="3">every 3 hours</option><option value="4">every 4 hours</option>
+                  <option value="6">every 6 hours</option><option value="8">every 8 hours</option>
+                  <option value="12">every 12 hours</option>
+                </select>
+              </div>
+            </div>
+            <p class="hint" style="margin-top:8px;margin-bottom:0">
+              Schedule: <strong id="sched_cron_human" style="color:var(--text)">Daily at 02:00</strong>
+              <input id="sched_cron" type="hidden" value="0 2 * * *">
+            </p>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Retention — keep last N snapshots</label>
+            <input id="sched_retention" type="number" value="7" min="1" max="99" style="width:120px">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:20px">
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 3: VMs, Consistency & Scripts ── -->
+      <div class="card setup-step-card" id="schedStep3" style="display:none">
+        <div class="card-title">③ VMs, Consistency &amp; Scripts</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Choose which VMs to include, the snapshot consistency method, and optional pre/post hooks.</p>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="form-group" style="margin:0">
+            <label>Consistency</label>
+            <select id="sched_consistency">
+              <option value="crash">Crash-consistent</option>
+              <option value="app">App-consistent (QEMU with Guest Agent)</option>
             </select>
           </div>
-          <div class="form-group" style="margin:0">
-            <label data-i18n="lbl_notify_recipients">Recipients (comma-separated)</label>
-            <input id="sched_notify_recipients" type="text" placeholder="admin@example.com, ops@example.com">
+          <div>
+            <div style="margin-bottom:10px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Include VMs</div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
+              <input type="checkbox" id="sched_sync_vmids" onchange="toggleSchedSyncVmids()">
+              <span>Automatically include all VMs in this datastore</span>
+            </label>
+            <div id="sched_vmids_manual">
+              <select id="sched_vmids_select" multiple size="10" style="width:100%;min-height:200px;margin-bottom:6px">
+                <option disabled>← Select datastore first</option>
+              </select>
+              <div style="display:flex;gap:6px;margin-bottom:4px">
+                <button class="btn btn-ghost btn-sm" onclick="schedSelectAll()">All</button>
+                <button class="btn btn-ghost btn-sm" onclick="schedSelectNone()">None</button>
+              </div>
+              <p class="hint" style="margin:0">No selection = all VMs of the datastore are included.</p>
+            </div>
           </div>
+          <details>
+            <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;user-select:none">Pre/Post-Scripts (Hooks)</summary>
+            <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+              <div class="form-group" style="margin:0">
+                <label style="font-size:12px">Pre-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, before freeze)</span></label>
+                <textarea id="sched_pre_script" rows="2"
+                  style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
+                  placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-flush.sh"></textarea>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label style="font-size:12px">Post-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, after thaw)</span></label>
+                <textarea id="sched_post_script" rows="2"
+                  style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
+                  placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-unlock.sh"></textarea>
+              </div>
+              <p class="hint" style="margin:0">Variables: <code>$PEGAPROX_VMIDS</code> (space-separated), <code>$PEGAPROX_SNAP</code>, <code>$PEGAPROX_NODE</code></p>
+            </div>
+          </details>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="testScheduleNotification()" data-i18n="btn_notify_test">Send test email</button>
+        <div style="display:flex;justify-content:space-between;margin-top:20px">
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+        </div>
       </div>
 
-      <details style="margin-bottom:12px">
-        <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;user-select:none">
-          Pre/Post-Scripts (Hooks)
-        </summary>
-        <div style="margin-top:10px;display:grid;gap:10px">
+      <!-- ── Step 4: SnapMirror (only reachable when SM relationship exists) ── -->
+      <div class="card setup-step-card" id="schedStep4" style="display:none">
+        <div class="card-title">④ SnapMirror® Replication</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:8px">Configure SnapMirror replication label and automatic transfer trigger.</p>
+        <div id="sched_sm_info" style="font-size:12px;margin-bottom:16px"></div>
+        <div style="display:flex;flex-direction:column;gap:14px">
           <div class="form-group" style="margin:0">
-            <label style="font-size:12px">Pre-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, before freeze)</span></label>
-            <textarea id="sched_pre_script" rows="2"
-              style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
-              placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-flush.sh"></textarea>
+            <label>SnapMirror Label <span style="opacity:.6">(optional)</span></label>
+            <select id="sched_label"><option value="">— no label —</option></select>
+            <p class="hint" style="margin-top:4px;margin-bottom:0">Labels control retention tiers on the destination (e.g. hourly, daily, weekly).</p>
           </div>
           <div class="form-group" style="margin:0">
-            <label style="font-size:12px">Post-Script <span style="opacity:.6;font-weight:400">(SSH on PVE node, after thaw)</span></label>
-            <textarea id="sched_post_script" rows="2"
-              style="width:100%;font-family:monospace;font-size:12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);resize:vertical"
-              placeholder="e.g.: qm guest exec $PEGAPROX_VMIDS -- /opt/scripts/db-unlock.sh"></textarea>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="sched_sm_update">
+              <span>Trigger SnapMirror® transfer immediately after snapshot</span>
+            </label>
           </div>
-          <p class="hint" style="margin:0">Available variables: <code>$PEGAPROX_VMIDS</code> (space-separated), <code>$PEGAPROX_SNAP</code>, <code>$PEGAPROX_NODE</code></p>
         </div>
-      </details>
-
-      <div class="form-actions">
-        <button class="btn btn-primary" onclick="saveSchedule()" data-i18n="btn_save">Save</button>
-        <button class="btn btn-ghost"   onclick="hideForm('addScheduleForm')" data-i18n="btn_cancel">Cancel</button>
+        <div style="display:flex;justify-content:space-between;margin-top:20px">
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+        </div>
       </div>
+
+      <!-- ── Step 5: Notifications ── -->
+      <div class="card setup-step-card" id="schedStep5" style="display:none">
+        <div class="card-title">⑤ Email Notifications</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Optionally send email reports after each snapshot run.</p>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="sched_notify_enabled" onchange="toggleNotifyFields()">
+            <span style="font-weight:600">Send email notifications</span>
+          </label>
+          <div id="sched_notify_fields" style="display:none;flex-direction:column;gap:12px;border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--bg)">
+            <div class="form-group" style="margin:0">
+              <label>Notify on</label>
+              <select id="sched_notify_on">
+                <option value="all">All events (success &amp; failure)</option>
+                <option value="failed">Failures only</option>
+                <option value="success">Success only</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Recipients <span style="opacity:.6;font-weight:400">(comma-separated)</span></label>
+              <input id="sched_notify_recipients" type="text" placeholder="admin@example.com, ops@example.com">
+            </div>
+            <div>
+              <button class="btn btn-ghost btn-sm" onclick="testScheduleNotification()">Send test email</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:20px">
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── Step 6: Summary ── -->
+      <div class="card setup-step-card" id="schedStep6" style="display:none">
+        <div class="card-title">⑥ Summary</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Review your schedule configuration before saving.</p>
+        <div id="schedWizSummary"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" onclick="hideForm('addScheduleForm')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveSchedule()" id="schedWizSaveBtn">Save Schedule</button>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div><!-- /addScheduleForm -->

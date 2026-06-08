@@ -463,6 +463,28 @@ class OntapClient:
             params={"fields": "uuid,state,healthy,lag_time,transfer.end_time"},
         )
 
+    def get_snapmirror_policy_labels(self, relationship_uuid):
+        """Returns retention labels from the SnapMirror policy for a relationship.
+
+        Returns a list of label strings, e.g. ['hourly', 'daily', 'weekly'].
+        """
+        rel = self._get(
+            f"snapmirror/relationships/{relationship_uuid}",
+            params={"fields": "policy.name"},
+        )
+        policy_name = (rel.get("policy") or {}).get("name", "")
+        if not policy_name:
+            return []
+        # Omit svm.name filter — policies may be cluster-scoped (no SVM).
+        policies = self._get_all_records("snapmirror/policies", params={
+            "name": policy_name,
+            "fields": "retention",
+            "max_records": 10,
+        })
+        if not policies:
+            return []
+        return [r.get("label", "") for r in (policies[0].get("retention") or []) if r.get("label")]
+
     def get_volume_export_info(self, volume_uuid):
         """Returns NAS info for a volume (junction_path, export_policy)."""
         data = self._get(

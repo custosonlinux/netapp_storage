@@ -353,6 +353,8 @@ def _list_snapshots():
             client = build_ontap_client(ep)
             ontap_snaps = client.list_snapshots(m["volume_uuid"])
             for s in ontap_snaps:
+                if s["name"].startswith("snapmirror."):
+                    continue
                 key = (m["volume_uuid"], s["name"])
                 if key in db_keys or key in seen_native_keys:
                     continue
