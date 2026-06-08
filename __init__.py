@@ -20,6 +20,45 @@ PLUGIN_DIR  = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_ID   = os.path.basename(PLUGIN_DIR)
 
 
+def _migrate_dr_v3(db):
+    """Recreate netapp_dr_plans without FK constraint on dr_site_id (v3.0 peer sync)."""
+    try:
+        # Check if the table has an FK reference to netapp_dr_sites
+        row = db.query_one("SELECT sql FROM sqlite_master WHERE type='table' AND name='netapp_dr_plans'")
+        if not row:
+            return  # table doesn't exist yet, schema.sql will create it correctly
+        ddl = (dict(row).get("sql") or "").lower()
+        if "references netapp_dr_sites" not in ddl:
+            return  # already migrated
+        log.info("[netapp_storage] Migrating netapp_dr_plans — removing FK constraint on dr_site_id …")
+        db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS netapp_dr_plans_new (
+                id               TEXT PRIMARY KEY,
+                name             TEXT NOT NULL,
+                dr_site_id       TEXT NOT NULL DEFAULT '',
+                state            TEXT NOT NULL DEFAULT 'standby',
+                notes            TEXT NOT NULL DEFAULT '',
+                last_failover_at TEXT NOT NULL DEFAULT '',
+                last_test_at     TEXT NOT NULL DEFAULT '',
+                created_by       TEXT NOT NULL,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL
+            )
+        """)
+        db.execute("INSERT INTO netapp_dr_plans_new SELECT id,name,COALESCE(dr_site_id,''),state,notes,last_failover_at,last_test_at,created_by,created_at,updated_at FROM netapp_dr_plans")
+        db.execute("DROP TABLE netapp_dr_plans")
+        db.execute("ALTER TABLE netapp_dr_plans_new RENAME TO netapp_dr_plans")
+        db.execute("PRAGMA foreign_keys = ON")
+        log.info("[netapp_storage] netapp_dr_plans FK migration done")
+    except Exception as exc:
+        log.warning(f"[netapp_storage] DR v3 plan migration failed: {exc}")
+        try:
+            db.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
+
+
 def _migrate_dr_v2(db):
     """Drop old DR schema (v1, identified by sync_host column) and recreate fresh."""
     try:
@@ -52,6 +91,7 @@ def _init_db():
             sql = f.read()
         db = get_db()
         _migrate_dr_v2(db)  # drop old DR schema before creating new tables
+        _migrate_dr_v3(db)  # remove FK constraint on dr_site_id
         for stmt in sql.split(";"):
             stmt = stmt.strip()
             if stmt:
