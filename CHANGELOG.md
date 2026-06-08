@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.2] – 2026-06-08
+
+### Fixed
+- **Edit NetApp System** — ONTAP endpoints could not be updated without deleting and re-adding them. Added `endpoints/update` API route and edit modal in the UI (name, host, username, password, SSL verify, SAN-only flag). Password field is optional — leave blank to keep the existing encrypted credential.
+- **Endpoint list missing `skip_nfs` field** — `_list_endpoints` did not include `skip_nfs` in the SELECT query; the field was silently absent from API responses, causing the edit form to misread the current SAN-only setting.
+- **AES-256-GCM decryption error message blank** — `InvalidTag` exceptions have an empty `str()` representation; the error logged on a failed credential decrypt was cryptically blank. The log message now includes the exception type name so the cause is identifiable.
+
 ## [1.1.1] – 2026-06-02
 
 ### Fixed
