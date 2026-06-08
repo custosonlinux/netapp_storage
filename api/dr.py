@@ -1,66 +1,61 @@
 """
-Disaster Recovery API  (v2.0 — NFS config-volume sync, role model)
+Disaster Recovery API  (v3.0 — direct peer-to-peer sync)
 
 Architecture:
-  MASTER   — writes plans/config to a dedicated NFS config volume (SnapMirror'd to DR)
-  DR_SLAVE — reads config from the DP destination of that volume (read-only NFS mount)
-  DR_TEST  — (future) FlexClone-based isolated test
+  PRIMARY    — manages DR plans, pushes config sync to SECONDARY every 60 s
+  SECONDARY  — receives config from PRIMARY, executes failover on demand
+  STANDALONE — no peer configured
 
-Role is auto-detected: if the config volume type == 'dp' (SnapMirror destination) → DR_SLAVE,
-otherwise MASTER.  Admin can always force-override via dr/role/set.
+Communication:
+  Both sides talk directly via HTTPS REST calls.
+  Auth: shared sync token (X-DR-Sync-Token header), generated on peer setup.
+  Background heartbeat every 30 s → peer status in DB.
+  Background sync every 60 s (PRIMARY only) → plan config pushed to SECONDARY.
 
-Config volume NFS path layout:
-  <mount_path>/.netapp-dr/
-    role.json
-    config.json         (sites + endpoints)
-    plans/<plan_id>.json
+Routes:
+  dr/role                         GET  — current role + peer status summary
+  dr/role/set                     POST {role} — set role, notify peer
 
-Routes under /api/plugins/netapp_storage/api/...
+  dr/peer/status                  GET  — peer config + live connectivity
+  dr/peer/configure               POST — store peer URL / credentials / token
+  dr/peer/remove                  POST — remove peer
+  dr/peer/sync/push               POST — manual immediate sync to peer
 
-  dr/role                         GET  — current role + config volume info
-  dr/role/set                     POST {role} — force role
-  dr/role/detect                  POST — auto-detect from ONTAP volume type
+  dr/peer/heartbeat               POST — RECEIVE heartbeat from peer (token auth)
+  dr/peer/sync/receive            POST — RECEIVE sync payload from peer (token auth)
+  dr/peer/role-notify             POST — RECEIVE role-change notice from peer (token auth)
 
-  dr/config-volume                GET  — config volume setup status
-  dr/config-volume/setup          POST {volume_id, mount_path} — designate config volume
-  dr/config-volume/nfs-volumes    GET  — list NFS volume mappings for selection
+  dr/plans                        GET
+  dr/plans/create                 POST
+  dr/plans/detail                 GET  ?plan_id=
+  dr/plans/update                 POST
+  dr/plans/delete                 POST
 
-  dr/sites                        GET  — list DR sites
-  dr/sites/create                 POST — create DR site
-  dr/sites/update                 POST — update DR site
-  dr/sites/delete                 POST — delete DR site
-  dr/clusters                     GET  — list PegaProx clusters (for PVE import)
+  dr/plans/entries/add            POST
+  dr/plans/entries/update         POST
+  dr/plans/entries/delete         POST
+  dr/plans/auto-detect            POST {plan_id}
 
-  dr/plans                        GET  — list DR plans
-  dr/plans/create                 POST — create DR plan (auto-creates Core group)
-  dr/plans/detail                 GET  ?plan_id= — full plan detail
-  dr/plans/update                 POST — update plan name/notes
-  dr/plans/delete                 POST — delete plan
+  dr/plans/groups/create          POST
+  dr/plans/groups/update          POST
+  dr/plans/groups/delete          POST
+  dr/plans/groups/reorder         POST
 
-  dr/plans/entries/add            POST — add datastore entry
-  dr/plans/entries/update         POST — update entry fields
-  dr/plans/entries/delete         POST — remove entry
-  dr/plans/auto-detect            POST {plan_id} — detect SnapMirror rels
+  dr/plans/groups/vms/add         POST
+  dr/plans/groups/vms/delete      POST
+  dr/plans/groups/vms/update      POST
 
-  dr/plans/groups/create          POST — create VM group
-  dr/plans/groups/update          POST — update VM group
-  dr/plans/groups/delete          POST — delete VM group (core group protected)
-  dr/plans/groups/reorder         POST — reorder groups
-
-  dr/plans/groups/vms/add         POST — add VM to group
-  dr/plans/groups/vms/delete      POST — remove VM
-  dr/plans/groups/vms/update      POST — update VM (name, target_node, move group)
-
-  dr/plans/status                 GET  ?plan_id= — live SnapMirror status
-  dr/plans/precheck               GET  ?plan_id= — failover pre-check
-  dr/plans/failover               POST — start failover
-  dr/plans/failover-jobs          GET  ?plan_id= — last failover jobs
-  dr/plans/snapshots              GET  ?plan_id=&entry_id= — ONTAP snapshots on DR volume
+  dr/plans/status                 GET  ?plan_id=
+  dr/plans/precheck               GET  ?plan_id=
+  dr/plans/failover               POST
+  dr/plans/failover-jobs          GET  ?plan_id=
+  dr/plans/snapshots              GET  ?plan_id=&entry_id=
 """
 
 import json
 import logging
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -72,6 +67,12 @@ from ..core._helpers import PLUGIN_ID
 
 log = logging.getLogger(__name__)
 
+_SYNC_TOKEN_HEADER = "X-DR-Sync-Token"
+_BG_STARTED = False
+_BG_LOCK = threading.Lock()
+
+
+# ── Basic helpers ─────────────────────────────────────────────────────────────
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -98,53 +99,71 @@ def _body():
     return request.get_json(silent=True) or {}
 
 
-# ── Plugin Config: Role + Config Volume ───────────────────────────────────────
+def _verify_sync_token():
+    """Verify X-DR-Sync-Token header for peer-receive endpoints."""
+    token = request.headers.get(_SYNC_TOKEN_HEADER, "").strip()
+    if not token:
+        return {"error": "Missing sync token"}, 401
+    db = get_db()
+    peer = db.query_one("SELECT sync_token FROM netapp_dr_peer WHERE id='default'")
+    if not peer or not peer["sync_token"] or peer["sync_token"] != token:
+        return {"error": "Invalid sync token"}, 403
+    return None
+
+
+# ── Plugin config (role) ──────────────────────────────────────────────────────
 
 def _get_plugin_config():
-    """Return the plugin config row, creating default row if missing."""
+    """Return plugin_config row, creating default if missing. Role: PRIMARY | SECONDARY | STANDALONE."""
     db = get_db()
     cfg = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
     if not cfg:
         db.execute(
             "INSERT INTO netapp_plugin_config "
-            "(id, role, role_forced, config_volume_id, config_mount_path, last_role_check, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            ("default", "MASTER", 0, "", "", "", _now())
+            "(id, role, role_forced, config_volume_id, config_storage_id, config_pve_host_ids, last_role_check, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            ("default", "PRIMARY", 0, "", "", "[]", "", _now())
         )
         cfg = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
-    return dict(cfg)
+    # Migrate legacy role names on first read
+    cfg = dict(cfg)
+    legacy = {"MASTER": "PRIMARY", "DR_SLAVE": "SECONDARY", "DR_TEST": "SECONDARY"}
+    if cfg.get("role") in legacy:
+        new_role = legacy[cfg["role"]]
+        get_db().execute("UPDATE netapp_plugin_config SET role=? WHERE id='default'", (new_role,))
+        cfg["role"] = new_role
+    return cfg
 
 
 def _get_role():
     """GET dr/role"""
     cfg = _get_plugin_config()
-    db = get_db()
-    vol_info = None
-    if cfg.get("config_volume_id"):
-        vol = db.query_one(
-            "SELECT volume_name, pve_storage_id, nfs_export_ip FROM netapp_volume_mapping WHERE id=?",
-            (cfg["config_volume_id"],)
-        )
-        if vol:
-            vol_info = dict(vol)
+    peer = _get_peer()
+    peer_summary = None
+    if peer:
+        peer_summary = {
+            "name":        peer.get("name", ""),
+            "url":         peer.get("url", ""),
+            "peer_role":   peer.get("peer_role", ""),
+            "sync_status": peer.get("sync_status", "unconfigured"),
+            "last_seen":   peer.get("last_seen", ""),
+            "last_sync_sent": peer.get("last_sync_sent", ""),
+        }
     return jsonify({
-        "role":             cfg.get("role", "MASTER"),
-        "role_forced":      bool(cfg.get("role_forced", 0)),
-        "config_volume_id": cfg.get("config_volume_id", ""),
-        "config_mount_path": cfg.get("config_mount_path", ""),
-        "config_volume":    vol_info,
-        "last_role_check":  cfg.get("last_role_check", ""),
+        "role":        cfg.get("role", "PRIMARY"),
+        "role_forced": bool(cfg.get("role_forced", 0)),
+        "peer":        peer_summary,
     })
 
 
 def _set_role():
-    """POST dr/role/set — force-set plugin role."""
+    """POST dr/role/set — set this instance's role and notify peer."""
     err = _require_admin()
     if err: return err
     data = _body()
     role = (data.get("role") or "").upper()
-    if role not in ("MASTER", "DR_SLAVE", "DR_TEST"):
-        return {"error": "role must be MASTER, DR_SLAVE, or DR_TEST"}, 400
+    if role not in ("PRIMARY", "SECONDARY", "STANDALONE"):
+        return {"error": "role must be PRIMARY, SECONDARY, or STANDALONE"}, 400
     _get_plugin_config()
     db = get_db()
     forced = 1 if data.get("forced", True) else 0
@@ -152,878 +171,517 @@ def _set_role():
         "UPDATE netapp_plugin_config SET role=?, role_forced=?, updated_at=? WHERE id='default'",
         (role, forced, _now())
     )
+    # Notify peer — fire-and-forget in background
+    threading.Thread(
+        target=_peer_push_role_notify,
+        args=(role,),
+        daemon=True
+    ).start()
     return jsonify({"role": role, "role_forced": bool(forced), "message": f"Role set to {role}"})
 
 
-def _detect_role():
-    """POST dr/role/detect — auto-detect role from ONTAP config volume type."""
-    cfg = _get_plugin_config()
-    if not cfg.get("config_volume_id"):
-        return jsonify({
-            "role": "MASTER", "detected": False,
-            "reason": "No config volume configured — assuming MASTER"
-        })
+# ── Peer configuration ────────────────────────────────────────────────────────
+
+def _get_peer():
+    """Return peer row as dict, or None if not configured."""
     db = get_db()
-    vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
-    if not vol:
-        return jsonify({
-            "role": "MASTER", "detected": False,
-            "reason": "Config volume not found in volume mappings"
-        })
+    # Ensure table exists (first boot before schema migration runs)
     try:
-        from ..core._helpers import get_endpoint, build_ontap_client
-        ep = get_endpoint(db, vol["endpoint_id"])
-        client = build_ontap_client(ep)
-        vol_info = client.get_volume_by_uuid(vol["volume_uuid"])
-        vol_type = (vol_info or {}).get("type", "rw")
-        detected_role = "DR_SLAVE" if vol_type == "dp" else "MASTER"
-        now = _now()
-        if not cfg.get("role_forced"):
-            db.execute(
-                "UPDATE netapp_plugin_config SET role=?, last_role_check=?, updated_at=? WHERE id='default'",
-                (detected_role, now, now)
-            )
-        else:
-            db.execute("UPDATE netapp_plugin_config SET last_role_check=? WHERE id='default'", (now,))
-        effective_role = cfg["role"] if cfg.get("role_forced") else detected_role
-        return jsonify({
-            "role": effective_role,
-            "detected_role": detected_role,
-            "volume_type": vol_type,
-            "forced": bool(cfg.get("role_forced")),
-            "detected": True,
-            "reason": f"Config volume type is '{vol_type}' → {'DR_SLAVE' if vol_type == 'dp' else 'MASTER'}",
-        })
-    except Exception as exc:
-        return jsonify({
-            "role": cfg.get("role", "MASTER"), "detected": False,
-            "reason": f"ONTAP detection failed: {exc}"
-        })
+        row = db.query_one("SELECT * FROM netapp_dr_peer WHERE id='default'")
+    except Exception:
+        return None
+    return dict(row) if row else None
 
 
-def _config_volume_status():
-    """GET dr/config-volume"""
-    import os
-    cfg = _get_plugin_config()
-    db = get_db()
-    pve_host_ids = _json_field(cfg.get("config_pve_host_ids"))
-    storage_id   = cfg.get("config_storage_id", "")
-    configured   = bool(cfg.get("config_volume_id") and storage_id and pve_host_ids)
+def _peer_status():
+    """GET dr/peer/status — peer config + live ping."""
+    peer = _get_peer()
+    if not peer or not peer.get("url"):
+        return jsonify({"configured": False})
 
     result = {
-        "configured":          configured,
-        "config_volume_id":    cfg.get("config_volume_id", ""),
-        "config_storage_id":   storage_id,
-        "config_pve_host_ids": pve_host_ids,
+        "configured":       True,
+        "name":             peer.get("name", ""),
+        "url":              peer.get("url", ""),
+        "ssl_verify":       bool(peer.get("ssl_verify", 0)),
+        "peer_role":        peer.get("peer_role", ""),
+        "sync_status":      peer.get("sync_status", "unknown"),
+        "sync_error":       peer.get("sync_error", ""),
+        "last_seen":        peer.get("last_seen", ""),
+        "last_sync_sent":   peer.get("last_sync_sent", ""),
+        "last_sync_received": peer.get("last_sync_received", ""),
+        "paired_at":        peer.get("paired_at", ""),
+        "has_token":        bool(peer.get("sync_token", "")),
     }
-    if cfg.get("config_volume_id"):
-        vol = db.query_one(
-            "SELECT volume_name, nfs_export_ip, junction_path FROM netapp_volume_mapping WHERE id=?",
-            (cfg["config_volume_id"],)
-        )
-        if vol:
-            result.update({
-                "volume_name": vol["volume_name"],
-                "nfs_ip":      vol["nfs_export_ip"],
-                "junction":    vol["junction_path"],
-            })
-    # Resolve PVE host names
-    hosts = []
-    for hid in pve_host_ids:
-        h = db.query_one("SELECT name, host FROM netapp_pve_hosts WHERE id=?", (hid,))
-        if h:
-            hosts.append({"id": hid, "name": h["name"], "host": h["host"]})
-    result["pve_hosts"] = hosts
+    # Live ping
+    resp, err = _peer_call("GET", "dr/peer/heartbeat", peer=peer)
+    result["online"] = err is None
+    if err:
+        result["ping_error"] = err
     return jsonify(result)
 
 
-def _setup_config_volume():
-    """POST dr/config-volume/setup — designate an NFS volume as the config volume."""
-    import os
+def _configure_peer():
+    """POST dr/peer/configure — store or update peer config."""
     err = _require_admin()
     if err: return err
     data = _body()
-    volume_id  = (data.get("volume_id") or "").strip()
-    mount_path = (data.get("mount_path") or "").strip().rstrip("/")
-    if not volume_id or not mount_path:
-        return {"error": "volume_id and mount_path are required"}, 400
-    db = get_db()
-    vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (volume_id,))
-    if not vol:
-        return {"error": "Volume not found in volume mappings"}, 404
-
-    # Save the config regardless of mount state — the volume may not be mounted yet
-    _get_plugin_config()
-    db.execute(
-        "UPDATE netapp_plugin_config SET config_volume_id=?, config_mount_path=?, updated_at=? WHERE id='default'",
-        (volume_id, mount_path, _now())
-    )
-
-    # Try to create config dir if mount is already accessible
-    warning = None
-    if os.path.isdir(mount_path):
-        config_dir = f"{mount_path}/.netapp-dr"
-        try:
-            os.makedirs(f"{config_dir}/plans", exist_ok=True)
-            _write_config_to_volume()
-        except Exception as exc:
-            warning = f"Config saved but could not create directory: {exc}"
-    else:
-        warning = (f"Config saved. Mount path '{mount_path}' is not yet accessible on this server. "
-                   f"Mount the NFS volume first: mount -t nfs {vol['nfs_export_ip']}:{vol['junction_path']} {mount_path}")
-
-    result = {"message": "Config volume saved", "volume_name": vol["volume_name"]}
-    if warning:
-        result["warning"] = warning
-    return jsonify(result)
-
-
-def _list_nfs_volumes():
-    """GET dr/config-volume/nfs-volumes — list NFS volume mappings for config volume selection."""
-    db = get_db()
-    rows = db.query(
-        "SELECT DISTINCT vm.id, vm.volume_name, vm.pve_storage_id, vm.nfs_export_ip, "
-        "vm.nfs_mount_path, ep.name as endpoint_name "
-        "FROM netapp_volume_mapping vm "
-        "LEFT JOIN netapp_endpoints ep ON ep.id=vm.endpoint_id "
-        "WHERE vm.storage_protocol='nfs' "
-        "ORDER BY ep.name, vm.volume_name"
-    ) or []
-    return jsonify([dict(r) for r in rows])
-
-
-def _remove_config_volume():
-    """POST dr/config-volume/remove — unlink config volume (optionally delete on ONTAP)."""
-    err = _require_admin()
-    if err: return err
-    data = _body()
-    delete_ontap = bool(data.get("delete_ontap", False))
+    url  = (data.get("url") or "").strip().rstrip("/")
+    if not url:
+        return {"error": "url is required"}, 400
+    name        = (data.get("name") or "DR Site").strip()
+    username    = (data.get("username") or "").strip()
+    password    = data.get("password", "")
+    ssl_verify  = int(bool(data.get("ssl_verify", False)))
+    sync_token  = (data.get("sync_token") or "").strip()
+    # Generate token if not provided
+    if not sync_token:
+        sync_token = str(uuid.uuid4())
 
     db = get_db()
-    cfg = _get_plugin_config()
-    mapping_id = cfg.get("config_volume_id", "")
-
-    ontap_result = None
-    if delete_ontap and mapping_id:
-        vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (mapping_id,))
-        if vol:
-            try:
-                from ..core._helpers import get_endpoint, build_ontap_client
-                ep = get_endpoint(db, vol["endpoint_id"])
-                client = build_ontap_client(ep)
-                client.delete_volume(vol["volume_uuid"])
-                ontap_result = f"Volume '{vol['volume_name']}' deleted on ONTAP."
-            except Exception as exc:
-                ontap_result = f"ONTAP delete failed: {exc}"
-
-    # Remove from DB
-    if mapping_id:
-        db.execute("DELETE FROM netapp_volume_mapping WHERE id=? AND pve_cluster_id='dr-config'",
-                   (mapping_id,))
-    db.execute(
-        "UPDATE netapp_plugin_config SET config_volume_id='', config_mount_path='', updated_at=? WHERE id='default'",
-        (_now(),)
-    )
-
-    msg = "Config volume removed from database."
-    if ontap_result:
-        msg += " " + ontap_result
-    return jsonify({"message": msg})
-
-
-def _config_volume_wizard_data():
-    """GET dr/config-volume/wizard/data — endpoints + config volume DB state."""
-    db = get_db()
-    cfg = _get_plugin_config()
-    eps = db.query("SELECT id, name, host FROM netapp_endpoints ORDER BY name") or []
-
-    # Resolve stored config volume details
-    cv_details = None
-    if cfg.get("config_volume_id"):
-        row = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
-        vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?",
-                           (cfg["config_volume_id"],)) if row else None
-        if vol:
-            import os
-            mount_path = cfg.get("config_mount_path", "")
-            cv_details = {
-                "volume_id":   cfg["config_volume_id"],
-                "volume_name": vol["volume_name"],
-                "endpoint_id": vol["endpoint_id"],
-                "nfs_ip":      vol["nfs_export_ip"],
-                "junction":    vol["junction_path"],
-                "mount_path":  mount_path,
-                "mounted":     bool(mount_path and os.path.isdir(mount_path)),
-            }
-
-    pve_hosts = db.query("SELECT id, name, host FROM netapp_pve_hosts ORDER BY name") or []
-
-    return jsonify({
-        "endpoints":   [dict(e) for e in eps],
-        "pve_hosts":   [dict(h) for h in pve_hosts],
-        "config_volume": cv_details,
-        "config_storage_id":   cfg.get("config_storage_id", ""),
-        "config_pve_host_ids": _json_field(cfg.get("config_pve_host_ids")),
-    })
-
-
-def _wizard_list_svms():
-    """GET dr/config-volume/wizard/svms?endpoint_id= — list SVMs for endpoint."""
-    endpoint_id = request.args.get("endpoint_id", "")
-    if not endpoint_id:
-        return {"error": "endpoint_id required"}, 400
-    db = get_db()
-    try:
-        from ..core._helpers import get_endpoint, build_ontap_client
-        ep = get_endpoint(db, endpoint_id)
-        client = build_ontap_client(ep)
-        svms = client.list_svms()
-        return jsonify([{"name": s.get("name", ""), "uuid": s.get("uuid", "")} for s in svms])
-    except Exception as exc:
-        return {"error": str(exc)}, 500
-
-
-def _wizard_list_aggregates():
-    """GET dr/config-volume/wizard/aggregates?endpoint_id= — list aggregates."""
-    endpoint_id = request.args.get("endpoint_id", "")
-    if not endpoint_id:
-        return {"error": "endpoint_id required"}, 400
-    db = get_db()
-    try:
-        from ..core._helpers import get_endpoint, build_ontap_client
-        ep = get_endpoint(db, endpoint_id)
-        client = build_ontap_client(ep)
-        aggs = client.list_aggregates()
-        return jsonify(aggs)
-    except Exception as exc:
-        return {"error": str(exc)}, 500
-
-
-def _wizard_create_volume():
-    """POST dr/config-volume/wizard/create-volume — create NFS config volume on ONTAP."""
-    err = _require_admin()
-    if err: return err
-    data = _body()
-    endpoint_id  = (data.get("endpoint_id") or "").strip()
-    svm_name     = (data.get("svm_name") or "").strip()
-    volume_name  = (data.get("volume_name") or "vol_dr_config").strip()
-    size_gb      = int(data.get("size_gb") or 1)
-    junction     = (data.get("junction_path") or f"/{volume_name}").strip()
-    aggregate    = (data.get("aggregate_name") or "").strip() or None
-
-    if not endpoint_id or not svm_name:
-        return {"error": "endpoint_id and svm_name are required"}, 400
-
-    db = get_db()
-    try:
-        from ..core._helpers import get_endpoint, build_ontap_client
-        ep = get_endpoint(db, endpoint_id)
-        client = build_ontap_client(ep)
-
-        # Ensure dedicated export policy with RW access exists
-        export_policy = "dr-config"
-        try:
-            client.ensure_export_policy_rw(svm_name, export_policy)
-        except Exception as exc:
-            log.warning(f"[netapp_storage] Could not ensure export policy: {exc}")
-            export_policy = "default"
-
-        # Check if volume already exists (get_volume_by_name raises if not found)
-        try:
-            existing = client.get_volume_by_name(svm_name, volume_name)
-        except Exception:
-            existing = None
-        if existing:
-            vol_uuid = existing.get("uuid", "")
-            nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""
-            try:
-                client.set_volume_export_policy(vol_uuid, export_policy)
-            except Exception as exc:
-                log.warning(f"[netapp_storage] Could not update export policy on existing volume: {exc}")
-            _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
-                                         vol_uuid, junction, nfs_ip)
-            return jsonify({"volume_uuid": vol_uuid, "volume_name": volume_name,
-                            "nfs_ip": nfs_ip, "junction": junction,
-                            "message": f"Volume '{volume_name}' already exists — linked.", "existed": True})
-
-        # Auto-select aggregate if not specified (required for FlexVol on most systems)
-        if not aggregate:
-            try:
-                aggs = client.list_aggregates()
-                if aggs:
-                    aggregate = aggs[0]["name"]
-                    log.info(f"[netapp_storage] Config volume wizard: auto-selected aggregate '{aggregate}'")
-            except Exception as exc:
-                log.warning(f"[netapp_storage] Could not auto-select aggregate: {exc}")
-
-        vol_uuid = client.create_volume_nfs(svm_name, volume_name,
-                                             size_gb * 1024 * 1024 * 1024,
-                                             junction, aggregate_name=aggregate,
-                                             export_policy=export_policy)
-        nfs_ip = client.get_nfs_lif_for_svm(svm_name) or ""
-        _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
-                                     vol_uuid, junction, nfs_ip)
-        return jsonify({"volume_uuid": vol_uuid, "volume_name": volume_name,
-                        "nfs_ip": nfs_ip, "junction": junction,
-                        "message": f"Volume '{volume_name}' created on {svm_name}."})
-    except Exception as exc:
-        return {"error": str(exc)}, 500
-
-
-def _store_config_volume_mapping(db, endpoint_id, svm_name, volume_name,
-                                  vol_uuid, junction_path, nfs_ip):
-    """Insert or update netapp_volume_mapping for the config volume and link it to plugin_config."""
-    # Check both by volume identity AND by the UNIQUE constraint columns
-    existing = db.query_one(
-        "SELECT id FROM netapp_volume_mapping "
-        "WHERE (endpoint_id=? AND svm_name=? AND volume_name=?) "
-        "OR (pve_cluster_id='dr-config' AND pve_storage_id=?)",
-        (endpoint_id, svm_name, volume_name, volume_name)
-    )
+    existing = db.query_one("SELECT id FROM netapp_dr_peer WHERE id='default'")
     now = _now()
+    if password:
+        pw_enc = db._encrypt(password)
+    else:
+        old = db.query_one("SELECT password_encrypted FROM netapp_dr_peer WHERE id='default'")
+        pw_enc = old["password_encrypted"] if old else ""
+
     if existing:
-        mapping_id = existing["id"]
         db.execute(
-            "UPDATE netapp_volume_mapping SET volume_uuid=?, junction_path=?, nfs_export_ip=? WHERE id=?",
-            (vol_uuid, junction_path, nfs_ip, mapping_id)
+            "UPDATE netapp_dr_peer SET name=?, url=?, username=?, password_encrypted=?, "
+            "ssl_verify=?, sync_token=?, updated_at=? WHERE id='default'",
+            (name, url, username, pw_enc, ssl_verify, sync_token, now)
         )
     else:
-        mapping_id = str(uuid.uuid4())[:8]
         db.execute(
-            "INSERT INTO netapp_volume_mapping "
-            "(id, endpoint_id, pve_cluster_id, pve_storage_id, svm_name, volume_uuid, volume_name, "
-            "junction_path, nfs_export_ip, nfs_mount_path, discovered_at, storage_protocol, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (mapping_id, endpoint_id, "dr-config", volume_name,
-             svm_name, vol_uuid, volume_name, junction_path, nfs_ip, "",
-             now, "nfs", now)
+            "INSERT INTO netapp_dr_peer "
+            "(id, name, url, username, password_encrypted, ssl_verify, sync_token, "
+            "peer_role, last_seen, last_sync_sent, last_sync_received, sync_status, sync_error, paired_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("default", name, url, username, pw_enc, ssl_verify, sync_token,
+             "", "", "", "", "unconfigured", "", now, now)
         )
-    _get_plugin_config()
-    db.execute(
-        "UPDATE netapp_plugin_config SET config_volume_id=?, updated_at=? WHERE id='default'",
-        (mapping_id, now)
-    )
+
+    return jsonify({
+        "message": "Peer configured",
+        "sync_token": sync_token,
+        "note": "Copy this sync_token to the other side's peer configuration."
+    })
 
 
-def _wizard_create_snapmirror():
-    """POST dr/config-volume/wizard/create-snapmirror — create SnapMirror for config volume.
-    Returns a job_id; frontend polls dr/config-volume/wizard/sm-status?job_id=...
-    """
+def _remove_peer():
+    """POST dr/peer/remove — delete peer config."""
     err = _require_admin()
     if err: return err
-    data = _body()
-    dr_endpoint_id    = (data.get("dr_endpoint_id") or "").strip()
-    dr_svm            = (data.get("dr_svm") or "").strip()
-    dr_volume_name    = (data.get("dr_volume_name") or "").strip()
-    policy            = (data.get("policy") or "MirrorAllSnapshots").strip()
-    transfer_schedule = (data.get("transfer_schedule") or "10min").strip()
-
-    if not dr_endpoint_id or not dr_svm or not dr_volume_name:
-        return {"error": "dr_endpoint_id, dr_svm, dr_volume_name are required"}, 400
-
     db = get_db()
-    cfg = _get_plugin_config()
-    if not cfg.get("config_volume_id"):
-        return {"error": "Create the config volume first (Step 1)"}, 400
-
-    vol = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
-    if not vol:
-        return {"error": "Config volume mapping not found"}, 404
-
-    source_path = f"{vol['svm_name']}:{vol['volume_name']}"
-    dest_path   = f"{dr_svm}:{dr_volume_name}"
-
-    username = request.session.get("user", "admin")
-    job_id = _dr_start_job("dr_cv_snapmirror", username)
-
-    threading.Thread(
-        target=_execute_cv_snapmirror,
-        args=(job_id, dr_endpoint_id, source_path, dest_path, policy, transfer_schedule),
-        daemon=True
-    ).start()
-
-    return jsonify({"job_id": job_id, "source_path": source_path, "dest_path": dest_path}), 202
+    db.execute("DELETE FROM netapp_dr_peer WHERE id='default'")
+    return jsonify({"message": "Peer removed"})
 
 
-def _execute_cv_snapmirror(job_id, dr_endpoint_id, source_path, dest_path, policy, transfer_schedule="10min"):
-    """Async worker: create SnapMirror relationship for config volume."""
-    log_lines = []
+# ── Outbound peer calls ───────────────────────────────────────────────────────
 
-    def _log(msg):
-        log_lines.append({"ts": _now(), "msg": msg})
-        db = get_db()
-        db.execute("UPDATE netapp_jobs SET log_json=? WHERE id=?", (json.dumps(log_lines), job_id))
-
-    def _finish(ok, rel_uuid="", error=""):
-        status = "done" if ok else "failed"
-        db = get_db()
-        db.execute(
-            "UPDATE netapp_jobs SET status=?, completed_at=?, log_json=? WHERE id=?",
-            (status, _now(), json.dumps(log_lines), job_id)
-        )
-        if ok and rel_uuid:
-            db.execute("UPDATE netapp_jobs SET node=? WHERE id=?", (rel_uuid, job_id))
-
+def _peer_call(method, path, payload=None, peer=None, timeout=15):
+    """
+    Call peer's plugin API. Returns (response_dict, error_string).
+    Uses sync token for authentication — no session needed.
+    """
     try:
-        from ..core._helpers import get_endpoint, build_ontap_client
-        db = get_db()
+        import requests as _req
+    except ImportError:
+        return None, "requests library not available"
 
-        _log(f"[INFO] Source:      {source_path}")
-        _log(f"[INFO] Destination: {dest_path}")
-        _log(f"[INFO] Policy:      {policy}")
-        _log(f"[INFO] Schedule:    {transfer_schedule}")
+    if peer is None:
+        peer = _get_peer()
+    if not peer or not peer.get("url"):
+        return None, "Peer not configured"
+    token = peer.get("sync_token", "")
+    if not token:
+        return None, "Peer sync token not set"
 
-        _log("[INFO] Connecting to DR ONTAP cluster...")
-        dr_ep = get_endpoint(db, dr_endpoint_id)
-        dr_client = build_ontap_client(dr_ep)
-        _log(f"[INFO] Connected to {dr_ep.get('host', dr_endpoint_id)}")
-
-        def _progress(msg):
-            _log(msg)
-
-        # Step 1: Pre-create destination DP volume without encryption
-        # (avoids hanging ONTAP job on AFF→FAS where encryption confirmation blocks)
-        dest_svm    = dest_path.split(":")[0]
-        dest_vol    = dest_path.split(":")[1]
-        src_svm     = source_path.split(":")[0]
-        src_vol_name = source_path.split(":")[1]
-
-        _log(f"[INFO] Checking if destination volume '{dest_vol}' already exists on DR cluster...")
-        try:
-            existing_dest = dr_client.get_volume_by_name(dest_svm, dest_vol)
-            _log(f"[INFO] Destination volume already exists (UUID: {existing_dest.get('uuid','')[:8]}…) — skipping creation")
-        except Exception:
-            existing_dest = None
-
-        if not existing_dest:
-            _log(f"[INFO] Creating DP destination volume '{dest_vol}' on {dest_svm} (encrypt=False)...")
-            try:
-                # Get source volume size
-                src_ep_row = db.query_one(
-                    "SELECT * FROM netapp_volume_mapping WHERE endpoint_id=? AND svm_name=? AND volume_name=? LIMIT 1",
-                    (dr_endpoint_id, src_svm, src_vol_name)
-                )
-                # fallback: use 1GB if source size not known
-                size_bytes = 1 * 1024 * 1024 * 1024
-
-                dp_uuid = dr_client.create_dp_volume(dest_svm, dest_vol, size_bytes)
-                if dp_uuid:
-                    _log(f"[INFO] ✅ Destination volume created (UUID: {dp_uuid[:8]}…)")
-                else:
-                    _log(f"[WARN] Volume created but UUID not returned — continuing")
-            except Exception as exc:
-                _log(f"[ERR] Failed to create destination volume: {exc}")
-                _finish(False, error=str(exc)); return
-
-        # Step 2: Create SnapMirror relationship (dest volume already exists → no create_destination)
-        _log(f"[INFO] Creating SnapMirror relationship {source_path} → {dest_path}...")
-        rel_uuid = dr_client.create_snapmirror_relationship(
-            source_path, dest_path, policy,
-            progress_cb=_progress,
-            create_destination=False,
-            transfer_schedule=transfer_schedule,
-        )
-
-        if not rel_uuid:
-            _log("[ERR] Relationship created but UUID not returned — cannot initialize transfer")
-            _finish(False, error="No UUID returned")
-            return
-
-        _log(f"[INFO] ✅ Relationship created (UUID: {rel_uuid[:8]}…)")
-        _log("[INFO] Triggering initial baseline transfer...")
-        try:
-            dr_client.initialize_snapmirror(rel_uuid)
-            _log("[INFO] ✅ Initial transfer initiated — baseline replication in progress")
-        except Exception as exc:
-            _log(f"[WARN] Initial transfer trigger: {exc} (relationship is created, transfer may start automatically)")
-
-        _log(f"[INFO] ✅ SnapMirror setup complete: {source_path} → {dest_path}")
-        _finish(True, rel_uuid=rel_uuid)
-
-    except Exception as exc:
-        msg = str(exc)
-        src_svm = source_path.split(":")[0]
-        dst_svm = dest_path.split(":")[0]
-        if "13303886" in msg or "peer permission" in msg.lower():
-            _log(f"[ERR] SVM peering missing between '{src_svm}' and '{dst_svm}'")
-            _log(f"[ERR] Run on source cluster:  vserver peer create -vserver {src_svm} -peer-vserver {dst_svm} -applications snapmirror")
-            _log(f"[ERR] Or: System Manager → Storage → Storage VMs → Peers")
+    base = peer["url"].rstrip("/")
+    url  = f"{base}/api/plugins/netapp_storage/api/{path}"
+    ssl  = bool(peer.get("ssl_verify", 0))
+    headers = {_SYNC_TOKEN_HEADER: token, "Content-Type": "application/json"}
+    try:
+        if method == "GET":
+            r = _req.get(url, headers=headers, verify=ssl, timeout=timeout)
         else:
-            _log(f"[ERR] {msg}")
-        _finish(False, error=msg)
-
-
-def _wizard_sm_status():
-    """GET dr/config-volume/wizard/sm-status?job_id= — poll SnapMirror creation job."""
-    job_id = request.args.get("job_id", "")
-    if not job_id:
-        return {"error": "job_id required"}, 400
-    db = get_db()
-    row = db.query_one(
-        "SELECT id, status, log_json, completed_at, node FROM netapp_jobs WHERE id=?", (job_id,)
-    )
-    if not row:
-        return {"error": "Job not found"}, 404
-    try:
-        log_entries = json.loads(row["log_json"] or "[]")
-    except Exception:
-        log_entries = []
-    return jsonify({
-        "job_id":       row["id"],
-        "status":       row["status"],
-        "log":          log_entries,
-        "completed_at": row["completed_at"],
-        "rel_uuid":     row["node"] or "",  # stored in node field
-    })
-
-
-def _wizard_register_pve_storage():
-    """POST dr/config-volume/wizard/register-storage
-    Mount the config NFS volume directly on selected PVE hosts (no pvesm registration).
-    Adds an fstab entry for persistence. The mount is invisible in the PVE GUI.
-    """
-    try:
-        return _wizard_register_pve_storage_impl()
+            r = _req.post(url, json=payload or {}, headers=headers, verify=ssl, timeout=timeout)
+        r.raise_for_status()
+        return r.json(), None
     except Exception as exc:
-        import traceback
-        log.error(f"[netapp_storage] register-storage unexpected error: {traceback.format_exc()}")
-        return {"error": f"Unexpected error: {exc}"}, 500
+        return None, str(exc)
 
 
-def _wizard_register_pve_storage_impl():
-    import shlex
-    err = _require_admin()
-    if err: return err
-    data = _body()
-    pve_host_ids = data.get("pve_host_ids") or []
-    mount_point  = (data.get("mount_point") or "/mnt/netapp-dr-config").strip().rstrip("/")
-
-    if not pve_host_ids:
-        return {"error": "Select at least one PVE host"}, 400
-    if not mount_point:
-        return {"error": "mount_point is required"}, 400
-
-    db = get_db()
+def _peer_push_heartbeat():
+    """Send heartbeat to peer, update peer row with result."""
+    peer = _get_peer()
+    if not peer or not peer.get("url"):
+        return
     cfg = _get_plugin_config()
-    if not cfg.get("config_volume_id"):
-        return {"error": "Create the config volume first (Step 1)"}, 400
-
-    vol_row = db.query_one("SELECT * FROM netapp_volume_mapping WHERE id=?", (cfg["config_volume_id"],))
-    if not vol_row:
-        return {"error": "Config volume mapping not found"}, 404
-    vol = dict(vol_row)
-
-    nfs_ip   = vol.get("nfs_export_ip", "")
-    junction = vol.get("junction_path", "")
-    if not nfs_ip or not junction:
-        return {"error": "NFS IP or junction path missing — did Step 1 complete?"}, 400
-
-    from ..core._helpers import build_pve_client, get_ssh_creds, ssh_run
-
-    mp_q  = shlex.quote(mount_point)
-    ip_q  = shlex.quote(nfs_ip)
-    jct_q = shlex.quote(junction)
-    src_q = shlex.quote(f"{nfs_ip}:{junction}")
-    # soft: return errors instead of hanging; noauto+x-systemd.automount: on-demand via systemd
-    fstab_entry = f"{nfs_ip}:{junction} {mount_point} nfs vers=3,soft,_netdev,noauto,x-systemd.automount 0 0"
-    fstab_q = shlex.quote(fstab_entry)
-
-    # Initial direct mount (soft); persist via fstab automount entry; reload systemd
-    mount_cmd = (
-        f"mkdir -p {mp_q} && "
-        f"(mountpoint -q {mp_q} && echo ALREADY_MOUNTED || "
-        f"(mount -t nfs -o vers=3,soft {ip_q}:{jct_q} {mp_q} && echo MOUNTED)) && "
-        f"(grep -qF {src_q} /etc/fstab || echo {fstab_q} >> /etc/fstab) && "
-        f"systemctl daemon-reload"
-    )
-
-    results   = []
-    succeeded = []
-
-    for pve_host_id in pve_host_ids:
-        try:
-            pve = build_pve_client(db, pve_host_id)
-            su, sp, sk = get_ssh_creds(pve)
-            sh = pve.host
-            out = ssh_run(sh, su, sp, mount_cmd, capture=True, key_material=sk, timeout=30)
-            status = "already_mounted" if "ALREADY_MOUNTED" in out else "mounted"
-            ssh_run(sh, su, sp,
-                    f"mkdir -p {mp_q}/.netapp-dr/plans",
-                    key_material=sk, timeout=10)
-            results.append({"host": sh, "host_id": pve_host_id, "status": status})
-            succeeded.append(pve_host_id)
-        except Exception as exc:
-            results.append({"host": pve_host_id, "host_id": pve_host_id,
-                            "status": "failed", "error": str(exc)[:200]})
-
-    if not succeeded:
-        return {"error": "NFS mount failed on all selected PVE hosts",
-                "results": results}, 500
-
-    db.execute(
-        "UPDATE netapp_plugin_config "
-        "SET config_storage_id=?, config_pve_host_ids=?, updated_at=? WHERE id='default'",
-        (mount_point, json.dumps(succeeded), _now())
-    )
-
-    # Write initial config via SSH
-    written = _write_config_to_volume()
-
-    return jsonify({
-        "message": f"NFS volume mounted at '{mount_point}' on {len(succeeded)}/{len(pve_host_ids)} host(s)."
-                   + (" Config files written." if written else " Warning: config write failed."),
-        "results":     results,
-        "mount_point": mount_point,
-        "written":     written,
-    })
-
-
-def _write_config_to_volume():
-    """Write plan configs + role/site info as JSON files to the config volume via PVE SSH.
-
-    Tries each registered PVE host in order. Returns True on first success.
-    A failed write is non-fatal — the previous config remains on the volume.
-    """
-    import base64, shlex
-    db = get_db()
-    cfg = db.query_one("SELECT * FROM netapp_plugin_config WHERE id='default'")
-    if not cfg:
-        return False
-    cfg = dict(cfg)
-    pve_host_ids = _json_field(cfg.get("config_pve_host_ids"))
-    mount_path   = cfg.get("config_storage_id", "")
-    if not pve_host_ids or not mount_path:
-        return False
-
-    config_dir = f"{mount_path}/.netapp-dr"
-
-    # Build all files to write
-    sites = db.query("SELECT * FROM netapp_dr_sites") or []
-    eps   = db.query("SELECT id, name, host FROM netapp_endpoints") or []
-    plans = db.query("SELECT * FROM netapp_dr_plans") or []
-
-    files = {
-        f"{config_dir}/role.json": json.dumps(
-            {"role": cfg.get("role", "MASTER"), "last_updated": _now()}, indent=2
-        ),
-        f"{config_dir}/config.json": json.dumps({
-            "plugin": "netapp_storage", "exported_at": _now(),
-            "sites": [dict(s) for s in sites],
-            "endpoints": [dict(e) for e in eps],
-        }, indent=2),
-    }
-    for plan_row in plans:
-        files[f"{config_dir}/plans/{plan_row['id']}.json"] = json.dumps(
-            _build_plan_export_data(plan_row["id"], db), indent=2
-        )
-
-    from ..core._helpers import build_pve_client, get_ssh_creds, ssh_run
-
-    for pve_host_id in pve_host_ids:
-        try:
-            pve = build_pve_client(db, pve_host_id)
-            su, sp, sk = get_ssh_creds(pve)
-            sh = pve.host
-
-            ssh_run(sh, su, sp, f"mkdir -p {shlex.quote(config_dir)}/plans",
-                    key_material=sk, timeout=10)
-
-            for filepath, content in files.items():
-                b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
-                ssh_run(sh, su, sp,
-                        f"printf '%s' {shlex.quote(b64)} | base64 -d > {shlex.quote(filepath)}",
-                        key_material=sk, timeout=15)
-
-            log.info(f"[netapp_storage] Config written via {sh}:{config_dir} ({len(files)} files)")
-            return True
-        except Exception as exc:
-            log.warning(f"[netapp_storage] Config write failed on host {pve_host_id}: {exc}")
-
-    log.warning("[netapp_storage] Config write failed on all PVE hosts")
-    return False
-
-
-def _build_plan_export_data(plan_id, db):
-    """Build a full plan export dict for writing to the config volume."""
-    plan = db.query_one("SELECT * FROM netapp_dr_plans WHERE id=?", (plan_id,))
-    if not plan:
-        return {}
-    p = dict(plan)
-    entries = db.query(
-        "SELECT * FROM netapp_dr_plan_entries WHERE plan_id=? ORDER BY sort_order", (plan_id,)
-    ) or []
-    p["entries"] = [dict(e) for e in entries]
-    groups = db.query(
-        "SELECT * FROM netapp_dr_vm_groups WHERE plan_id=? ORDER BY sort_order", (plan_id,)
-    ) or []
-    p["vm_groups"] = []
-    for g in groups:
-        grp = dict(g)
-        vms = db.query(
-            "SELECT * FROM netapp_dr_vm_assignments WHERE group_id=? ORDER BY start_order", (grp["id"],)
-        ) or []
-        grp["vms"] = [dict(v) for v in vms]
-        p["vm_groups"].append(grp)
-    return p
-
-
-# ── DR Sites ──────────────────────────────────────────────────────────────────
-
-def _list_dr_sites():
-    db = get_db()
-    rows = db.query("SELECT * FROM netapp_dr_sites ORDER BY name") or []
-    result = []
-    for r in rows:
-        s = dict(r)
-        s["pve_host_ids"] = _json_field(s.get("pve_host_ids"))
-        ep = db.query_one("SELECT name FROM netapp_endpoints WHERE id=?", (s["endpoint_id"],))
-        s["endpoint_name"] = ep["name"] if ep else ""
-        cnt = db.query_one("SELECT COUNT(*) as c FROM netapp_dr_plans WHERE dr_site_id=?", (s["id"],))
-        s["plan_count"] = cnt["c"] if cnt else 0
-        pve_hosts = []
-        for hid in s["pve_host_ids"]:
-            h = db.query_one("SELECT name, host FROM netapp_pve_hosts WHERE id=?", (hid,))
-            if h:
-                pve_hosts.append({"id": hid, "name": h["name"], "host": h["host"]})
-        s["pve_hosts"] = pve_hosts
-        result.append(s)
-    return jsonify(result)
-
-
-def _resolve_dr_pve_hosts(data, db):
-    """Resolve DR PVE host IDs from one of three input modes.
-
-    Mode 1 — existing:  data["pve_host_ids"] = ["id1", "id2", ...]
-    Mode 2 — inline:    data["pve_hosts_inline"] = [{"name","host","username","password"}, ...]
-    Mode 3 — cluster:   data["pve_cluster_id"] = "<pegaprox_cluster_id>"
-    """
-    now = _now()
-    if data.get("pve_host_ids"):
-        return [h for h in data["pve_host_ids"] if h]
-    if data.get("pve_hosts_inline"):
-        host_ids = []
-        for h in data["pve_hosts_inline"]:
-            host_val = (h.get("host") or "").strip()
-            name_val = (h.get("name") or host_val).strip()
-            user_val = (h.get("username") or "root").strip()
-            pass_val = h.get("password", "")
-            if not host_val:
-                continue
-            existing = db.query_one("SELECT id FROM netapp_pve_hosts WHERE host=?", (host_val,))
-            if existing:
-                hid = existing["id"]
-            else:
-                hid = str(uuid.uuid4())[:8]
-                pw_enc = db._encrypt(pass_val) if pass_val else ""
-                db.execute(
-                    "INSERT INTO netapp_pve_hosts (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (hid, name_val, host_val, 8006, user_val, pw_enc, 0, "", now)
-                )
-            host_ids.append(hid)
-        return host_ids
-    if data.get("pve_cluster_id"):
-        cluster_id = data["pve_cluster_id"]
-        host_ids = []
-        try:
-            from pegaprox.globals import cluster_managers
-            mgr = cluster_managers.get(cluster_id)
-            if not mgr:
-                return []
-            cluster_host = getattr(mgr, "host", "") or getattr(mgr, "api_host", "")
-            cluster_user = getattr(mgr, "user", "root")
-            cluster_pass = getattr(mgr, "password", "") or getattr(mgr, "_password", "")
-            for node_name in (getattr(mgr, "get_nodes", lambda: [])() or []):
-                node_ip = node_name.get("ip") or node_name.get("host") or cluster_host
-                existing = db.query_one("SELECT id FROM netapp_pve_hosts WHERE host=?", (node_ip,))
-                if existing:
-                    hid = existing["id"]
-                else:
-                    hid = str(uuid.uuid4())[:8]
-                    pw_enc = db._encrypt(cluster_pass) if cluster_pass else ""
-                    db.execute(
-                        "INSERT INTO netapp_pve_hosts (id, name, host, port, username, password_encrypted, ssl_verify, nfs_ip, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)",
-                        (hid, node_name.get("node", node_ip), node_ip, 8006, cluster_user, pw_enc, 0, "", now)
-                    )
-                host_ids.append(hid)
-        except Exception as exc:
-            log.warning(f"[netapp_storage] DR site cluster import failed: {exc}")
-        return host_ids
-    return []
-
-
-def _list_pegaprox_clusters():
+    resp, err = _peer_call("POST", "dr/peer/heartbeat",
+                            {"role": cfg.get("role", "PRIMARY"), "timestamp": _now()},
+                            peer=peer, timeout=10)
     try:
         db = get_db()
-        rows = db.query("SELECT id, name, host FROM clusters ORDER BY name") or []
-        return jsonify([{"id": r["id"], "name": r["name"], "host": r["host"]} for r in rows])
+        if err:
+            db.execute(
+                "UPDATE netapp_dr_peer SET sync_status='offline', sync_error=? WHERE id='default'",
+                (err[:500],)
+            )
+        else:
+            db.execute(
+                "UPDATE netapp_dr_peer SET sync_status='online', sync_error='', "
+                "peer_role=?, last_seen=? WHERE id='default'",
+                (resp.get("role", "") if resp else "", _now())
+            )
     except Exception as exc:
-        log.warning(f"[netapp_storage] list_pegaprox_clusters: {exc}")
-        return jsonify([])
+        log.warning(f"[netapp_dr] heartbeat DB update failed: {exc}")
 
 
-def _create_dr_site():
+def _peer_push_sync(peer=None):
+    """Push full plan sync payload to peer. Returns (ok, error)."""
+    if peer is None:
+        peer = _get_peer()
+    if not peer or not peer.get("url"):
+        return False, "Peer not configured"
+    payload = _build_sync_payload()
+    resp, err = _peer_call("POST", "dr/peer/sync/receive", payload, peer=peer, timeout=60)
+    try:
+        db = get_db()
+        if err:
+            db.execute(
+                "UPDATE netapp_dr_peer SET sync_status='error', sync_error=? WHERE id='default'",
+                (err[:500],)
+            )
+            return False, err
+        else:
+            db.execute(
+                "UPDATE netapp_dr_peer SET last_sync_sent=?, sync_status='online', sync_error='' WHERE id='default'",
+                (_now(),)
+            )
+            return True, None
+    except Exception as exc:
+        log.warning(f"[netapp_dr] sync push DB update failed: {exc}")
+        return False, str(exc)
+
+
+def _peer_push_role_notify(new_role):
+    """Notify peer that our role changed — they should switch to the complementary role."""
+    peer = _get_peer()
+    if not peer or not peer.get("url"):
+        return
+    peer_new_role = "SECONDARY" if new_role == "PRIMARY" else "PRIMARY"
+    _peer_call("POST", "dr/peer/role-notify",
+               {"sender_role": new_role, "suggested_peer_role": peer_new_role},
+               peer=peer, timeout=10)
+
+
+def _sync_push_manual():
+    """POST dr/peer/sync/push — manually trigger sync to peer."""
     err = _require_admin()
     if err: return err
+    ok, error = _peer_push_sync()
+    if not ok:
+        return jsonify({"ok": False, "error": error}), 502
+    return jsonify({"ok": True, "message": "Sync pushed to peer"})
+
+
+# ── Peer receive endpoints ────────────────────────────────────────────────────
+
+def _peer_heartbeat_recv():
+    """POST dr/peer/heartbeat — receive heartbeat from remote peer."""
+    err = _verify_sync_token()
+    if err: return err
     data = _body()
-    name        = (data.get("name") or "").strip()
-    endpoint_id = (data.get("endpoint_id") or "").strip()
-    if not name or not endpoint_id:
-        return {"error": "name and endpoint_id are required"}, 400
+    peer_role = data.get("role", "")
+    try:
+        db = get_db()
+        db.execute(
+            "UPDATE netapp_dr_peer SET peer_role=?, last_seen=?, sync_status='online', sync_error='' WHERE id='default'",
+            (peer_role, _now())
+        )
+    except Exception:
+        pass
+    cfg = _get_plugin_config()
+    return jsonify({"role": cfg.get("role", "PRIMARY"), "timestamp": _now()})
+
+
+def _peer_sync_recv():
+    """POST dr/peer/sync/receive — receive full plan sync from PRIMARY."""
+    err = _verify_sync_token()
+    if err: return err
+    data = _body()
+    try:
+        db = get_db()
+        _apply_sync_payload(data, db)
+        db.execute(
+            "UPDATE netapp_dr_peer SET last_sync_received=?, sync_status='online', sync_error='' WHERE id='default'",
+            (_now(),)
+        )
+        return jsonify({"ok": True, "message": "Sync applied"})
+    except Exception as exc:
+        log.error(f"[netapp_dr] sync receive failed: {exc}")
+        return {"error": str(exc)}, 500
+
+
+def _peer_role_notify_recv():
+    """POST dr/peer/role-notify — receive role-change notification from peer."""
+    err = _verify_sync_token()
+    if err: return err
+    data = _body()
+    suggested = (data.get("suggested_peer_role") or "").upper()
+    sender_role = (data.get("sender_role") or "").upper()
+    try:
+        db = get_db()
+        # Update what we know about the peer
+        if sender_role:
+            db.execute("UPDATE netapp_dr_peer SET peer_role=?, last_seen=? WHERE id='default'",
+                       (sender_role, _now()))
+        # Only auto-apply role change if this instance is not in an active failover
+        cfg = _get_plugin_config()
+        current_role = cfg.get("role", "PRIMARY")
+        active_states = ("failover_running", "failback_running")
+        has_active = db.query_one(
+            "SELECT id FROM netapp_dr_plans WHERE state IN (?,?) LIMIT 1", active_states
+        )
+        if not has_active and suggested in ("PRIMARY", "SECONDARY", "STANDALONE"):
+            if not cfg.get("role_forced"):
+                db.execute(
+                    "UPDATE netapp_plugin_config SET role=?, updated_at=? WHERE id='default'",
+                    (suggested, _now())
+                )
+                log.info(f"[netapp_dr] Role auto-changed to {suggested} (peer sent role-notify, was {current_role})")
+    except Exception as exc:
+        log.warning(f"[netapp_dr] role-notify handling failed: {exc}")
+    return jsonify({"ok": True})
+
+
+# ── Sync payload builder / applier ────────────────────────────────────────────
+
+def _build_sync_payload():
+    """Collect all DR plan data + SM relationships for sync to peer."""
     db = get_db()
-    if not db.query_one("SELECT id FROM netapp_endpoints WHERE id=?", (endpoint_id,)):
-        return {"error": "Endpoint not found"}, 404
-    pve_host_ids = _resolve_dr_pve_hosts(data, db)
-    sid = str(uuid.uuid4())[:8]
+    plans   = [dict(r) for r in (db.query("SELECT * FROM netapp_dr_plans") or [])]
+    entries = []
+    for e in (db.query("SELECT * FROM netapp_dr_plan_entries") or []):
+        entry = dict(e)
+        # Enrich with endpoint host so receiving side can do local resolution
+        ep = db.query_one("SELECT host FROM netapp_endpoints WHERE id=?",
+                          (entry.get("source_endpoint_id", ""),))
+        entry["source_endpoint_host"] = ep["host"] if ep else ""
+        ep2 = db.query_one("SELECT host FROM netapp_endpoints WHERE id=?",
+                           (entry.get("dr_endpoint_id", ""),))
+        entry["dr_endpoint_host"] = ep2["host"] if ep2 else ""
+        entries.append(entry)
+    groups  = [dict(r) for r in (db.query("SELECT * FROM netapp_dr_vm_groups") or [])]
+    vms     = [dict(r) for r in (db.query("SELECT * FROM netapp_dr_vm_assignments") or [])]
+    sm_rels = [dict(r) for r in (db.query("SELECT * FROM netapp_snapmirror_relationships") or [])]
+
+    cfg = _get_plugin_config()
+    return {
+        "schema_version": 1,
+        "source_role":    cfg.get("role", "PRIMARY"),
+        "timestamp":      _now(),
+        "plans":          plans,
+        "entries":        entries,
+        "vm_groups":      groups,
+        "vm_assignments": vms,
+        "snapmirror_rels": sm_rels,
+    }
+
+
+def _apply_sync_payload(data, db):
+    """Apply received sync payload — upsert all DR tables."""
     now = _now()
-    db.execute(
-        "INSERT INTO netapp_dr_sites (id, name, endpoint_id, pve_host_ids, description, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (sid, name, endpoint_id, json.dumps(pve_host_ids), data.get("description", ""), now, now)
+
+    # Plans
+    for p in (data.get("plans") or []):
+        existing = db.query_one("SELECT id FROM netapp_dr_plans WHERE id=?", (p["id"],))
+        if existing:
+            db.execute(
+                "UPDATE netapp_dr_plans SET name=?, notes=?, updated_at=? WHERE id=?",
+                (p.get("name",""), p.get("notes",""), now, p["id"])
+            )
+        else:
+            db.execute(
+                "INSERT INTO netapp_dr_plans "
+                "(id, name, dr_site_id, state, notes, last_failover_at, last_test_at, created_by, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (p["id"], p.get("name",""), p.get("dr_site_id",""),
+                 "standby", p.get("notes",""),
+                 p.get("last_failover_at",""), p.get("last_test_at",""),
+                 p.get("created_by","sync"), p.get("created_at", now), now)
+            )
+
+    # Plan entries
+    existing_entry_ids = set(
+        r["id"] for r in (db.query("SELECT id FROM netapp_dr_plan_entries") or [])
     )
-    _write_config_to_volume()
-    return jsonify({"id": sid, "message": "DR site created"}), 201
+    received_entry_ids = set()
+    for e in (data.get("entries") or []):
+        received_entry_ids.add(e["id"])
+        # Resolve local endpoint IDs by host if originals not found locally
+        src_ep_id = _resolve_endpoint_id(db, e.get("source_endpoint_id",""), e.get("source_endpoint_host",""))
+        dr_ep_id  = _resolve_endpoint_id(db, e.get("dr_endpoint_id",""),     e.get("dr_endpoint_host",""))
+        if e["id"] in existing_entry_ids:
+            db.execute(
+                "UPDATE netapp_dr_plan_entries SET "
+                "source_endpoint_id=?, source_svm=?, source_volume=?, "
+                "snapmirror_rel_uuid=?, dr_endpoint_id=?, dr_svm=?, dr_volume=?, "
+                "dr_pve_storage_id=?, dr_pve_host_ids=?, sort_order=? WHERE id=?",
+                (src_ep_id, e.get("source_svm",""), e.get("source_volume",""),
+                 e.get("snapmirror_rel_uuid",""), dr_ep_id, e.get("dr_svm",""), e.get("dr_volume",""),
+                 e.get("dr_pve_storage_id",""), e.get("dr_pve_host_ids","[]"),
+                 e.get("sort_order", 0), e["id"])
+            )
+        else:
+            db.execute(
+                "INSERT INTO netapp_dr_plan_entries "
+                "(id, plan_id, source_endpoint_id, source_svm, source_volume, "
+                "snapmirror_rel_uuid, dr_endpoint_id, dr_svm, dr_volume, "
+                "dr_pve_storage_id, dr_pve_host_ids, sort_order, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (e["id"], e.get("plan_id",""), src_ep_id, e.get("source_svm",""), e.get("source_volume",""),
+                 e.get("snapmirror_rel_uuid",""), dr_ep_id, e.get("dr_svm",""), e.get("dr_volume",""),
+                 e.get("dr_pve_storage_id",""), e.get("dr_pve_host_ids","[]"),
+                 e.get("sort_order",0), e.get("created_at", now))
+            )
+    # Remove entries deleted on primary
+    for stale_id in (existing_entry_ids - received_entry_ids):
+        db.execute("DELETE FROM netapp_dr_plan_entries WHERE id=?", (stale_id,))
+
+    # VM groups
+    existing_group_ids = set(r["id"] for r in (db.query("SELECT id FROM netapp_dr_vm_groups") or []))
+    received_group_ids = set()
+    for g in (data.get("vm_groups") or []):
+        received_group_ids.add(g["id"])
+        if g["id"] in existing_group_ids:
+            db.execute(
+                "UPDATE netapp_dr_vm_groups SET name=?, group_type=?, sort_order=?, "
+                "start_mode=?, startup_delay_sec=?, max_parallel=? WHERE id=?",
+                (g.get("name",""), g.get("group_type","standard"), g.get("sort_order",0),
+                 g.get("start_mode","auto"), g.get("startup_delay_sec",30),
+                 g.get("max_parallel",1), g["id"])
+            )
+        else:
+            db.execute(
+                "INSERT INTO netapp_dr_vm_groups "
+                "(id, plan_id, name, group_type, sort_order, start_mode, startup_delay_sec, max_parallel, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (g["id"], g.get("plan_id",""), g.get("name",""), g.get("group_type","standard"),
+                 g.get("sort_order",0), g.get("start_mode","auto"),
+                 g.get("startup_delay_sec",30), g.get("max_parallel",1), g.get("created_at",now))
+            )
+    for stale_id in (existing_group_ids - received_group_ids):
+        db.execute("DELETE FROM netapp_dr_vm_groups WHERE id=?", (stale_id,))
+
+    # VM assignments
+    existing_vm_ids = set(r["id"] for r in (db.query("SELECT id FROM netapp_dr_vm_assignments") or []))
+    received_vm_ids = set()
+    for v in (data.get("vm_assignments") or []):
+        received_vm_ids.add(v["id"])
+        if v["id"] in existing_vm_ids:
+            db.execute(
+                "UPDATE netapp_dr_vm_assignments SET vmid=?, vm_name=?, target_node=?, start_order=? WHERE id=?",
+                (v.get("vmid",0), v.get("vm_name",""), v.get("target_node",""), v.get("start_order",0), v["id"])
+            )
+        else:
+            db.execute(
+                "INSERT INTO netapp_dr_vm_assignments (id, group_id, vmid, vm_name, target_node, start_order, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (v["id"], v.get("group_id",""), v.get("vmid",0), v.get("vm_name",""),
+                 v.get("target_node",""), v.get("start_order",0), v.get("created_at",now))
+            )
+    for stale_id in (existing_vm_ids - received_vm_ids):
+        db.execute("DELETE FROM netapp_dr_vm_assignments WHERE id=?", (stale_id,))
+
+    # SnapMirror relationships (best-effort)
+    for r in (data.get("snapmirror_rels") or []):
+        try:
+            rel_uuid = r.get("relationship_uuid","")
+            if not rel_uuid:
+                continue
+            existing_rel = db.query_one(
+                "SELECT id FROM netapp_snapmirror_relationships WHERE relationship_uuid=?", (rel_uuid,)
+            )
+            if existing_rel:
+                db.execute(
+                    "UPDATE netapp_snapmirror_relationships SET state=?, healthy=?, lag_time=?, "
+                    "last_transfer_time=?, last_scanned_at=? WHERE relationship_uuid=?",
+                    (r.get("state",""), r.get("healthy",1), r.get("lag_time",""),
+                     r.get("last_transfer_time",""), r.get("last_scanned_at",now), rel_uuid)
+                )
+            else:
+                rid = str(uuid.uuid4())[:8]
+                db.execute(
+                    "INSERT INTO netapp_snapmirror_relationships "
+                    "(id, source_endpoint_id, source_volume_uuid, source_svm, source_volume, "
+                    "dest_endpoint_id, dest_cluster_name, dest_svm, dest_volume, dest_volume_uuid, "
+                    "dest_nfs_ip, dest_junction_path, relationship_uuid, policy_type, state, healthy, "
+                    "lag_time, last_transfer_time, last_scanned_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (rid, r.get("source_endpoint_id",""), r.get("source_volume_uuid",""),
+                     r.get("source_svm",""), r.get("source_volume",""),
+                     r.get("dest_endpoint_id",""), r.get("dest_cluster_name",""),
+                     r.get("dest_svm",""), r.get("dest_volume",""), r.get("dest_volume_uuid",""),
+                     r.get("dest_nfs_ip",""), r.get("dest_junction_path",""), rel_uuid,
+                     r.get("policy_type",""), r.get("state",""), r.get("healthy",1),
+                     r.get("lag_time",""), r.get("last_transfer_time",""), now)
+                )
+        except Exception as exc:
+            log.debug(f"[netapp_dr] SM rel upsert skipped ({rel_uuid}): {exc}")
 
 
-def _update_dr_site():
-    err = _require_admin()
-    if err: return err
-    data = _body()
-    site_id = (data.get("id") or "").strip()
-    db = get_db()
-    if not site_id or not db.query_one("SELECT id FROM netapp_dr_sites WHERE id=?", (site_id,)):
-        return {"error": "DR site not found"}, 404
-    allowed = {"name", "endpoint_id", "pve_host_ids", "description"}
-    updates, params = [], []
-    for k in allowed:
-        if k in data:
-            val = json.dumps(data[k]) if k == "pve_host_ids" else data[k]
-            updates.append(f"{k}=?")
-            params.append(val)
-    if not updates:
-        return {"error": "No fields to update"}, 400
-    updates.append("updated_at=?")
-    params.extend([_now(), site_id])
-    db.execute(f"UPDATE netapp_dr_sites SET {', '.join(updates)} WHERE id=?", params)
-    _write_config_to_volume()
-    return jsonify({"message": "DR site updated"})
+def _resolve_endpoint_id(db, ep_id, ep_host):
+    """Return ep_id if it exists locally, else find matching endpoint by host."""
+    if ep_id:
+        row = db.query_one("SELECT id FROM netapp_endpoints WHERE id=?", (ep_id,))
+        if row:
+            return ep_id
+    if ep_host:
+        row = db.query_one("SELECT id FROM netapp_endpoints WHERE host=?", (ep_host,))
+        if row:
+            return row["id"]
+    return ep_id  # keep original even if not locally found
 
 
-def _delete_dr_site():
-    err = _require_admin()
-    if err: return err
-    data = _body()
-    site_id = (data.get("id") or "").strip()
-    db = get_db()
-    if not site_id or not db.query_one("SELECT id FROM netapp_dr_sites WHERE id=?", (site_id,)):
-        return {"error": "DR site not found"}, 404
-    plans = db.query("SELECT id FROM netapp_dr_plans WHERE dr_site_id=?", (site_id,)) or []
-    if plans:
-        return {"error": f"Cannot delete: {len(plans)} DR plan(s) use this site"}, 409
-    db.execute("DELETE FROM netapp_dr_sites WHERE id=?", (site_id,))
-    _write_config_to_volume()
-    return jsonify({"message": "DR site deleted"})
+# ── Background threads ────────────────────────────────────────────────────────
+
+def _heartbeat_loop():
+    """Background: ping peer every 30 s."""
+    while True:
+        try:
+            _peer_push_heartbeat()
+        except Exception as exc:
+            log.debug(f"[netapp_dr] heartbeat loop error: {exc}")
+        time.sleep(30)
+
+
+def _sync_loop():
+    """Background: push plan sync to peer every 60 s (PRIMARY only)."""
+    time.sleep(15)  # stagger start relative to heartbeat
+    while True:
+        try:
+            cfg = _get_plugin_config()
+            peer = _get_peer()
+            if cfg.get("role") == "PRIMARY" and peer and peer.get("url"):
+                _peer_push_sync(peer=peer)
+        except Exception as exc:
+            log.debug(f"[netapp_dr] sync loop error: {exc}")
+        time.sleep(60)
+
+
+def _start_background_threads():
+    global _BG_STARTED
+    with _BG_LOCK:
+        if _BG_STARTED:
+            return
+        _BG_STARTED = True
+    threading.Thread(target=_heartbeat_loop, daemon=True, name="dr-heartbeat").start()
+    threading.Thread(target=_sync_loop,      daemon=True, name="dr-sync").start()
+    log.info("[netapp_dr] Background threads started (heartbeat + sync)")
 
 
 # ── Job helpers ────────────────────────────────────────────────────────────────
@@ -1060,8 +718,6 @@ def _plan_summary(row, db):
     group_cnt = db.query_one("SELECT COUNT(*) as c FROM netapp_dr_vm_groups WHERE plan_id=?", (p["id"],))
     p["entry_count"] = entry_cnt["c"] if entry_cnt else 0
     p["group_count"] = group_cnt["c"] if group_cnt else 0
-    site = db.query_one("SELECT name FROM netapp_dr_sites WHERE id=?", (p["dr_site_id"],))
-    p["site_name"] = site["name"] if site else ""
     return p
 
 
@@ -1075,22 +731,18 @@ def _create_dr_plan():
     err = _require_admin()
     if err: return err
     data = _body()
-    name       = (data.get("name") or "").strip()
-    dr_site_id = (data.get("dr_site_id") or "").strip()
-    if not name or not dr_site_id:
-        return {"error": "name and dr_site_id are required"}, 400
+    name = (data.get("name") or "").strip()
+    if not name:
+        return {"error": "name is required"}, 400
     db = get_db()
-    if not db.query_one("SELECT id FROM netapp_dr_sites WHERE id=?", (dr_site_id,)):
-        return {"error": "DR site not found"}, 404
     pid = str(uuid.uuid4())[:8]
     now = _now()
     username = request.session.get("user", "system")
     db.execute(
         "INSERT INTO netapp_dr_plans (id, name, dr_site_id, state, notes, created_by, created_at, updated_at) "
         "VALUES (?,?,?,?,?,?,?,?)",
-        (pid, name, dr_site_id, "standby", data.get("notes", ""), username, now, now)
+        (pid, name, "", "standby", data.get("notes", ""), username, now, now)
     )
-    # Auto-create Core group (always first, always auto, cannot be deleted)
     core_id = str(uuid.uuid4())[:8]
     db.execute(
         "INSERT INTO netapp_dr_vm_groups "
@@ -1098,7 +750,7 @@ def _create_dr_plan():
         "VALUES (?,?,?,?,?,?,?,?,?)",
         (core_id, pid, "Core Infrastructure", "core", 0, "auto", 0, 2, now)
     )
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"id": pid, "message": "DR plan created"}), 201
 
 
@@ -1143,7 +795,7 @@ def _update_dr_plan():
         return {"error": "No fields to update"}, 400
     updates.append("updated_at=?"); params.extend([_now(), plan_id])
     db.execute(f"UPDATE netapp_dr_plans SET {', '.join(updates)} WHERE id=?", params)
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "DR plan updated"})
 
 
@@ -1159,14 +811,13 @@ def _delete_dr_plan():
     if row["state"] not in ("standby",):
         return {"error": f"Cannot delete plan in state '{row['state']}'"}, 409
     db.execute("DELETE FROM netapp_dr_plans WHERE id=?", (plan_id,))
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "DR plan deleted"})
 
 
 # ── Plan Entries ──────────────────────────────────────────────────────────────
 
 def _lookup_primary_storage_id(db, source_endpoint_id, source_svm, source_volume):
-    """Return the primary PVE storage ID for a given source volume, or ''."""
     row = db.query_one(
         "SELECT pve_storage_id FROM netapp_volume_mapping "
         "WHERE endpoint_id=? AND svm_name=? AND volume_name=? LIMIT 1",
@@ -1268,7 +919,7 @@ def _add_plan_entry():
     )
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
     entry = dict(db.query_one("SELECT * FROM netapp_dr_plan_entries WHERE id=?", (eid,)))
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify(_enrich_entry(entry, db)), 201
 
 
@@ -1293,7 +944,7 @@ def _update_plan_entry():
     db.execute(f"UPDATE netapp_dr_plan_entries SET {', '.join(updates)} WHERE id=?", params)
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
     entry = dict(db.query_one("SELECT * FROM netapp_dr_plan_entries WHERE id=?", (entry_id,)))
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify(_enrich_entry(entry, db))
 
 
@@ -1308,7 +959,7 @@ def _delete_plan_entry():
         return {"error": "Entry not found"}, 404
     db.execute("DELETE FROM netapp_dr_plan_entries WHERE id=?", (entry_id,))
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "Entry removed"})
 
 
@@ -1318,16 +969,9 @@ def _auto_detect_entries():
     data = _body()
     plan_id = (data.get("plan_id") or "").strip()
     db = get_db()
-    plan = db.query_one("SELECT * FROM netapp_dr_plans WHERE id=?", (plan_id,))
-    if not plan_id or not plan:
+    if not plan_id or not db.query_one("SELECT id FROM netapp_dr_plans WHERE id=?", (plan_id,)):
         return {"error": "DR plan not found"}, 404
-    site = db.query_one("SELECT * FROM netapp_dr_sites WHERE id=?", (plan["dr_site_id"],))
-    if not site:
-        return {"error": "DR site not found"}, 404
-    dr_endpoint_id = site["endpoint_id"]
-    rels = db.query(
-        "SELECT * FROM netapp_snapmirror_relationships WHERE dest_endpoint_id=?", (dr_endpoint_id,)
-    ) or []
+    rels = db.query("SELECT * FROM netapp_snapmirror_relationships") or []
     added = 0
     skipped = 0
     for rel in rels:
@@ -1352,21 +996,13 @@ def _auto_detect_entries():
             (eid, plan_id,
              rel["source_endpoint_id"], rel["source_svm"], rel["source_volume"],
              rel["relationship_uuid"],
-             rel["dest_endpoint_id"] or dr_endpoint_id,
-             rel["dest_svm"] or "", rel["dest_volume"] or "",
+             rel.get("dest_endpoint_id", ""), rel["dest_svm"], rel["dest_volume"],
              primary_storage_id, "[]", sort_order, _now())
         )
         added += 1
     db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    _write_config_to_volume()
-    if added > 0:
-        msg = f"Added {added} datastore(s)"
-        if skipped: msg += f" ({skipped} already present)"
-    elif len(rels) == 0:
-        msg = "No SnapMirror relationships found for this DR site endpoint — run 'Scan Relationships' in the SnapMirror tab first"
-    else:
-        msg = f"No new entries added ({skipped} already present)"
-    return jsonify({"added": added, "skipped": skipped, "total": len(rels), "message": msg})
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    return jsonify({"added": added, "skipped": skipped})
 
 
 # ── VM Groups ─────────────────────────────────────────────────────────────────
@@ -1377,62 +1013,46 @@ def _create_vm_group():
     data = _body()
     plan_id    = (data.get("plan_id") or "").strip()
     name       = (data.get("name") or "").strip()
-    group_type = (data.get("group_type") or "standard").strip()
     if not plan_id or not name:
         return {"error": "plan_id and name are required"}, 400
-    if group_type not in ("core", "standard"):
-        group_type = "standard"
     db = get_db()
     if not db.query_one("SELECT id FROM netapp_dr_plans WHERE id=?", (plan_id,)):
         return {"error": "DR plan not found"}, 404
-    if group_type == "core":
-        if db.query_one("SELECT id FROM netapp_dr_vm_groups WHERE plan_id=? AND group_type='core'", (plan_id,)):
-            return {"error": "A Core group already exists for this plan"}, 409
-        sort_order = 0
-    else:
-        max_ord = db.query_one("SELECT MAX(sort_order) as m FROM netapp_dr_vm_groups WHERE plan_id=?", (plan_id,))
-        sort_order = (max_ord["m"] or -1) + 1
+    max_ord = db.query_one("SELECT MAX(sort_order) as m FROM netapp_dr_vm_groups WHERE plan_id=?", (plan_id,))
+    sort_order = (max_ord["m"] or 0) + 1
     gid = str(uuid.uuid4())[:8]
-    start_mode = "auto" if group_type == "core" else data.get("start_mode", "auto")
     db.execute(
         "INSERT INTO netapp_dr_vm_groups "
         "(id, plan_id, name, group_type, sort_order, start_mode, startup_delay_sec, max_parallel, created_at) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
-        (gid, plan_id, name, group_type, sort_order, start_mode,
+        (gid, plan_id, name, "standard", sort_order,
+         data.get("start_mode", "auto"),
          int(data.get("startup_delay_sec", 30)),
-         int(data.get("max_parallel", 1)), _now())
+         int(data.get("max_parallel", 1)),
+         _now())
     )
-    db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    _write_config_to_volume()
-    row = dict(db.query_one("SELECT * FROM netapp_dr_vm_groups WHERE id=?", (gid,)))
-    row["vms"] = []
-    return jsonify(row), 201
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    return jsonify({"id": gid, "message": "VM group created"}), 201
 
 
 def _update_vm_group():
     err = _require_admin()
     if err: return err
     data = _body()
-    plan_id  = (data.get("plan_id") or "").strip()
-    group_id = (data.get("group_id") or "").strip()
+    group_id = (data.get("id") or "").strip()
     db = get_db()
-    grp = db.query_one("SELECT * FROM netapp_dr_vm_groups WHERE id=? AND plan_id=?", (group_id, plan_id))
+    grp = db.query_one("SELECT * FROM netapp_dr_vm_groups WHERE id=?", (group_id,))
     if not grp:
         return {"error": "VM group not found"}, 404
-    is_core = grp["group_type"] == "core"
-    allowed = {"name", "startup_delay_sec", "max_parallel"}
-    if not is_core:
-        allowed.add("start_mode")
     updates, params = [], []
-    for k in allowed:
+    for k in ("name", "start_mode", "startup_delay_sec", "max_parallel"):
         if k in data:
             updates.append(f"{k}=?"); params.append(data[k])
     if not updates:
         return {"error": "No fields to update"}, 400
     params.append(group_id)
     db.execute(f"UPDATE netapp_dr_vm_groups SET {', '.join(updates)} WHERE id=?", params)
-    db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "VM group updated"})
 
 
@@ -1440,17 +1060,15 @@ def _delete_vm_group():
     err = _require_admin()
     if err: return err
     data = _body()
-    plan_id  = (data.get("plan_id") or "").strip()
-    group_id = (data.get("group_id") or "").strip()
+    group_id = (data.get("id") or "").strip()
     db = get_db()
-    grp = db.query_one("SELECT * FROM netapp_dr_vm_groups WHERE id=? AND plan_id=?", (group_id, plan_id))
+    grp = db.query_one("SELECT * FROM netapp_dr_vm_groups WHERE id=?", (group_id,))
     if not grp:
         return {"error": "VM group not found"}, 404
     if grp["group_type"] == "core":
-        return {"error": "The Core group cannot be deleted"}, 409
+        return {"error": "Cannot delete Core group"}, 409
     db.execute("DELETE FROM netapp_dr_vm_groups WHERE id=?", (group_id,))
-    db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "VM group deleted"})
 
 
@@ -1458,80 +1076,50 @@ def _reorder_vm_groups():
     err = _require_admin()
     if err: return err
     data = _body()
-    plan_id = (data.get("plan_id") or "").strip()
+    order = data.get("order") or []
     db = get_db()
-    if not plan_id or not db.query_one("SELECT id FROM netapp_dr_plans WHERE id=?", (plan_id,)):
-        return {"error": "DR plan not found"}, 404
-    # Core group always stays at sort_order=0 regardless of reorder
-    core = db.query_one("SELECT id FROM netapp_dr_vm_groups WHERE plan_id=? AND group_type='core'", (plan_id,))
-    for i, gid in enumerate(data.get("order") or []):
-        grp = db.query_one("SELECT group_type FROM netapp_dr_vm_groups WHERE id=?", (gid,))
-        if grp and grp["group_type"] == "core":
-            db.execute("UPDATE netapp_dr_vm_groups SET sort_order=0 WHERE id=? AND plan_id=?", (gid, plan_id))
-        else:
-            # Standard groups start at sort_order=1+
-            non_core_index = i + 1 if core else i
-            db.execute("UPDATE netapp_dr_vm_groups SET sort_order=? WHERE id=? AND plan_id=?", (non_core_index, gid, plan_id))
-    db.execute("UPDATE netapp_dr_plans SET updated_at=? WHERE id=?", (_now(), plan_id))
-    _write_config_to_volume()
+    for i, gid in enumerate(order):
+        db.execute("UPDATE netapp_dr_vm_groups SET sort_order=? WHERE id=?", (i, gid))
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "Groups reordered"})
 
 
-# ── VM Assignments ─────────────────────────────────────────────────────────────
+# ── VM Assignments ────────────────────────────────────────────────────────────
 
 def _add_vm_assignment():
     err = _require_admin()
     if err: return err
     data = _body()
-    plan_id  = (data.get("plan_id") or "").strip()
     group_id = (data.get("group_id") or "").strip()
-    vmid = data.get("vmid")
-    if not plan_id or not group_id or vmid is None:
-        return {"error": "plan_id, group_id, vmid are required"}, 400
-    try:
-        vmid = int(vmid)
-    except (ValueError, TypeError):
-        return {"error": "vmid must be a number"}, 400
+    vmid     = data.get("vmid")
+    if not group_id or vmid is None:
+        return {"error": "group_id and vmid are required"}, 400
     db = get_db()
-    if not db.query_one("SELECT id FROM netapp_dr_vm_groups WHERE id=? AND plan_id=?", (group_id, plan_id)):
+    if not db.query_one("SELECT id FROM netapp_dr_vm_groups WHERE id=?", (group_id,)):
         return {"error": "VM group not found"}, 404
-    existing = db.query_one(
-        "SELECT va.id FROM netapp_dr_vm_assignments va "
-        "JOIN netapp_dr_vm_groups vg ON va.group_id=vg.id "
-        "WHERE vg.plan_id=? AND va.vmid=?", (plan_id, vmid)
-    )
-    if existing:
-        return {"error": f"VM {vmid} is already assigned to a group in this plan"}, 409
     max_ord = db.query_one("SELECT MAX(start_order) as m FROM netapp_dr_vm_assignments WHERE group_id=?", (group_id,))
-    start_order = (max_ord["m"] or -1) + 1
-    vid = str(uuid.uuid4())[:8]
+    start_order = (max_ord["m"] or 0) + 1
+    aid = str(uuid.uuid4())[:8]
     db.execute(
         "INSERT INTO netapp_dr_vm_assignments (id, group_id, vmid, vm_name, target_node, start_order, created_at) "
         "VALUES (?,?,?,?,?,?,?)",
-        (vid, group_id, vmid, data.get("vm_name", ""), data.get("target_node", ""), start_order, _now())
+        (aid, group_id, int(vmid), data.get("vm_name", ""),
+         data.get("target_node", ""), start_order, _now())
     )
-    _write_config_to_volume()
-    return jsonify({"id": vid, "message": "VM added to group"}), 201
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
+    return jsonify({"id": aid, "message": "VM added to group"}), 201
 
 
 def _remove_vm_assignment():
     err = _require_admin()
     if err: return err
     data = _body()
-    plan_id          = (data.get("plan_id") or "").strip()
-    group_id         = (data.get("group_id") or "").strip()
-    vm_assignment_id = (data.get("vm_id") or "").strip()
+    assignment_id = (data.get("id") or "").strip()
     db = get_db()
-    row = db.query_one(
-        "SELECT va.id FROM netapp_dr_vm_assignments va "
-        "JOIN netapp_dr_vm_groups vg ON va.group_id=vg.id "
-        "WHERE va.id=? AND vg.id=? AND vg.plan_id=?",
-        (vm_assignment_id, group_id, plan_id)
-    )
-    if not row:
+    if not db.query_one("SELECT id FROM netapp_dr_vm_assignments WHERE id=?", (assignment_id,)):
         return {"error": "VM assignment not found"}, 404
-    db.execute("DELETE FROM netapp_dr_vm_assignments WHERE id=?", (vm_assignment_id,))
-    _write_config_to_volume()
+    db.execute("DELETE FROM netapp_dr_vm_assignments WHERE id=?", (assignment_id,))
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "VM removed from group"})
 
 
@@ -1539,35 +1127,30 @@ def _update_vm_assignment():
     err = _require_admin()
     if err: return err
     data = _body()
-    plan_id          = (data.get("plan_id") or "").strip()
-    group_id         = (data.get("group_id") or "").strip()
-    vm_assignment_id = (data.get("vm_id") or "").strip()
+    assignment_id = (data.get("id") or "").strip()
     db = get_db()
-    row = db.query_one(
-        "SELECT va.id FROM netapp_dr_vm_assignments va "
-        "JOIN netapp_dr_vm_groups vg ON va.group_id=vg.id "
-        "WHERE va.id=? AND vg.id=? AND vg.plan_id=?",
-        (vm_assignment_id, group_id, plan_id)
-    )
-    if not row:
+    asn = db.query_one("SELECT * FROM netapp_dr_vm_assignments WHERE id=?", (assignment_id,))
+    if not asn:
         return {"error": "VM assignment not found"}, 404
-    allowed = {"vm_name", "target_node", "start_order", "group_id"}
     updates, params = [], []
-    for k in allowed:
+    for k in ("vm_name", "target_node", "start_order"):
         if k in data:
-            if k == "group_id":
-                if not db.query_one("SELECT id FROM netapp_dr_vm_groups WHERE id=? AND plan_id=?", (data[k], plan_id)):
-                    return {"error": "Target group not in same plan"}, 400
             updates.append(f"{k}=?"); params.append(data[k])
+    # Move to different group
+    if "group_id" in data:
+        new_group = data["group_id"]
+        if not db.query_one("SELECT id FROM netapp_dr_vm_groups WHERE id=?", (new_group,)):
+            return {"error": "Target VM group not found"}, 404
+        updates.append("group_id=?"); params.append(new_group)
     if not updates:
         return {"error": "No fields to update"}, 400
-    params.append(vm_assignment_id)
+    params.append(assignment_id)
     db.execute(f"UPDATE netapp_dr_vm_assignments SET {', '.join(updates)} WHERE id=?", params)
-    _write_config_to_volume()
+    threading.Thread(target=_peer_push_sync, daemon=True).start()
     return jsonify({"message": "VM assignment updated"})
 
 
-# ── Plan Status ───────────────────────────────────────────────────────────────
+# ── Plan Status + Precheck ────────────────────────────────────────────────────
 
 def _plan_status():
     plan_id = request.args.get("plan_id") or (_body().get("plan_id") or "")
@@ -1610,8 +1193,6 @@ def _plan_status():
         "last_test_at": plan["last_test_at"] if plan else "",
     })
 
-
-# ── Failover ─────────────────────────────────────────────────────────────────
 
 def _failover_precheck():
     plan_id = request.args.get("plan_id") or (_body().get("plan_id") or "")
@@ -1660,6 +1241,8 @@ def _failover_precheck():
     overall = all(c["status"] in ("ok", "warn") for c in checks)
     return jsonify({"ok": overall, "checks": checks})
 
+
+# ── Failover ──────────────────────────────────────────────────────────────────
 
 def _start_failover():
     err = _require_admin()
@@ -1710,10 +1293,12 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
         db.execute("UPDATE netapp_dr_plans SET state=?, last_failover_at=?, updated_at=? WHERE id=?",
                    (plan_state, _now(), _now(), plan_id))
         if state == "success":
-            # Write new role (this instance is now MASTER)
-            db2 = get_db()
-            db2.execute("UPDATE netapp_plugin_config SET role='MASTER', role_forced=0, updated_at=? WHERE id='default'", (_now(),))
-            _write_config_to_volume()
+            db.execute(
+                "UPDATE netapp_plugin_config SET role='PRIMARY', role_forced=0, updated_at=? WHERE id='default'",
+                (_now(),)
+            )
+            # Notify peer to become SECONDARY
+            threading.Thread(target=_peer_push_role_notify, args=("PRIMARY",), daemon=True).start()
 
     try:
         db = get_db()
@@ -1814,7 +1399,6 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
                 (nfs_ip, junction, rel_uuid)
             )
 
-            # Restore VM configs from snapmanifest
             manifest_root = f"/mnt/pve/{storage_id}/.netapp-snapmanifest"
             for pve_host_id in pve_host_ids:
                 try:
@@ -1859,7 +1443,6 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
                 except Exception as exc:
                     _log(f"[WARN] VM config restore on {pve_host_id}: {exc}")
 
-        # Start VM groups (sequential, Core first, with max_parallel per group)
         vm_groups = db.query(
             "SELECT * FROM netapp_dr_vm_groups WHERE plan_id=? ORDER BY sort_order", (plan_id,)
         ) or []
@@ -1876,7 +1459,7 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
                 mode_label = "AUTO" if group["start_mode"] == "auto" else "MANUAL"
                 _log(f"[INFO] Group '{group['name']}' [{group['group_type'].upper()} / {mode_label}] — {len(assignments)} VM(s)")
                 if group["start_mode"] == "manual":
-                    _log(f"[INFO]   → Skipped (manual group — start via UI after confirming primary is down)")
+                    _log(f"[INFO]   → Skipped (manual — start via UI after confirming primary is down)")
                     continue
 
                 first_host = next(
@@ -1888,7 +1471,6 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
                 max_par = max(1, int(group.get("max_parallel", 1)))
                 for batch_start in range(0, len(assignments), max_par):
                     batch = assignments[batch_start:batch_start + max_par]
-                    batch_threads = []
                     for assignment in batch:
                         assignment = dict(assignment)
                         vmid = assignment["vmid"]
@@ -1911,7 +1493,7 @@ def _execute_failover(job_id, plan_id, failover_type, entry_ids=None, snap_map=N
                     _log(f"[INFO]   Waiting {delay}s before next group…")
                     time.sleep(delay)
 
-        _log("[INFO] ✅ Failover complete — this instance is now MASTER")
+        _log("[INFO] ✅ Failover complete — this instance is now PRIMARY")
         _finish("success")
 
     except Exception as exc:
@@ -1971,49 +1553,39 @@ def _get_failover_jobs():
 def register_routes():
     rpr = register_plugin_route
 
-    # Role + config volume
-    rpr(PLUGIN_ID, "dr/role",                    _get_role)
-    rpr(PLUGIN_ID, "dr/role/set",                _set_role)
-    rpr(PLUGIN_ID, "dr/role/detect",             _detect_role)
-    rpr(PLUGIN_ID, "dr/config-volume",           _config_volume_status)
-    rpr(PLUGIN_ID, "dr/config-volume/setup",     _setup_config_volume)
-    rpr(PLUGIN_ID, "dr/config-volume/remove",    _remove_config_volume)
-    rpr(PLUGIN_ID, "dr/config-volume/nfs-volumes", _list_nfs_volumes)
+    # Role
+    rpr(PLUGIN_ID, "dr/role",           _get_role)
+    rpr(PLUGIN_ID, "dr/role/set",       _set_role)
 
-    # Config volume wizard
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/data",            _config_volume_wizard_data)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/svms",            _wizard_list_svms)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/aggregates",      _wizard_list_aggregates)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/create-volume",     _wizard_create_volume)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/create-snapmirror", _wizard_create_snapmirror)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/sm-status",         _wizard_sm_status)
-    rpr(PLUGIN_ID, "dr/config-volume/wizard/register-storage",  _wizard_register_pve_storage)
+    # Peer management
+    rpr(PLUGIN_ID, "dr/peer/status",         _peer_status)
+    rpr(PLUGIN_ID, "dr/peer/configure",      _configure_peer)
+    rpr(PLUGIN_ID, "dr/peer/remove",         _remove_peer)
+    rpr(PLUGIN_ID, "dr/peer/sync/push",      _sync_push_manual)
 
-    # DR Sites
-    rpr(PLUGIN_ID, "dr/sites",                   _list_dr_sites)
-    rpr(PLUGIN_ID, "dr/sites/create",            _create_dr_site)
-    rpr(PLUGIN_ID, "dr/sites/update",            _update_dr_site)
-    rpr(PLUGIN_ID, "dr/sites/delete",            _delete_dr_site)
-    rpr(PLUGIN_ID, "dr/clusters",                _list_pegaprox_clusters)
+    # Peer receive (called by remote peer — token auth)
+    rpr(PLUGIN_ID, "dr/peer/heartbeat",      _peer_heartbeat_recv)
+    rpr(PLUGIN_ID, "dr/peer/sync/receive",   _peer_sync_recv)
+    rpr(PLUGIN_ID, "dr/peer/role-notify",    _peer_role_notify_recv)
 
     # DR Plans
-    rpr(PLUGIN_ID, "dr/plans",                   _list_dr_plans)
-    rpr(PLUGIN_ID, "dr/plans/create",            _create_dr_plan)
-    rpr(PLUGIN_ID, "dr/plans/detail",            _get_dr_plan_detail)
-    rpr(PLUGIN_ID, "dr/plans/update",            _update_dr_plan)
-    rpr(PLUGIN_ID, "dr/plans/delete",            _delete_dr_plan)
+    rpr(PLUGIN_ID, "dr/plans",               _list_dr_plans)
+    rpr(PLUGIN_ID, "dr/plans/create",        _create_dr_plan)
+    rpr(PLUGIN_ID, "dr/plans/detail",        _get_dr_plan_detail)
+    rpr(PLUGIN_ID, "dr/plans/update",        _update_dr_plan)
+    rpr(PLUGIN_ID, "dr/plans/delete",        _delete_dr_plan)
 
     # Plan Entries
-    rpr(PLUGIN_ID, "dr/plans/entries/add",       _add_plan_entry)
-    rpr(PLUGIN_ID, "dr/plans/entries/update",    _update_plan_entry)
-    rpr(PLUGIN_ID, "dr/plans/entries/delete",    _delete_plan_entry)
-    rpr(PLUGIN_ID, "dr/plans/auto-detect",       _auto_detect_entries)
+    rpr(PLUGIN_ID, "dr/plans/entries/add",    _add_plan_entry)
+    rpr(PLUGIN_ID, "dr/plans/entries/update", _update_plan_entry)
+    rpr(PLUGIN_ID, "dr/plans/entries/delete", _delete_plan_entry)
+    rpr(PLUGIN_ID, "dr/plans/auto-detect",    _auto_detect_entries)
 
     # VM Groups
-    rpr(PLUGIN_ID, "dr/plans/groups/create",     _create_vm_group)
-    rpr(PLUGIN_ID, "dr/plans/groups/update",     _update_vm_group)
-    rpr(PLUGIN_ID, "dr/plans/groups/delete",     _delete_vm_group)
-    rpr(PLUGIN_ID, "dr/plans/groups/reorder",    _reorder_vm_groups)
+    rpr(PLUGIN_ID, "dr/plans/groups/create",  _create_vm_group)
+    rpr(PLUGIN_ID, "dr/plans/groups/update",  _update_vm_group)
+    rpr(PLUGIN_ID, "dr/plans/groups/delete",  _delete_vm_group)
+    rpr(PLUGIN_ID, "dr/plans/groups/reorder", _reorder_vm_groups)
 
     # VM Assignments
     rpr(PLUGIN_ID, "dr/plans/groups/vms/add",    _add_vm_assignment)
@@ -2021,8 +1593,10 @@ def register_routes():
     rpr(PLUGIN_ID, "dr/plans/groups/vms/update", _update_vm_assignment)
 
     # Status + Failover
-    rpr(PLUGIN_ID, "dr/plans/status",            _plan_status)
-    rpr(PLUGIN_ID, "dr/plans/precheck",          _failover_precheck)
-    rpr(PLUGIN_ID, "dr/plans/failover",          _start_failover)
-    rpr(PLUGIN_ID, "dr/plans/failover-jobs",     _get_failover_jobs)
-    rpr(PLUGIN_ID, "dr/plans/snapshots",         _list_dr_snapshots)
+    rpr(PLUGIN_ID, "dr/plans/status",         _plan_status)
+    rpr(PLUGIN_ID, "dr/plans/precheck",        _failover_precheck)
+    rpr(PLUGIN_ID, "dr/plans/failover",        _start_failover)
+    rpr(PLUGIN_ID, "dr/plans/failover-jobs",   _get_failover_jobs)
+    rpr(PLUGIN_ID, "dr/plans/snapshots",       _list_dr_snapshots)
+
+    _start_background_threads()

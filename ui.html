@@ -1562,27 +1562,21 @@ function applyI18n() {
         <div style="display:flex;align-items:center;gap:.75rem">
           <span id="drRoleIcon" style="font-size:1.8rem;line-height:1">🟢</span>
           <div>
-            <div style="font-weight:700;font-size:1rem" id="drRoleLabel">MASTER</div>
+            <div style="font-weight:700;font-size:1rem" id="drRoleLabel">PRIMARY</div>
             <div style="font-size:.78rem;color:var(--muted)" id="drRoleSubtitle">Loading…</div>
           </div>
         </div>
         <div style="display:flex;gap:.5rem;align-items:center">
-          <span id="drConfigVolBadge" style="font-size:.75rem;color:var(--muted)"></span>
-          <button class="btn btn-ghost btn-sm" onclick="drShowRoleModal()">⚙ Role &amp; Config</button>
+          <button class="btn btn-ghost btn-sm" onclick="drShowRoleModal()">⚙ Role</button>
         </div>
       </div>
 
-      <!-- Config Volume Status Section -->
+      <!-- Peer Status Section -->
       <div class="sub-header">
-        <span class="sub-header-title">🗄 DR Config Volume</span>
+        <span class="sub-header-title">🔗 DR Peer</span>
+        <button class="btn btn-primary btn-sm" onclick="drShowPeerConfigModal()">⚙ Configure Peer</button>
       </div>
-      <div id="drConfigVolSection" style="margin-bottom:1.5rem"><div class="muted-hint">Loading…</div></div>
-
-      <div class="sub-header">
-        <span class="sub-header-title">🏢 DR Sites</span>
-        <button class="btn btn-primary btn-sm" onclick="drShowAddSiteModal()">+ Add DR Site</button>
-      </div>
-      <div id="drSitesList" class="card-list"><div class="muted-hint">Loading…</div></div>
+      <div id="drPeerStatusSection" style="margin-bottom:1.5rem"><div class="muted-hint">Loading…</div></div>
 
       <div class="sub-header" style="margin-top:1.5rem">
         <span class="sub-header-title">📋 DR Plans</span>
@@ -5868,16 +5862,14 @@ function pluginApplyUpdate(branch) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DISASTER RECOVERY  (v1.2.0)
+// DISASTER RECOVERY  (v3.0 — direct peer sync)
 // ══════════════════════════════════════════════════════════════════════════════
 
 var _drCurrentPlanId = null;
-var _drCurrentPlanSiteId = null;
 var _drActiveSubTab = 'entries';
-var _drSites = [];
 var _drCurrentGroupId = null;
 var _drEntriesMap = {};
-var _drModalIds = ['drAddSite','drAddPlan','drAddEntry','drAddGroup','drAddVm','drRole','drEditEntry','drFailover','cvWizard'];
+var _drModalIds = ['drAddPlan','drAddEntry','drAddGroup','drAddVm','drRole','drEditEntry','drFailover'];
 
 function drShowModal(id) { document.getElementById(id+'Modal').style.display='block'; }
 function drHideModal(id) {
@@ -5893,7 +5885,7 @@ function drShowSubTab(name, el) {
   else { var btn=document.querySelector('[data-dr-tab="'+name+'"]'); if(btn) btn.classList.add('active'); }
 }
 
-// ── Role + Config Volume ──────────────────────────────────────────────────────
+// ── Role ──────────────────────────────────────────────────────────────────────
 
 async function drLoadRole() {
   try {
@@ -5902,116 +5894,37 @@ async function drLoadRole() {
     var icon=document.getElementById('drRoleIcon');
     var label=document.getElementById('drRoleLabel');
     var sub=document.getElementById('drRoleSubtitle');
-    var badge=document.getElementById('drConfigVolBadge');
-    var role=r.role||'MASTER';
-    var hasConfigVol=!!(r.config_volume);
+    var role=r.role||'PRIMARY';
+    var peer=r.peer||null;
 
-    // No config volume = OFFLINE (red) regardless of role
-    if(!hasConfigVol){
-      banner.style.borderColor='var(--error,#f85149)';
-      icon.textContent='🔴'; label.textContent='OFFLINE'; label.style.color='var(--error,#f85149)';
-      sub.textContent='No config volume configured — DR sync not active. Run the Setup Wizard to activate.';
-      badge.textContent='⚠ Setup required';
-      badge.style.color='var(--error,#f85149)';
-    } else if(role==='MASTER'){
+    if(role==='PRIMARY'){
       banner.style.borderColor='var(--success,#198754)';
-      icon.textContent='🟢'; label.textContent='MASTER'; label.style.color='var(--success,#198754)';
-      sub.textContent='This instance manages DR plans and writes config to the config volume.';
-      badge.textContent='📁 '+esc(r.config_volume.volume_name);
-      badge.style.color='var(--success,#198754)';
-    } else if(role==='DR_SLAVE'){
+      icon.textContent='🟢'; label.textContent='PRIMARY'; label.style.color='var(--success,#198754)';
+      sub.textContent='This instance manages DR plans and pushes sync to the Secondary.';
+    } else if(role==='SECONDARY'){
       banner.style.borderColor='var(--warning,#ffc107)';
-      icon.textContent='🟡'; label.textContent='DR SLAVE'; label.style.color='var(--warning,#a07000)';
-      sub.textContent='Standby mode — reads config from SnapMirror\'d config volume. Ready for failover.';
-      badge.textContent='📁 '+esc(r.config_volume.volume_name);
-      badge.style.color='var(--warning,#a07000)';
+      icon.textContent='🟡'; label.textContent='SECONDARY'; label.style.color='var(--warning,#a07000)';
+      sub.textContent='Standby — receives plan sync from Primary. Ready for failover.';
     } else {
-      banner.style.borderColor='var(--info,#0dcaf0)';
-      icon.textContent='🔵'; label.textContent='DR TEST'; label.style.color='var(--info,#0a5988)';
-      sub.textContent='Test mode — FlexClone-based isolated DR test.';
-      badge.textContent='📁 '+esc(r.config_volume.volume_name);
-      badge.style.color='var(--info,#0a5988)';
+      banner.style.borderColor='var(--border)';
+      icon.textContent='⚪'; label.textContent='STANDALONE'; label.style.color='';
+      sub.textContent='No peer configured — operates independently.';
     }
-    if(r.role_forced && hasConfigVol) sub.textContent+=' [forced override]';
+    if(r.role_forced) sub.textContent+=' [forced override active]';
+    if(peer) {
+      var peerStatus=peer.sync_status==='online'?'🟢 Peer online':peer.sync_status==='offline'?'🔴 Peer offline':'⚪ Peer unconfigured';
+      sub.textContent += ' · '+peerStatus;
+    }
   } catch(e){ document.getElementById('drRoleSubtitle').textContent='Could not load role info'; }
 }
 
 async function drShowRoleModal() {
   try {
     var r=await apiFetch('dr/role');
-    document.getElementById('drRoleSelect').value=r.role||'MASTER';
+    document.getElementById('drRoleSelect').value=r.role||'PRIMARY';
     document.getElementById('drRoleForcedCheck').checked=!!r.role_forced;
-    var cv=await apiFetch('dr/config-volume');
-    var cvDiv=document.getElementById('drConfigVolStatus');
-    if(cv.configured){
-      cvDiv.innerHTML='<span style="color:var(--success,#198754)">✅ <strong>'+esc(cv.volume_name||cv.config_volume_id)+'</strong>'
-        +(cv.mount_accessible?' · mount accessible':' <span style="color:var(--warning)">⚠ mount not accessible</span>')
-        +'</span> <button class="btn btn-ghost btn-xs" onclick="drShowCVSetupForm()" style="margin-left:.5rem">Change</button>';
-    } else {
-      cvDiv.innerHTML='<span style="color:var(--warning,#a07000)">⚠ Not configured — config sync not active.</span>'
-        +' <button class="btn btn-ghost btn-xs" onclick="drShowCVSetupForm()" style="margin-left:.5rem">Setup</button>';
-    }
-    document.getElementById('drCVSetupForm').style.display='none';
   } catch(e){}
   drShowModal('drRole');
-}
-
-function drShowCVSetupForm() {
-  var form=document.getElementById('drCVSetupForm');
-  form.style.display='';
-  document.getElementById('drCVError').style.display='none';
-  document.getElementById('drCVMountHint').textContent='';
-  document.getElementById('drCVMountPath').value='';
-  apiFetch('dr/config-volume/nfs-volumes').then(function(vols){
-    var sel=document.getElementById('drCVVolumeSelect');
-    if(!vols.length){
-      sel.innerHTML='<option value="">— no NFS volumes discovered yet —</option>';
-      document.getElementById('drCVError').textContent='No NFS volumes found. Run Discovery in the Storage tab first.';
-      document.getElementById('drCVError').style.display='';
-      return;
-    }
-    sel.innerHTML='<option value="">— select NFS volume —</option>'
-      +vols.map(function(v){
-        return '<option value="'+esc(v.id)+'">'+esc(v.volume_name)+' ('+esc(v.endpoint_name)+' / '+esc(v.pve_storage_id)+')</option>';
-      }).join('');
-    sel.onchange=function(){
-      var found=vols.find(function(v){ return v.id===sel.value; });
-      if(found){
-        var hint='NFS: '+esc(found.nfs_export_ip||'?')+':'+esc(found.pve_storage_id||found.volume_name);
-        document.getElementById('drCVMountHint').textContent='Mount on this server: mount -t nfs '+hint+' <path>';
-      } else {
-        document.getElementById('drCVMountHint').textContent='';
-      }
-    };
-  }).catch(function(e){
-    document.getElementById('drCVError').textContent='Could not load volumes: '+e.message;
-    document.getElementById('drCVError').style.display='';
-  });
-}
-
-async function drSaveConfigVolume() {
-  var volume_id=document.getElementById('drCVVolumeSelect').value;
-  var mount_path=document.getElementById('drCVMountPath').value.trim();
-  var errEl=document.getElementById('drCVError');
-  errEl.style.display='none';
-  if(!volume_id){ errEl.textContent='Please select a volume.'; errEl.style.display=''; return; }
-  if(!mount_path){ errEl.textContent='Please enter the local mount path on this server.'; errEl.style.display=''; return; }
-  try {
-    var r=await apiPost('dr/config-volume/setup',{volume_id,mount_path});
-    if(r.warning){
-      errEl.style.background='var(--bg)'; errEl.style.borderColor='var(--warning,#ffc107)'; errEl.style.color='var(--warning,#a07000)';
-      errEl.textContent='⚠ '+r.warning;
-      errEl.style.display='';
-      toast('Config volume saved (with warning)','success');
-    } else {
-      toast('Config volume configured ✓','success');
-      drHideModal('drRole');
-    }
-    drLoadRole();
-  } catch(e){
-    errEl.textContent='❌ '+e.message;
-    errEl.style.display='';
-  }
 }
 
 async function drSaveRole() {
@@ -6024,364 +5937,112 @@ async function drSaveRole() {
   } catch(e){ toast(e.message,'error'); }
 }
 
-async function drDetectRole() {
-  try {
-    var r=await apiPost('dr/role/detect',{});
-    toast('Detected: '+r.detected_role+' — '+r.reason, r.detected?'success':'info');
-    drHideModal('drRole'); drLoadRole();
-  } catch(e){ toast(e.message,'error'); }
-}
+// ── Peer management ───────────────────────────────────────────────────────────
 
-// ── Config Volume Section ─────────────────────────────────────────────────────
-
-async function drLoadConfigVolSection() {
-  var el = document.getElementById('drConfigVolSection');
+async function drLoadPeerStatus() {
+  var el=document.getElementById('drPeerStatusSection');
   try {
-    var d = await apiFetch('dr/config-volume/wizard/data');
-    var cv = d.config_volume;
-    if(!cv) {
-      el.innerHTML = '<div class="card" style="padding:.75rem 1rem;display:flex;align-items:center;justify-content:space-between">'
-        +'<div><span style="color:var(--warning,#a07000)">⚠ Not configured</span>'
-        +' <span style="color:var(--muted);font-size:.82rem">— DR config sync is not active. Run the setup wizard to create a dedicated NFS volume and SnapMirror relationship.</span></div>'
-        +'<button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="drShowConfigVolumeWizard()">🔧 Setup Wizard</button>'
+    var p=await apiFetch('dr/peer/status');
+    if(!p.configured){
+      el.innerHTML='<div class="card" style="padding:.75rem 1rem;display:flex;align-items:center;justify-content:space-between">'
+        +'<div><span style="color:var(--warning,#a07000)">⚠ No peer configured</span>'
+        +' <span style="color:var(--muted);font-size:.82rem">— Direct plugin-to-plugin sync not active.</span></div>'
+        +'<button class="btn btn-primary btn-sm" onclick="drShowPeerConfigModal()">⚙ Configure Peer</button>'
         +'</div>';
       return;
     }
-    var pveHosts = cv.pve_hosts || [];
-    var hostBadges = pveHosts.map(function(h){
-      return '<span class="badge" style="font-size:.72rem">🖥 '+esc(h.name||h.host)+'</span>';
-    }).join(' ');
-    var storBadge = cv.config_storage_id
-      ? '<span class="badge badge-info" style="font-size:.72rem">pvesm: '+esc(cv.config_storage_id)+'</span>'
-      : '';
-    el.innerHTML = '<div class="card" style="padding:.75rem 1rem">'
+    var statusColor=p.sync_status==='online'?'var(--success,#198754)':p.sync_status==='offline'?'var(--error,#f85149)':'var(--warning,#a07000)';
+    var statusIcon=p.sync_status==='online'?'🟢':p.sync_status==='offline'?'🔴':'🟡';
+    var lastSeen=p.last_seen?p.last_seen.slice(0,19).replace('T',' '):'never';
+    var lastSync=p.last_sync_sent?p.last_sync_sent.slice(0,19).replace('T',' '):'never';
+    var peerRoleBadge=p.peer_role?'<span class="badge badge-info" style="font-size:.72rem">'+esc(p.peer_role)+'</span>':'';
+    el.innerHTML='<div class="card" style="padding:.75rem 1rem">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">'
       +'<div style="display:flex;align-items:center;gap:.75rem">'
-      +'<span style="font-size:1.4rem">🗄</span>'
+      +'<span style="font-size:1.4rem">'+statusIcon+'</span>'
       +'<div>'
-      +'<div style="font-weight:600">'+esc(cv.volume_name||'')+'</div>'
+      +'<div style="font-weight:600">'+esc(p.name||p.url)+' '+peerRoleBadge+'</div>'
       +'<div style="font-size:.78rem;color:var(--muted)">'
-      +'NFS '+esc(cv.nfs_ip||'')+':'+esc(cv.junction||'')
-      +(storBadge ? ' &nbsp; '+storBadge : '')
-      +(hostBadges ? '<br>'+hostBadges : '')
+      +'<span style="color:'+statusColor+'">'+esc(p.sync_status)+'</span>'
+      +' · Last seen: '+esc(lastSeen)
+      +' · Last sync: '+esc(lastSync)
+      +(p.sync_error?' · <span style="color:var(--error,#f85149)">'+esc(p.sync_error.slice(0,80))+'</span>':'')
       +'</div>'
       +'</div></div>'
       +'<div style="display:flex;gap:.4rem">'
-      +'<button class="btn btn-ghost btn-sm" onclick="drShowConfigVolumeWizard()">⚙ Reconfigure</button>'
-      +'<button class="btn btn-danger btn-sm" onclick="drRemoveConfigVolume()">🗑 Remove</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="drPushSync()">⬆ Sync now</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="drShowPeerConfigModal()">⚙ Edit</button>'
+      +'<button class="btn btn-danger btn-sm" onclick="drRemovePeer()">🗑 Remove</button>'
       +'</div>'
       +'</div></div>';
-  } catch(e) {
-    el.innerHTML='<div class="alert alert-danger" style="font-size:.85rem">'+esc(e.message)+'</div>';
-  }
+  } catch(e){ el.innerHTML='<div class="alert alert-danger" style="font-size:.85rem">'+esc(e.message)+'</div>'; }
 }
 
-async function drRemoveConfigVolume() {
-  var choice = await new Promise(function(resolve) {
-    var overlay = document.createElement('div');
-    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:400px">'
-      +'<div style="font-weight:600;margin-bottom:12px">🗑 Remove Config Volume</div>'
-      +'<div style="font-size:.85rem;margin-bottom:16px">How should the config volume be removed?</div>'
-      +'<div style="display:flex;flex-direction:column;gap:.5rem">'
-      +'<div id="cvr_db" style="display:flex;align-items:flex-start;gap:.6rem;padding:.6rem .75rem;border:1px solid var(--error,#f85149);border-radius:6px;cursor:pointer">'
-      +'<span style="color:var(--error,#f85149);font-size:.85rem;flex-shrink:0">✕</span>'
-      +'<div><div style="font-weight:600;font-size:.85rem">Remove from database only</div><div style="font-size:.75rem;color:var(--muted)">Volume remains on ONTAP — can be re-linked</div></div></div>'
-      +'<div id="cvr_ontap" style="display:flex;align-items:flex-start;gap:.6rem;padding:.6rem .75rem;border:1px solid var(--error,#f85149);border-radius:6px;cursor:pointer">'
-      +'<span style="color:var(--error,#f85149);font-size:.85rem;flex-shrink:0">✕</span>'
-      +'<div><div style="font-weight:600;font-size:.85rem">Delete from database and ONTAP</div><div style="font-size:.75rem;color:var(--muted)">Volume will be permanently deleted on ONTAP</div></div></div>'
-      +'<button id="cvr_cancel" class="btn btn-ghost">Cancel</button>'
-      +'</div></div>';
-    document.body.appendChild(overlay);
-    overlay.querySelector('#cvr_db').onclick    = function(){ document.body.removeChild(overlay); resolve('db'); };
-    overlay.querySelector('#cvr_ontap').onclick = function(){ document.body.removeChild(overlay); resolve('ontap'); };
-    overlay.querySelector('#cvr_cancel').onclick= function(){ document.body.removeChild(overlay); resolve(null); };
-  });
-  if(!choice) return;
+async function drShowPeerConfigModal() {
+  document.getElementById('drPeerConfigError').style.display='none';
   try {
-    var r = await apiPost('dr/config-volume/remove', {delete_ontap: choice==='ontap'});
-    toast(r.message, 'success');
-    drLoadRole();
-    drLoadConfigVolSection();
+    var p=await apiFetch('dr/peer/status');
+    if(p.configured){
+      document.getElementById('peerConfigName').value=p.name||'';
+      document.getElementById('peerConfigUrl').value=p.url||'';
+      document.getElementById('peerConfigUser').value='';
+      document.getElementById('peerConfigPass').value='';
+      document.getElementById('peerConfigToken').value='';
+      document.getElementById('peerConfigSsl').checked=!!p.ssl_verify;
+    } else {
+      ['peerConfigName','peerConfigUrl','peerConfigUser','peerConfigPass','peerConfigToken'].forEach(function(id){ document.getElementById(id).value=''; });
+      document.getElementById('peerConfigSsl').checked=false;
+    }
+  } catch(e){}
+  document.getElementById('drPeerConfigModal').style.display='block';
+}
+
+function peerGenerateToken() {
+  var chars='abcdefghijklmnopqrstuvwxyz0123456789';
+  var token='';
+  for(var i=0;i<36;i++) token+=i===8||i===13||i===18||i===23?'-':chars[Math.floor(Math.random()*chars.length)];
+  document.getElementById('peerConfigToken').value=token;
+}
+
+async function drSavePeerConfig() {
+  var errEl=document.getElementById('drPeerConfigError');
+  errEl.style.display='none';
+  var payload={
+    name:    document.getElementById('peerConfigName').value.trim()||'DR Site',
+    url:     document.getElementById('peerConfigUrl').value.trim(),
+    username:document.getElementById('peerConfigUser').value.trim(),
+    password:document.getElementById('peerConfigPass').value,
+    ssl_verify:document.getElementById('peerConfigSsl').checked,
+    sync_token:document.getElementById('peerConfigToken').value.trim(),
+  };
+  if(!payload.url){ errEl.textContent='Peer URL is required'; errEl.style.display=''; return; }
+  try {
+    var r=await apiPost('dr/peer/configure',payload);
+    document.getElementById('drPeerConfigModal').style.display='none';
+    toast('Peer configured — sync token: '+r.sync_token,'success');
+    drLoadPeerStatus(); drLoadRole();
+  } catch(e){ errEl.textContent=e.message; errEl.style.display=''; }
+}
+
+async function drRemovePeer() {
+  if(!await uiConfirm('Remove peer configuration? Sync will stop.')) return;
+  try { await apiPost('dr/peer/remove',{}); toast('Peer removed','success'); drLoadPeerStatus(); drLoadRole(); }
+  catch(e){ toast(e.message,'error'); }
+}
+
+async function drPushSync() {
+  try {
+    var r=await apiPost('dr/peer/sync/push',{});
+    if(r.ok) toast('Sync pushed to peer ✓','success');
+    else toast('Sync failed: '+(r.error||'unknown error'),'error');
+    drLoadPeerStatus();
   } catch(e){ toast(e.message,'error'); }
 }
-
-// ── Config Volume Wizard ─────────────────────────────────────────────────────
-
-var _cvwStep = 1;
-var _cvwData = {};   // accumulated wizard state
-
-async function drShowConfigVolumeWizard() {
-  _cvwStep = 1;
-  _cvwData = {};
-  ['cvwStep1Result','cvwStep2Result','cvwStep3Result'].forEach(function(id){ document.getElementById(id).innerHTML=''; });
-  try {
-    var d = await apiFetch('dr/config-volume/wizard/data');
-    var eps = d.endpoints || [];
-    var epOpts = eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join('');
-    document.getElementById('cvwEndpoint').innerHTML   = epOpts || '<option value="">— no endpoints —</option>';
-    document.getElementById('cvwDrEndpoint').innerHTML = epOpts || '<option value="">— no endpoints —</option>';
-
-    var volName = (d.config_volume && d.config_volume.volume_name) || 'vol_dr_config';
-    document.getElementById('cvwVolumeName').value   = volName;
-    document.getElementById('cvwJunction').value     = '/'+volName;
-    document.getElementById('cvwDrVolumeName').value = volName+'_dp';
-    document.getElementById('cvwMountPoint').value   = d.config_storage_id || '/mnt/netapp-dr-config';
-
-    // Load PVE hosts for Step 3
-    var pveHosts = d.pve_hosts || [];
-    var prevSelected = d.config_pve_host_ids || [];
-    var pveSel = document.getElementById('cvwPveHosts');
-    pveSel.innerHTML = pveHosts.map(function(h){
-      var sel = prevSelected.indexOf(h.id)>=0 ? ' selected' : '';
-      return '<option value="'+esc(h.id)+'"'+sel+'>'+esc(h.name)+' ('+esc(h.host)+')</option>';
-    }).join('');
-
-    cvwEndpointChanged();
-    cvwDrEndpointChanged();
-  } catch(e){}
-
-  cvwRenderSteps();
-  drShowModal('cvWizard');
-}
-
-function cvwVolumeNameChanged() {
-  var name = document.getElementById('cvwVolumeName').value.trim();
-  if(name) {
-    document.getElementById('cvwJunction').value = '/'+name;
-    document.getElementById('cvwDrVolumeName').value = name+'_dp';
-  }
-}
-
-function cvwRenderSteps() {
-  [1,2,3].forEach(function(n){
-    var panel = document.getElementById('cvwPanel'+n);
-    panel.style.display = n===_cvwStep ? 'block' : 'none';
-    var dot = document.getElementById('cvwDot'+n);
-    dot.style.background = n < _cvwStep ? 'var(--success,#198754)' : n===_cvwStep ? 'var(--primary,#0d6efd)' : 'var(--border)';
-    dot.style.color = n <= _cvwStep ? '#fff' : 'var(--muted)';
-  });
-}
-
-async function cvwEndpointChanged() {
-  var epId = document.getElementById('cvwEndpoint').value;
-  if(!epId) return;
-  var svm = document.getElementById('cvwSvm');
-  var agg = document.getElementById('cvwAggregate');
-  svm.innerHTML='<option value="">Loading…</option>';
-  agg.innerHTML='<option value="">Auto (recommended)</option>';
-  try {
-    var svms = await apiFetch('dr/config-volume/wizard/svms?endpoint_id='+epId);
-    svm.innerHTML = svms.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
-    cvwSvmChanged();
-  } catch(e){ svm.innerHTML='<option value="">Fehler: '+esc(e.message)+'</option>'; }
-  try {
-    var aggs = await apiFetch('dr/config-volume/wizard/aggregates?endpoint_id='+epId);
-    agg.innerHTML='<option value="">Auto (recommended)</option>'
-      +aggs.map(function(a){ return '<option value="'+esc(a.name)+'">'+esc(a.name)+' ('+Math.round((a.available_bytes||0)/1073741824)+' GB frei)</option>'; }).join('');
-  } catch(e){}
-}
-
-function cvwSvmChanged() {
-  var svmVal = document.getElementById('cvwSvm').value;
-  var drSvm = document.getElementById('cvwDrSvm');
-  if(svmVal && drSvm) {
-    var found = Array.from(drSvm.options).some(function(o){ return o.value===svmVal; });
-    if(found) drSvm.value = svmVal;
-  }
-}
-
-async function cvwDrEndpointChanged() {
-  var epId = document.getElementById('cvwDrEndpoint').value;
-  if(!epId) return;
-  var svm = document.getElementById('cvwDrSvm');
-  svm.innerHTML='<option value="">Loading…</option>';
-  try {
-    var svms = await apiFetch('dr/config-volume/wizard/svms?endpoint_id='+epId);
-    svm.innerHTML = svms.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>'; }).join('');
-  } catch(e){ svm.innerHTML='<option value="">Fehler: '+esc(e.message)+'</option>'; }
-}
-
-async function cvwStep1Run() {
-  var btn = document.getElementById('cvwStep1Btn');
-  var res = document.getElementById('cvwStep1Result');
-  btn.disabled=true; btn.textContent='Creating…'; res.innerHTML='';
-  var payload = {
-    endpoint_id:    document.getElementById('cvwEndpoint').value,
-    svm_name:       document.getElementById('cvwSvm').value,
-    volume_name:    document.getElementById('cvwVolumeName').value.trim()||'vol_dr_config',
-    size_gb:        parseInt(document.getElementById('cvwSizeGb').value)||1,
-    junction_path:  document.getElementById('cvwJunction').value.trim(),
-    aggregate_name: document.getElementById('cvwAggregate').value,
-  };
-  if(!payload.junction_path) payload.junction_path='/'+payload.volume_name;
-  if(!payload.endpoint_id||!payload.svm_name){ res.innerHTML=cvwErr('Select endpoint and SVM'); btn.disabled=false; btn.textContent='▶ Create Volume'; return; }
-  try {
-    var r = await apiPost('dr/config-volume/wizard/create-volume', payload);
-    _cvwData.volume = r;
-    document.getElementById('cvwDrVolumeName').value = payload.volume_name+'_dp';
-    res.innerHTML = cvwOk(r.message+'<br>NFS: <code>'+esc(r.nfs_ip)+':'+esc(r.junction)+'</code>');
-    _cvwStep=2; cvwRenderSteps();
-  } catch(e){ res.innerHTML=cvwErr(e.message); }
-  btn.disabled=false; btn.textContent='▶ Create Volume';
-}
-
-var _cvwSmPollTimer = null;
-
-async function cvwStep2Run() {
-  var btn = document.getElementById('cvwStep2Btn');
-  var res = document.getElementById('cvwStep2Result');
-  btn.disabled=true; btn.textContent='Starting…';
-  res.innerHTML='<div id="cvwSmLog" style="background:var(--code-bg,#0d1117);border-radius:6px;padding:.6rem .75rem;font-family:monospace;font-size:.78rem;max-height:200px;overflow-y:auto;color:var(--muted)"></div>';
-
-  var payload = {
-    dr_endpoint_id:     document.getElementById('cvwDrEndpoint').value,
-    dr_svm:             document.getElementById('cvwDrSvm').value,
-    dr_volume_name:     document.getElementById('cvwDrVolumeName').value.trim(),
-    policy:             document.getElementById('cvwSmPolicy').value,
-    transfer_schedule:  document.getElementById('cvwSmSchedule').value,
-  };
-  if(!payload.dr_endpoint_id||!payload.dr_svm||!payload.dr_volume_name){
-    res.innerHTML=cvwErr('All DR fields required'); btn.disabled=false; btn.textContent='▶ Create SnapMirror'; return;
-  }
-
-  function _appendLog(entries) {
-    var logEl = document.getElementById('cvwSmLog');
-    if(!logEl) return;
-    logEl.innerHTML = entries.map(function(l){
-      var col = l.msg.includes('[ERR]') ? 'var(--error,#f85149)' : l.msg.includes('[WARN]') ? 'var(--warning,#e3a008)' : l.msg.includes('✅') ? 'var(--success,#3fb950)' : 'var(--muted)';
-      return '<div style="color:'+col+';margin-bottom:1px">'+esc(l.ts.slice(11,19))+' '+esc(l.msg)+'</div>';
-    }).join('');
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  try {
-    var r = await apiPost('dr/config-volume/wizard/create-snapmirror', payload);
-    var jobId = r.job_id;
-    btn.textContent='Running…';
-
-    // Poll until done
-    if(_cvwSmPollTimer) clearInterval(_cvwSmPollTimer);
-    _cvwSmPollTimer = setInterval(async function(){
-      try {
-        var s = await apiFetch('dr/config-volume/wizard/sm-status?job_id='+jobId);
-        _appendLog(s.log||[]);
-        if(s.status !== 'running') {
-          clearInterval(_cvwSmPollTimer);
-          if(s.status === 'done') {
-            _cvwData.snapmirror = s;
-            setTimeout(function(){ _cvwStep=3; cvwRenderSteps(); }, 1200);
-          } else {
-            var errMsg = (s.log||[]).filter(function(l){ return l.msg.includes('[ERR]'); }).map(function(l){ return l.msg; }).join('\n');
-            res.innerHTML += cvwErr(errMsg || 'SnapMirror creation failed');
-          }
-          btn.disabled=false; btn.textContent='▶ Create SnapMirror';
-        }
-      } catch(e){ clearInterval(_cvwSmPollTimer); res.innerHTML+=cvwErr(e.message); btn.disabled=false; btn.textContent='▶ Create SnapMirror'; }
-    }, 2000);
-  } catch(e){
-    res.innerHTML=cvwErr(e.message); btn.disabled=false; btn.textContent='▶ Create SnapMirror';
-  }
-}
-
-function cvwStep2Skip() {
-  if(_cvwSmPollTimer) clearInterval(_cvwSmPollTimer);
-  document.getElementById('cvwStep2Result').innerHTML='<div style="font-size:.82rem;color:var(--muted)">Skipped — configure SnapMirror later.</div>';
-  _cvwStep=3; cvwRenderSteps();
-}
-
-async function cvwStep3Run() {
-  var btn = document.getElementById('cvwStep3Btn');
-  var res = document.getElementById('cvwStep3Result');
-  btn.disabled=true; btn.textContent='Mounting…'; res.innerHTML='';
-  var mount_point = document.getElementById('cvwMountPoint').value.trim();
-  var pve_host_ids = Array.from(document.getElementById('cvwPveHosts').selectedOptions).map(function(o){ return o.value; });
-  if(!mount_point){ res.innerHTML=cvwErr('Enter a mount path'); btn.disabled=false; btn.textContent='▶ Mount on PVE hosts'; return; }
-  if(!pve_host_ids.length){ res.innerHTML=cvwErr('Select at least one PVE host'); btn.disabled=false; btn.textContent='▶ Mount on PVE hosts'; return; }
-  try {
-    var r = await apiPost('dr/config-volume/wizard/register-storage', {mount_point, pve_host_ids});
-    var hostResults = (r.results||[]).map(function(h){
-      var icon = h.status==='failed' ? '❌' : '✅';
-      var detail = h.status==='already_mounted' ? ' (already mounted)' : h.status==='mounted' ? ' (mounted)' : ' — '+esc(h.error||'');
-      return icon+' '+esc(h.host)+detail;
-    }).join('<br>');
-    res.innerHTML = cvwOk(esc(r.message)) + (hostResults ? '<div style="font-size:.78rem;margin-top:.3rem">'+hostResults+'</div>' : '');
-    if(r.written !== false) {
-      setTimeout(function(){ drHideModal('cvWizard'); drLoadRole(); drLoadConfigVolSection(); }, 2000);
-    }
-  } catch(e){
-    var hostResults = (((e.data||{}).results)||[]).map(function(h){
-      var icon = h.status==='failed' ? '❌' : '✅';
-      var detail = h.status==='already_mounted' ? ' (already mounted)' : h.status==='mounted' ? ' (mounted)' : ' — '+esc(h.error||'');
-      return icon+' '+esc(h.host)+detail;
-    }).join('<br>');
-    res.innerHTML = cvwErr(e.message) + (hostResults ? '<div style="font-size:.78rem;margin-top:.3rem">'+hostResults+'</div>' : '');
-  }
-  btn.disabled=false; btn.textContent='▶ Mount on PVE hosts';
-}
-
-function cvwOk(msg){ return '<div style="color:var(--success,#198754);font-size:.82rem;padding:.3rem 0">✅ '+msg+'</div>'; }
-function cvwErr(msg){ return '<div style="color:var(--error,#f85149);font-size:.82rem;padding:.3rem 0">❌ '+msg+'</div>'; }
-
-// ── DR Sites ──────────────────────────────────────────────────────────────────
 
 async function drInit() {
   drLoadRole();
-  drLoadConfigVolSection();
-  drLoadSites();
+  drLoadPeerStatus();
   drLoadPlans();
-}
-
-async function drLoadSites() {
-  try {
-    _drSites=await apiFetch('dr/sites');
-    var el=document.getElementById('drSitesList');
-    if(!_drSites.length){ el.innerHTML='<div class="muted-hint">No DR sites configured. Add a DR site to get started.</div>'; return; }
-    el.innerHTML=_drSites.map(function(s){
-      var epBadge='<span class="badge badge-info" style="font-size:.75rem">'+esc(s.endpoint_name||s.endpoint_id)+'</span>';
-      var hostBadges=(s.pve_hosts||[]).map(function(h){ return '<span class="badge" style="font-size:.72rem">🖥️ '+esc(h.name||h.host)+'</span>'; }).join(' ');
-      var planInfo=s.plan_count?s.plan_count+' plan(s)':'<span style="color:var(--muted)">no plans</span>';
-      return '<div class="card" style="margin-bottom:.5rem;padding:.75rem 1rem">'
-        +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">'
-        +'<div style="flex:1"><div style="font-weight:600;font-size:.95rem">🏢 '+esc(s.name)+'</div>'
-        +'<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">'+epBadge+' '+hostBadges+'</div>'
-        +(s.description?'<div style="font-size:.8rem;color:var(--muted);margin-top:.3rem">'+esc(s.description)+'</div>':'')
-        +'</div><div style="display:flex;gap:.4rem;align-items:center;white-space:nowrap">'
-        +'<span style="font-size:.78rem;color:var(--muted)">'+planInfo+'</span>'
-        +'<button class="btn btn-danger btn-xs" onclick="drDeleteSite(\''+esc(s.id)+'\')">Remove</button>'
-        +'</div></div></div>';
-    }).join('');
-  } catch(e){ document.getElementById('drSitesList').innerHTML='<div class="alert alert-danger">'+esc(e.message)+'</div>'; }
-}
-
-function drShowAddSiteModal() {
-  var epSel=document.getElementById('drSiteEndpoint');
-  apiFetch('endpoints').then(function(eps){ epSel.innerHTML=eps.map(function(e){ return '<option value="'+esc(e.id)+'">'+esc(e.name)+' ('+esc(e.host)+')</option>'; }).join(''); }).catch(function(){ epSel.innerHTML=''; });
-  var pveSel=document.getElementById('drSitePveHosts');
-  apiFetch('pve-hosts').then(function(h){ pveSel.innerHTML=h.map(function(x){ return '<option value="'+esc(x.id)+'">'+esc(x.name)+' ('+esc(x.host)+')</option>'; }).join(''); }).catch(function(){ pveSel.innerHTML=''; });
-  ['drSiteName','drSiteDesc'].forEach(function(id){ document.getElementById(id).value=''; });
-  drShowModal('drAddSite');
-}
-
-async function drCreateSite() {
-  var pveHostIds=Array.from(document.getElementById('drSitePveHosts').selectedOptions).map(function(o){ return o.value; });
-  var payload={
-    name:document.getElementById('drSiteName').value.trim(),
-    endpoint_id:document.getElementById('drSiteEndpoint').value,
-    pve_host_ids:pveHostIds,
-    description:document.getElementById('drSiteDesc').value.trim(),
-  };
-  if(!payload.name||!payload.endpoint_id){ toast('Name and NetApp endpoint required','error'); return; }
-  try {
-    await apiPost('dr/sites/create',payload);
-    drHideModal('drAddSite'); toast('DR site created','success'); drLoadSites();
-  } catch(e){ toast(e.message,'error'); }
-}
-
-async function drDeleteSite(siteId) {
-  if(!await uiConfirm('Delete this DR site?')) return;
-  try { await apiPost('dr/sites/delete',{id:siteId}); toast('DR site deleted','success'); drLoadSites(); drLoadPlans(); }
-  catch(e){ toast(e.message,'error'); }
 }
 
 // ── DR Plans ──────────────────────────────────────────────────────────────────
@@ -6421,7 +6082,7 @@ async function drLoadPlans() {
         +'<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem">'
         +'<div style="flex:1"><div style="font-weight:600">📋 '+esc(p.name)+' '+drStateBadge(p.state)+'</div>'
         +'<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">'
-        +'🏢 '+esc(p.site_name||'—')+' · '+p.entry_count+' datastore(s) · '+p.group_count+' group(s)'
+        +p.entry_count+' datastore(s) · '+p.group_count+' group(s)'
         +(p.last_failover_at?'<span class="muted-hint"> · Last failover: '+p.last_failover_at.slice(0,16).replace('T',' ')+'</span>':'')
         +'</div></div>'
         +'<div style="display:flex;gap:.4rem" onclick="event.stopPropagation()">'
@@ -6433,8 +6094,6 @@ async function drLoadPlans() {
 }
 
 function drShowAddPlanModal() {
-  var sel=document.getElementById('drPlanSite');
-  apiFetch('dr/sites').then(function(sites){ sel.innerHTML=sites.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>'; }).join(''); }).catch(function(){ sel.innerHTML=''; });
   document.getElementById('drPlanName').value='';
   document.getElementById('drPlanNotes').value='';
   drShowModal('drAddPlan');
@@ -6443,10 +6102,9 @@ function drShowAddPlanModal() {
 async function drCreatePlan() {
   var payload={
     name:document.getElementById('drPlanName').value.trim(),
-    dr_site_id:document.getElementById('drPlanSite').value,
     notes:document.getElementById('drPlanNotes').value.trim(),
   };
-  if(!payload.name||!payload.dr_site_id){ toast('Name and DR site required','error'); return; }
+  if(!payload.name){ toast('Plan name required','error'); return; }
   try {
     await apiPost('dr/plans/create',payload);
     drHideModal('drAddPlan'); toast('DR plan created (Core group auto-created)','success'); drLoadPlans();
@@ -6473,7 +6131,6 @@ async function drRefreshPlanDetail() {
   if(!_drCurrentPlanId) return;
   try {
     var plan=await apiFetch('dr/plans/detail?plan_id='+_drCurrentPlanId);
-    _drCurrentPlanSiteId=plan.dr_site_id;
     document.getElementById('drPlanDetailTitle').textContent='📋 '+plan.name;
     var status=await apiFetch('dr/plans/status?plan_id='+_drCurrentPlanId);
     var healthy=status.overall_healthy;
@@ -6530,14 +6187,11 @@ function drShowEditEntryModal(entryId) {
   storInfo.innerHTML=entry.dr_pve_storage_id
     ?'📦 Storage ID: <strong><code>'+esc(entry.dr_pve_storage_id)+'</code></strong> <span style="color:var(--muted)">(auto-derived)</span>'
     :'<span style="color:var(--warning,#856404)">⚠ No storage ID — run Discovery in the Storage tab first.</span>';
-  var site=(_drSites||[]).find(function(s){ return s.id===_drCurrentPlanSiteId; })||{};
-  var siteHostIds=site.pve_host_ids||[];
   apiFetch('pve-hosts').then(function(hosts){
     var sel=document.getElementById('drEditEntryPveHosts');
     sel.innerHTML=hosts.map(function(h){
       var selected=(entry.dr_pve_host_ids||[]).indexOf(h.id)>=0?' selected':'';
-      var note=siteHostIds.indexOf(h.id)>=0?'':' (⚠ not in DR site)';
-      return '<option value="'+esc(h.id)+'"'+selected+'>'+esc(h.name)+' ('+esc(h.host)+')'+note+'</option>';
+      return '<option value="'+esc(h.id)+'"'+selected+'>'+esc(h.name)+' ('+esc(h.host)+')</option>';
     }).join('');
   }).catch(function(){});
   drShowModal('drEditEntry');
@@ -7885,158 +7539,6 @@ loadSnapshots();
 
 <!-- ══════════════════════════ DR MODALS ══════════════════════════ -->
 
-<!-- Config Volume Wizard -->
-<div id="cvWizardModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('cvWizard')">
-  <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700">🗄 DR Config Volume Setup</div>
-      <button class="btn btn-ghost btn-sm" onclick="drHideModal('cvWizard')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
-    </div>
-
-    <!-- Step indicator -->
-    <div style="display:flex;align-items:center;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--bg);gap:0">
-      <div style="display:flex;align-items:center;gap:.4rem;flex:1">
-        <div id="cvwDot1" style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0">1</div>
-        <span style="font-size:.8rem;font-weight:600">Create Volume</span>
-      </div>
-      <div style="height:1px;width:24px;background:var(--border);flex-shrink:0"></div>
-      <div style="display:flex;align-items:center;gap:.4rem;flex:1;margin-left:.4rem">
-        <div id="cvwDot2" style="width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0">2</div>
-        <span style="font-size:.8rem;font-weight:600">SnapMirror</span>
-      </div>
-      <div style="height:1px;width:24px;background:var(--border);flex-shrink:0"></div>
-      <div style="display:flex;align-items:center;gap:.4rem;flex:1;margin-left:.4rem">
-        <div id="cvwDot3" style="width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0">3</div>
-        <span style="font-size:.8rem;font-weight:600">Mount &amp; Activate</span>
-      </div>
-    </div>
-
-    <!-- Step 1: Create Volume -->
-    <div id="cvwPanel1" style="padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Create a small dedicated NFS volume on the primary ONTAP cluster. This volume stores DR config JSON files and will be SnapMirror'd to the DR cluster.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group">
-          <label style="font-size:.82rem">Primary ONTAP Endpoint</label>
-          <select id="cvwEndpoint" onchange="cvwEndpointChanged()" style="width:100%"></select>
-        </div>
-        <div class="form-group">
-          <label style="font-size:.82rem">SVM</label>
-          <select id="cvwSvm" onchange="cvwSvmChanged()" style="width:100%"></select>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:2fr 1fr;gap:.5rem">
-        <div class="form-group">
-          <label style="font-size:.82rem">Volume Name</label>
-          <input id="cvwVolumeName" value="vol_dr_config" autocomplete="off" oninput="cvwVolumeNameChanged()">
-        </div>
-        <div class="form-group">
-          <label style="font-size:.82rem">Size (GB)</label>
-          <input id="cvwSizeGb" type="number" value="1" min="1" max="100">
-        </div>
-      </div>
-      <div class="form-group">
-        <label style="font-size:.82rem">Junction Path</label>
-        <input id="cvwJunction" value="/vol_dr_config" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label style="font-size:.82rem">Aggregate <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-        <select id="cvwAggregate" style="width:100%"><option value="">Auto (recommended)</option></select>
-      </div>
-      <div id="cvwStep1Result" style="margin-bottom:.5rem"></div>
-      <div style="display:flex;gap:.5rem">
-        <button id="cvwStep1Btn" class="btn btn-primary" onclick="cvwStep1Run()">▶ Create Volume</button>
-      </div>
-    </div>
-
-    <!-- Step 2: SnapMirror -->
-    <div id="cvwPanel2" style="display:none;padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Create a SnapMirror relationship from the config volume to the DR cluster. Cluster peering must already be established.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group">
-          <label style="font-size:.82rem">DR ONTAP Endpoint</label>
-          <select id="cvwDrEndpoint" onchange="cvwDrEndpointChanged()" style="width:100%"></select>
-        </div>
-        <div class="form-group">
-          <label style="font-size:.82rem">DR SVM</label>
-          <select id="cvwDrSvm" style="width:100%"></select>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group">
-          <label style="font-size:.82rem">DR Volume Name</label>
-          <input id="cvwDrVolumeName" value="vol_dr_config_dp" autocomplete="off">
-        </div>
-        <div class="form-group">
-          <label style="font-size:.82rem">SnapMirror Policy</label>
-          <select id="cvwSmPolicy">
-            <option value="MirrorAllSnapshots">MirrorAllSnapshots</option>
-            <option value="MirrorLatest">MirrorLatest</option>
-            <option value="Asynchronous">Asynchronous</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group" style="max-width:220px">
-        <label style="font-size:.82rem">Transfer Schedule</label>
-        <select id="cvwSmSchedule">
-          <option value="10min" selected>every 10 min</option>
-          <option value="5min">every 5 min</option>
-          <option value="hourly">hourly</option>
-        </select>
-      </div>
-      <div id="cvwStep2Result" style="margin-bottom:.5rem"></div>
-      <div style="display:flex;gap:.5rem">
-        <button id="cvwStep2Btn" class="btn btn-primary" onclick="cvwStep2Run()">▶ Create SnapMirror</button>
-        <button class="btn btn-ghost" onclick="cvwStep2Skip()">⏭ Skip (set up later)</button>
-      </div>
-    </div>
-
-    <!-- Step 3: Mount on PVE hosts -->
-    <div id="cvwPanel3" style="display:none;padding:20px">
-      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">Mount the config volume directly on the PVE hosts via NFS. The mount is not registered in PVE and not visible in the GUI — PegaProx writes config files via SSH to whichever host is reachable.</div>
-      <div class="form-group">
-        <label style="font-size:.82rem">Mount Path <span style="font-weight:400;color:var(--muted)">(on each PVE host — created if missing)</span></label>
-        <input id="cvwMountPoint" value="/mnt/netapp-dr-config" autocomplete="off">
-      </div>
-      <div class="form-group">
-        <label style="font-size:.82rem">PVE Host(s) <span style="font-weight:400;color:var(--muted)">(Ctrl+click for multiple — all selected hosts get the volume mounted)</span></label>
-        <select id="cvwPveHosts" multiple size="4" style="width:100%"></select>
-      </div>
-      <div id="cvwStep3Result" style="margin-bottom:.5rem"></div>
-      <div style="display:flex;gap:.5rem">
-        <button id="cvwStep3Btn" class="btn btn-primary" onclick="cvwStep3Run()">▶ Mount on PVE hosts</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<!-- Add DR Site -->
-<div id="drAddSiteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddSite')">
-  <div style="max-width:520px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700">🏢 Add DR Site</div>
-      <button class="btn btn-ghost btn-sm" onclick="drHideModal('drAddSite')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
-    </div>
-    <div style="padding:20px;display:grid;gap:.75rem">
-      <div class="form-group"><label>Site Name</label><input id="drSiteName" placeholder="DR Lab" autocomplete="off"></div>
-      <div class="form-group">
-        <label>NetApp ONTAP Endpoint (DR cluster)</label>
-        <select id="drSiteEndpoint"></select>
-      </div>
-      <div class="form-group">
-        <label>DR PVE Host(s) <span style="font-weight:400;color:var(--muted)">(Ctrl+click for multiple)</span></label>
-        <select id="drSitePveHosts" multiple size="4" style="width:100%"></select>
-      </div>
-      <div class="form-group"><label>Description <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="drSiteDesc" placeholder="optional"></div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
-      <button class="btn btn-ghost" onclick="drHideModal('drAddSite')">Cancel</button>
-      <button class="btn btn-primary" onclick="drCreateSite()">✅ Create DR Site</button>
-    </div>
-  </div>
-</div>
-
-<!-- Add DR Plan -->
 <div id="drAddPlanModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drAddPlan')">
   <div style="max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
@@ -8046,7 +7548,6 @@ loadSnapshots();
     <div style="padding:20px;display:grid;gap:.75rem">
       <div class="alert alert-info" style="font-size:.82rem">A <strong>Core Infrastructure</strong> VM group will be created automatically.</div>
       <div class="form-group"><label>Plan Name</label><input id="drPlanName" placeholder="Production DR" autocomplete="off"></div>
-      <div class="form-group"><label>DR Site</label><select id="drPlanSite"></select></div>
       <div class="form-group"><label>Notes <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="drPlanNotes" placeholder="optional"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
@@ -8123,56 +7624,69 @@ loadSnapshots();
   </div>
 </div>
 
-<!-- Role & Config Volume Settings -->
+<!-- Role Settings -->
 <div id="drRoleModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)drHideModal('drRole')">
-  <div style="max-width:540px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+  <div style="max-width:460px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <div style="font-size:16px;font-weight:700">⚙ Role &amp; Config Volume</div>
+      <div style="font-size:16px;font-weight:700">⚙ Plugin Role</div>
       <button class="btn btn-ghost btn-sm" onclick="drHideModal('drRole')" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
     </div>
-    <div style="padding:20px;display:grid;gap:1rem">
-      <div>
-        <div style="font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Config Volume</div>
-        <div id="drConfigVolStatus" style="padding:.5rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:.85rem"></div>
-        <div id="drCVSetupForm" style="display:none;margin-top:.75rem;padding:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px">
-          <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Setup Config Volume</div>
-          <div id="drCVError" style="display:none;padding:.4rem .6rem;background:var(--error-bg,#2d1b1b);border:1px solid var(--error,#f85149);border-radius:4px;font-size:.8rem;color:var(--error,#f85149);margin-bottom:.5rem;word-break:break-word"></div>
-          <div class="form-group"><label style="font-size:.82rem">NFS Volume <span style="font-weight:400;color:var(--muted)">(stores DR config JSON files)</span></label><select id="drCVVolumeSelect" style="width:100%"></select></div>
-          <div id="drCVMountHint" style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem;font-family:monospace;word-break:break-all"></div>
-          <div class="form-group">
-            <label style="font-size:.82rem">Local Mount Path on this server <span style="font-weight:400;color:var(--muted)">(volume must be NFS-mounted here)</span></label>
-            <input id="drCVMountPath" placeholder="/mnt/pve/dr-config" autocomplete="off">
-          </div>
-          <div style="display:flex;gap:.5rem;margin-top:.5rem">
-            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('drCVSetupForm').style.display='none'">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="drSaveConfigVolume()">✅ Save Config Volume</button>
-          </div>
-        </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div class="alert alert-info" style="font-size:.82rem">Role changes are pushed to the peer automatically if a peer is configured.</div>
+      <div class="form-group">
+        <label>Role</label>
+        <select id="drRoleSelect">
+          <option value="PRIMARY">🟢 PRIMARY — manages plans, pushes sync to Secondary</option>
+          <option value="SECONDARY">🟡 SECONDARY — standby, receives sync from Primary</option>
+          <option value="STANDALONE">⚪ STANDALONE — no peer, independent operation</option>
+        </select>
       </div>
-      <div>
-        <div style="font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Plugin Role</div>
-        <div style="padding:.75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;display:grid;gap:.6rem">
-          <div class="form-group" style="margin:0">
-            <label style="font-size:.82rem">Role</label>
-            <select id="drRoleSelect">
-              <option value="MASTER">🟢 MASTER — manages plans, writes config</option>
-              <option value="DR_SLAVE">🟡 DR SLAVE — standby, reads config from volume</option>
-              <option value="DR_TEST">🔵 DR TEST — isolated FlexClone-based test (future)</option>
-            </select>
-          </div>
-          <label style="display:flex;align-items:center;gap:.5rem;font-size:.82rem;cursor:pointer">
-            <input type="checkbox" id="drRoleForcedCheck">
-            <span>Force override (prevent auto-detection from changing this)</span>
-          </label>
-          <div style="display:flex;gap:.5rem">
-            <button class="btn btn-ghost btn-sm" onclick="drDetectRole()">🔍 Auto-detect from ONTAP</button>
-            <button class="btn btn-primary btn-sm" onclick="drSaveRole()">✅ Save Role</button>
-          </div>
-        </div>
-      </div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-size:.82rem;cursor:pointer">
+        <input type="checkbox" id="drRoleForcedCheck">
+        <span>Force override (peer role-notify will not auto-change this)</span>
+      </label>
     </div>
-    <div style="display:flex;justify-content:flex-end;padding:12px 20px;border-top:1px solid var(--border)">
-      <button class="btn btn-ghost" onclick="drHideModal('drRole')">Close</button>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="drHideModal('drRole')">Cancel</button>
+      <button class="btn btn-primary" onclick="drSaveRole()">✅ Save Role</button>
+    </div>
+  </div>
+</div>
+
+<!-- Peer Configure Modal -->
+<div id="drPeerConfigModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:520px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:16px;font-weight:700">🔗 Configure DR Peer</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('drPeerConfigModal').style.display='none'" style="font-size:18px;padding:4px 10px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;gap:.75rem">
+      <div class="alert alert-info" style="font-size:.82rem">
+        Enter the other PegaProx instance URL and an admin account. Both sides must use the <strong>same Sync Token</strong>.
+        Generate it on one side, copy it to the other.
+      </div>
+      <div id="drPeerConfigError" style="display:none;padding:.4rem .6rem;background:var(--error-bg,#2d1b1b);border:1px solid var(--error,#f85149);border-radius:4px;font-size:.8rem;color:var(--error,#f85149);word-break:break-word"></div>
+      <div class="form-group"><label>Label</label><input id="peerConfigName" placeholder="DR Site" autocomplete="off"></div>
+      <div class="form-group"><label>Peer URL <span style="font-weight:400;color:var(--muted)">e.g. https://10.230.40.113</span></label><input id="peerConfigUrl" placeholder="https://10.230.40.113" autocomplete="off"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div class="form-group"><label>Username</label><input id="peerConfigUser" placeholder="admin" autocomplete="off"></div>
+        <div class="form-group"><label>Password <span style="font-weight:400;color:var(--muted)">(leave blank to keep)</span></label><input id="peerConfigPass" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="form-group">
+        <label>Sync Token <span style="font-weight:400;color:var(--muted)">— same value on both sides</span></label>
+        <div style="display:flex;gap:.4rem">
+          <input id="peerConfigToken" placeholder="paste token or generate new" autocomplete="off" style="flex:1">
+          <button class="btn btn-ghost btn-sm" onclick="peerGenerateToken()" style="white-space:nowrap">🔄 Generate</button>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:.5rem;font-size:.82rem;cursor:pointer">
+        <input type="checkbox" id="peerConfigSsl">
+        <span>Verify SSL certificate</span>
+      </label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:12px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-ghost" onclick="document.getElementById('drPeerConfigModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="drSavePeerConfig()">✅ Save Peer</button>
     </div>
   </div>
 </div>

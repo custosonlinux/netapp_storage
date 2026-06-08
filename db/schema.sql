@@ -165,32 +165,52 @@ CREATE TABLE IF NOT EXISTS netapp_provisioned_datastores (
 
 -- ── Disaster Recovery ─────────────────────────────────────────────────────
 
--- Plugin-wide config: role (MASTER/DR_SLAVE/DR_TEST) and NFS config volume
+-- Plugin-wide config: role (PRIMARY/SECONDARY/STANDALONE)
 CREATE TABLE IF NOT EXISTS netapp_plugin_config (
     id                  TEXT PRIMARY KEY DEFAULT 'default',
-    role                TEXT NOT NULL DEFAULT 'MASTER',      -- MASTER | DR_SLAVE | DR_TEST
-    role_forced         INTEGER NOT NULL DEFAULT 0,          -- 1 = admin override, 0 = auto-detected
-    config_volume_id    TEXT NOT NULL DEFAULT '',            -- netapp_volume_mapping.id
-    config_storage_id   TEXT NOT NULL DEFAULT '',            -- pvesm storage ID on PVE hosts
-    config_pve_host_ids TEXT NOT NULL DEFAULT '[]',          -- JSON: PVE host IDs with config storage
+    role                TEXT NOT NULL DEFAULT 'PRIMARY',     -- PRIMARY | SECONDARY | STANDALONE
+    role_forced         INTEGER NOT NULL DEFAULT 0,
+    config_volume_id    TEXT NOT NULL DEFAULT '',            -- legacy, unused in v3
+    config_storage_id   TEXT NOT NULL DEFAULT '',            -- legacy, unused in v3
+    config_pve_host_ids TEXT NOT NULL DEFAULT '[]',          -- legacy, unused in v3
     last_role_check     TEXT NOT NULL DEFAULT '',
     updated_at          TEXT NOT NULL DEFAULT ''
 );
 
+-- Direct peer-to-peer pairing (one row, id='default')
+CREATE TABLE IF NOT EXISTS netapp_dr_peer (
+    id                  TEXT PRIMARY KEY DEFAULT 'default',
+    name                TEXT NOT NULL DEFAULT 'DR Site',
+    url                 TEXT NOT NULL DEFAULT '',            -- https://<peer-host>
+    username            TEXT NOT NULL DEFAULT '',
+    password_encrypted  TEXT NOT NULL DEFAULT '',
+    ssl_verify          INTEGER NOT NULL DEFAULT 0,
+    sync_token          TEXT NOT NULL DEFAULT '',            -- shared secret for X-DR-Sync-Token
+    peer_role           TEXT NOT NULL DEFAULT '',            -- last known role of peer
+    last_seen           TEXT NOT NULL DEFAULT '',
+    last_sync_sent      TEXT NOT NULL DEFAULT '',
+    last_sync_received  TEXT NOT NULL DEFAULT '',
+    sync_status         TEXT NOT NULL DEFAULT 'unconfigured',-- unconfigured | online | offline | error
+    sync_error          TEXT NOT NULL DEFAULT '',
+    paired_at           TEXT NOT NULL DEFAULT '',
+    updated_at          TEXT NOT NULL DEFAULT ''
+);
+
+-- Legacy table kept for schema compatibility (no longer used by code)
 CREATE TABLE IF NOT EXISTS netapp_dr_sites (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
-    endpoint_id     TEXT NOT NULL REFERENCES netapp_endpoints(id) ON DELETE RESTRICT,
+    endpoint_id     TEXT NOT NULL DEFAULT '',
     pve_host_ids    TEXT NOT NULL DEFAULT '[]',
     description     TEXT NOT NULL DEFAULT '',
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    created_at      TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS netapp_dr_plans (
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL,
-    dr_site_id       TEXT NOT NULL REFERENCES netapp_dr_sites(id) ON DELETE RESTRICT,
+    dr_site_id       TEXT NOT NULL DEFAULT '',   -- legacy, no longer required
     state            TEXT NOT NULL DEFAULT 'standby',  -- standby | failover_running | failed_over | failback_running
     notes            TEXT NOT NULL DEFAULT '',
     last_failover_at TEXT NOT NULL DEFAULT '',
