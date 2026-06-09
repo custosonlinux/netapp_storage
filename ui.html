@@ -1293,33 +1293,37 @@ function applyI18n() {
         <div id="snap_timeline" style="padding:0 8px 10px;min-height:70px;box-sizing:border-box"></div>
       </div>
 
-      <div class="card table-scroll">
+      <div class="card" style="padding:0;overflow:hidden">
         <div id="snap_bulk_bar" style="display:none;padding:8px 8px 6px;border-bottom:1px solid var(--border);align-items:center;gap:10px;flex-wrap:wrap">
           <span id="snap_bulk_count" style="color:var(--muted);font-size:13px"></span>
           <button class="btn btn-danger btn-sm" onclick="deleteSelectedSnapshots()">Delete selection</button>
           <button class="btn btn-ghost btn-sm" onclick="snapClearSelection()">Clear selection</button>
         </div>
-        <table style="min-width:860px">
-          <thead><tr>
-            <th style="width:32px;padding:6px 8px"><input type="checkbox" id="snap_select_all" onchange="snapToggleAll(this)" title="Select/deselect all"></th>
-            <th class="sortable" onclick="snapSort('snap_name')"><span data-i18n="th_name">Name</span> <span class="si" id="ss_snap_name">⇅</span></th>
-            <th class="sortable" onclick="snapSort('pve_storage_id')"><span data-i18n="th_datastore">Datastore</span> <span class="si" id="ss_pve_storage_id">⇅</span></th>
-            <th data-i18n="th_vms">VMs</th>
-            <th class="sortable" onclick="snapSort('consistency')"><span data-i18n="th_consistency">Consistency</span> <span class="si" id="ss_consistency">⇅</span></th>
-            <th class="sortable" onclick="snapSort('label')"><span data-i18n="th_label">Label</span> <span class="si" id="ss_label">⇅</span></th>
-            <th class="sortable" onclick="snapSort('status')"><span data-i18n="th_status">Status</span> <span class="si" id="ss_status">⇅</span></th>
-            <th class="sortable" onclick="snapSort('source')"><span data-i18n="th_source">Source</span> <span class="si" id="ss_source">⇅</span></th>
-            <th class="sortable" onclick="snapSort('created_at')"><span data-i18n="th_created">Created</span> <span class="si" id="ss_created_at">↓</span></th>
-            <th data-i18n="th_actions">Actions</th>
-          </tr></thead>
-          <tbody id="snapshotsBody">
-            <tr><td colspan="10" class="empty"><span class="spinner"></span></td></tr>
-          </tbody>
-        </table>
-        <div id="snap_pagination" style="display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:8px 4px;font-size:13px">
+        <div id="snapTableScroller" style="overflow:auto;max-height:min(580px,calc(100vh - 380px))">
+          <table style="min-width:860px">
+            <thead style="position:sticky;top:0;z-index:2;background:var(--card)">
+              <tr>
+                <th style="width:32px;padding:6px 8px"><input type="checkbox" id="snap_select_all" onchange="snapToggleAll(this)" title="Select/deselect all"></th>
+                <th class="sortable" onclick="snapSort('snap_name')"><span data-i18n="th_name">Name</span> <span class="si" id="ss_snap_name">⇅</span></th>
+                <th class="sortable" onclick="snapSort('pve_storage_id')"><span data-i18n="th_datastore">Datastore</span> <span class="si" id="ss_pve_storage_id">⇅</span></th>
+                <th data-i18n="th_vms">VMs</th>
+                <th class="sortable" onclick="snapSort('consistency')"><span data-i18n="th_consistency">Consistency</span> <span class="si" id="ss_consistency">⇅</span></th>
+                <th class="sortable" onclick="snapSort('label')"><span data-i18n="th_label">Label</span> <span class="si" id="ss_label">⇅</span></th>
+                <th class="sortable" onclick="snapSort('status')"><span data-i18n="th_status">Status</span> <span class="si" id="ss_status">⇅</span></th>
+                <th class="sortable" onclick="snapSort('source')"><span data-i18n="th_source">Source</span> <span class="si" id="ss_source">⇅</span></th>
+                <th class="sortable" onclick="snapSort('created_at')"><span data-i18n="th_created">Created</span> <span class="si" id="ss_created_at">↓</span></th>
+                <th data-i18n="th_actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="snapshotsBody">
+              <tr><td colspan="10" class="empty"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="snap_pagination" style="display:flex;align-items:center;padding:6px 12px;font-size:13px;border-top:1px solid var(--border)">
           <span id="snap_page_info" style="color:var(--muted)"></span>
-          <button id="snap_prev" class="btn btn-ghost btn-sm" onclick="snapChangePage(-1)" data-i18n="pg_prev">← Back</button>
-          <button id="snap_next" class="btn btn-ghost btn-sm" onclick="snapChangePage(+1)" data-i18n="pg_next">Next →</button>
+          <button id="snap_prev" style="display:none"></button>
+          <button id="snap_next" style="display:none"></button>
         </div>
       </div>
     </div>
@@ -1844,7 +1848,11 @@ let _allSnapshots  = [];   // cached snapshot list (for pagination + restore)
 let _snapPage      = 0;
 const _snapPageSize = 25;
 var _snapSortCol = 'created_at';
-var _snapSortDir = -1; // -1 = descending, 1 = ascending
+var _snapSortDir = -1;
+var _vsAllFiltered    = [];
+var _vsRowH           = 46;
+var _vsScrollAttached = false;
+var _vsSelectedKeys   = new Set();
 let _selectedRestoreSnap = null;  // active snapshot in the restore form
 
 // ── Toast ──────────────────────────────────────────────────────────────────
@@ -2504,13 +2512,108 @@ async function loadSnapshots() {
   } catch(e) { toast(e.message,'error'); }
 }
 
-function filterSnapshots() { _snapPage = 0; renderSnapshots(); }
-function snapChangePage(d) { _snapPage += d; renderSnapshots(); }
+function filterSnapshots() { renderSnapshots(); }
 function snapSort(col) {
   if (_snapSortCol === col) { _snapSortDir = -_snapSortDir; }
   else { _snapSortCol = col; _snapSortDir = col === 'created_at' ? -1 : 1; }
-  _snapPage = 0;
   renderSnapshots();
+}
+
+function _snapRowHtml(s) {
+  var isNative = s.source === 'ontap_native';
+  var vmsHtml = isNative
+    ? '<span style="color:var(--muted)">–</span>'
+    : '<div class="vm-bubble-box">'+(s.vmids||[]).map(function(id){
+        return vmBadge(id, (s.vm_names||{})[String(id)]);
+      }).join('')+'</div>';
+  var actions = '';
+  if (s.status === 'done') {
+    actions += '<button class="btn btn-ghost btn-sm" onclick="prepareRestore(\''+s.id+'\')">'+t('act_restore')+'</button>';
+    if (!isNative) actions += '<button class="btn btn-ghost btn-sm" onclick="prepareClone(\''+s.id+'\')">'+t('act_clone')+'</button>';
+  }
+  var delCall = isNative
+    ? 'deleteSnapshotNative(\''+esc(s.ontap_snap_uuid)+'\',\''+esc(s.mapping_id)+'\',\''+esc(s.snap_name)+'\')'
+    : 'deleteSnapshot(\''+s.id+'\',\''+esc(s.snap_name)+'\')';
+  actions += '<button class="btn btn-danger btn-sm" onclick="'+delCall+'">'+t('act_delete')+'</button>';
+  var sourceBadge = isNative
+    ? '<span class="corp-badge corp-badge-stopped">'+t('badge_ontap')+'</span>'
+    : (s.schedule_id ? '<span class="corp-badge corp-badge-ha">'+t('badge_schedule')+'</span>' : '<span style="color:var(--muted)">–</span>');
+  var cbData = isNative
+    ? 'data-native="1" data-uuid="'+esc(s.ontap_snap_uuid||'')+'" data-mid="'+esc(s.mapping_id||'')+'" data-name="'+esc(s.snap_name||'')+'"'
+    : 'data-native="0" data-id="'+esc(s.id||'')+'"';
+  var snapKey = isNative
+    ? ('n_'+(s.ontap_snap_uuid||'')+'_'+(s.mapping_id||''))
+    : ('p_'+String(s.id||''));
+  var isSel = _vsSelectedKeys.has(snapKey);
+  return '<tr data-snap-key="'+snapKey+'"'+(isNative?' style="opacity:.85"':'')+'>'
+    +'<td style="padding:4px 8px"><input type="checkbox" class="snap-cb"'+(isSel?' checked':'')
+    +' onchange="snapCbChange(\''+snapKey+'\',this)" '+cbData+'></td>'
+    +'<td><code>'+esc(s.snap_name)+'</code></td>'
+    +'<td><strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
+    +(s.pve_storage_id&&s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:11px;opacity:.7">'+esc(s.volume_name)+'</code>':'')
+    +(s.svm_name||s.endpoint_name?'<br><span style="font-size:.75rem;color:var(--muted);font-family:monospace">'+esc(s.svm_name||'')+(s.svm_name&&s.endpoint_name?' · ':'')+esc(s.endpoint_name||'')+'</span>':'')
+    +'</td>'
+    +'<td style="max-width:200px;word-break:break-word">'+vmsHtml+'</td>'
+    +'<td>'+(isNative?'<span style="color:var(--muted)">–</span>':esc(s.consistency))+'</td>'
+    +'<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>'
+    +'<td>'+statusBadge(s.status)+'</td>'
+    +'<td>'+sourceBadge+'</td>'
+    +'<td style="color:var(--muted)">'+fmtDateRel(s.created_at)+'</td>'
+    +'<td><div class="row-actions">'+actions+'</div></td></tr>';
+}
+
+var _VS_THRESHOLD = 80;
+var _vsScrollTid;
+
+function _vsAttachScroll() {
+  if (_vsScrollAttached) return;
+  var sc = document.getElementById('snapTableScroller');
+  if (!sc) return;
+  sc.addEventListener('scroll', function() {
+    clearTimeout(_vsScrollTid);
+    _vsScrollTid = setTimeout(_vsRenderRows, 20);
+  });
+  _vsScrollAttached = true;
+}
+
+function _vsRenderRows() {
+  var sc     = document.getElementById('snapTableScroller');
+  var tbody  = document.getElementById('snapshotsBody');
+  if (!tbody) return;
+  var total  = _vsAllFiltered.length;
+  if (!total) return;
+  var BUFFER = 10;
+  var first, last;
+  if (total <= _VS_THRESHOLD || !sc) {
+    first = 0; last = total - 1;
+  } else {
+    var rowH = _vsRowH;
+    var scrollTop = sc.scrollTop;
+    var viewH     = sc.clientHeight || 500;
+    first = Math.max(0,         Math.floor(scrollTop / rowH) - BUFFER);
+    last  = Math.min(total - 1, Math.ceil((scrollTop + viewH) / rowH) + BUFFER);
+  }
+  var topPad    = first * _vsRowH;
+  var bottomPad = Math.max(0, (total - last - 1) * _vsRowH);
+  var html = '';
+  if (topPad    > 0) html += '<tr style="height:'+topPad+'px"><td colspan="10" style="padding:0;border:none"></td></tr>';
+  for (var i = first; i <= last; i++) html += _snapRowHtml(_vsAllFiltered[i]);
+  if (bottomPad > 0) html += '<tr style="height:'+bottomPad+'px"><td colspan="10" style="padding:0;border:none"></td></tr>';
+  tbody.innerHTML = html;
+  if (total > _VS_THRESHOLD) {
+    var sample = tbody.querySelector('tr[data-snap-key]');
+    if (sample && sample.offsetHeight > 10) _vsRowH = sample.offsetHeight;
+  }
+  _vsUpdateSelectAll();
+}
+
+function _vsUpdateSelectAll() {
+  var sa = document.getElementById('snap_select_all');
+  if (!sa) return;
+  var total = _vsAllFiltered.length;
+  var sel   = _vsSelectedKeys.size;
+  sa.checked = sel > 0 && sel >= total;
+  sa.indeterminate = sel > 0 && sel < total;
 }
 
 function renderSnapshots() {
@@ -2529,7 +2632,6 @@ function renderSnapshots() {
     return true;
   });
 
-  // Sorting
   filtered.sort(function(a, b) {
     if (_snapSortCol === 'created_at') {
       var ta = a.created_at ? Date.parse(a.created_at) : 0;
@@ -2541,7 +2643,6 @@ function renderSnapshots() {
     return va < vb ? -_snapSortDir : va > vb ? _snapSortDir : 0;
   });
 
-  // Update column header indicators
   ['snap_name','pve_storage_id','consistency','label','status','source','created_at'].forEach(function(c) {
     var span = document.getElementById('ss_'+c);
     var th   = span && span.parentElement;
@@ -2555,72 +2656,24 @@ function renderSnapshots() {
     }
   });
 
-  var total = filtered.length;
-  var pages = Math.max(1, Math.ceil(total / _snapPageSize));
-  _snapPage = Math.max(0, Math.min(_snapPage, pages - 1));
-  var start = _snapPage * _snapPageSize;
-  var page  = filtered.slice(start, start + _snapPageSize);
-
-  document.getElementById('snap_page_info').textContent =
-    tf('snap_count', total, total!==1?'s':'', _snapPage+1, pages);
-  document.getElementById('snap_prev').disabled = _snapPage === 0;
-  document.getElementById('snap_next').disabled = _snapPage >= pages - 1;
-
-  var sa = document.getElementById('snap_select_all');
-  if (sa) { sa.checked = false; sa.indeterminate = false; }
+  _vsAllFiltered = filtered;
+  _vsSelectedKeys.clear();
   document.getElementById('snap_bulk_bar').style.display = 'none';
 
+  var total = filtered.length;
+  var pi = document.getElementById('snap_page_info');
+  if (pi) pi.textContent = total + ' snapshot' + (total !== 1 ? 's' : '');
+
   var tbody = document.getElementById('snapshotsBody');
-  if (!page.length) {
+  if (!total) {
     tbody.innerHTML = _emptyRow(10, _svgCamera, 'No snapshots yet', 'Start protecting your VMs with on-demand or scheduled NetApp Snapshots.', '+ Create Snapshot', 'showCreateSnapshotForm()');
+    _vsUpdateSelectAll();
     renderTimeline(filtered);
     return;
   }
-  tbody.innerHTML = page.map(function(s) {
-    var isNative = s.source === 'ontap_native';
-    var vmsHtml = isNative
-      ? '<span style="color:var(--muted)">–</span>'
-      : '<div class="vm-bubble-box">' +
-        (s.vmids||[]).map(function(id) {
-          var n = (s.vm_names||{})[String(id)];
-          return vmBadge(id, n);
-        }).join('') + '</div>';
-    var actions = '';
-    if (s.status==='done') {
-      actions += '<button class="btn btn-ghost btn-sm" onclick="prepareRestore(\''+s.id+'\')">'+t('act_restore')+'</button>';
-      if (!isNative) {
-        actions += '<button class="btn btn-ghost btn-sm" onclick="prepareClone(\''+s.id+'\')">'+t('act_clone')+'</button>';
-      }
-    }
-    var delCall = isNative
-      ? 'deleteSnapshotNative(\''+esc(s.ontap_snap_uuid)+'\',\''+esc(s.mapping_id)+'\',\''+esc(s.snap_name)+'\')'
-      : 'deleteSnapshot(\''+s.id+'\',\''+esc(s.snap_name)+'\')';
-    actions += '<button class="btn btn-danger btn-sm" onclick="'+delCall+'">'+t('act_delete')+'</button>';
-    var sourceBadge = isNative
-      ? '<span class="corp-badge corp-badge-stopped">'+t('badge_ontap')+'</span>'
-      : (s.schedule_id ? '<span class="corp-badge corp-badge-ha">'+t('badge_schedule')+'</span>' : '<span style="color:var(--muted)">–</span>');
-    var cbData = isNative
-      ? 'data-native="1" data-uuid="'+esc(s.ontap_snap_uuid||'')+'" data-mid="'+esc(s.mapping_id||'')+'" data-name="'+esc(s.snap_name||'')+'"'
-      : 'data-native="0" data-id="'+esc(s.id||'')+'"';
-    var snapKey = isNative
-      ? ('n_'+(s.ontap_snap_uuid||'')+'_'+(s.mapping_id||''))
-      : ('p_'+String(s.id||''));
-    return '<tr data-snap-key="'+snapKey+'"'+(isNative?' style="opacity:.85"':'')+'>' +
-      '<td style="padding:4px 8px"><input type="checkbox" class="snap-cb" onchange="snapUpdateBulkBar()" '+cbData+'></td>' +
-      '<td><code>'+esc(s.snap_name)+'</code></td>' +
-      '<td>'
-      +'<strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
-      +(s.pve_storage_id&&s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:11px;opacity:.7">'+esc(s.volume_name)+'</code>':'')
-      +(s.svm_name||s.endpoint_name?'<br><span style="font-size:.75rem;color:var(--muted);font-family:monospace">'+esc(s.svm_name||'')+(s.svm_name&&s.endpoint_name?' · ':'')+esc(s.endpoint_name||'')+'</span>':'')
-      +'</td>' +
-      '<td style="max-width:200px;word-break:break-word">'+vmsHtml+'</td>' +
-      '<td>'+(isNative?'<span style="color:var(--muted)">–</span>':esc(s.consistency))+'</td>' +
-      '<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
-      '<td>'+statusBadge(s.status)+'</td>' +
-      '<td>'+sourceBadge+'</td>' +
-      '<td style="color:var(--muted)">'+fmtDateRel(s.created_at)+'</td>' +
-      '<td><div class="row-actions">'+actions+'</div></td></tr>';
-  }).join('');
+
+  _vsAttachScroll();
+  _vsRenderRows();
   renderTimeline(filtered);
 }
 
@@ -2646,48 +2699,67 @@ async function createSnapshot() {
   } catch(e) { toast(e.message,'error'); }
 }
 
+function snapCbChange(key, cb) {
+  if (cb.checked) _vsSelectedKeys.add(key);
+  else _vsSelectedKeys.delete(key);
+  snapUpdateBulkBar();
+  _vsUpdateSelectAll();
+}
+
 function snapToggleAll(cb) {
-  document.querySelectorAll('#snapshotsBody .snap-cb').forEach(function(el){ el.checked = cb.checked; });
+  if (cb.checked) {
+    _vsAllFiltered.forEach(function(s) {
+      var isNative = s.source === 'ontap_native';
+      var k = isNative
+        ? ('n_'+(s.ontap_snap_uuid||'')+'_'+(s.mapping_id||''))
+        : ('p_'+String(s.id||''));
+      _vsSelectedKeys.add(k);
+    });
+  } else {
+    _vsSelectedKeys.clear();
+  }
+  _vsRenderRows();
   snapUpdateBulkBar();
 }
 
 function snapUpdateBulkBar() {
-  var checked = document.querySelectorAll('#snapshotsBody .snap-cb:checked');
-  var all     = document.querySelectorAll('#snapshotsBody .snap-cb');
-  var bar     = document.getElementById('snap_bulk_bar');
-  bar.style.display = checked.length ? 'flex' : 'none';
-  document.getElementById('snap_bulk_count').textContent = checked.length + ' snapshot(s) selected';
-  var sa = document.getElementById('snap_select_all');
-  if (sa) {
-    sa.checked = all.length > 0 && checked.length === all.length;
-    sa.indeterminate = checked.length > 0 && checked.length < all.length;
-  }
+  var n   = _vsSelectedKeys.size;
+  var bar = document.getElementById('snap_bulk_bar');
+  if (bar) bar.style.display = n > 0 ? 'flex' : 'none';
+  var cnt = document.getElementById('snap_bulk_count');
+  if (cnt) cnt.textContent = n + ' snapshot' + (n !== 1 ? 's' : '') + ' selected';
 }
 
 function snapClearSelection() {
-  document.querySelectorAll('#snapshotsBody .snap-cb').forEach(function(el){ el.checked = false; });
-  var sa = document.getElementById('snap_select_all');
-  if (sa) { sa.checked = false; sa.indeterminate = false; }
+  _vsSelectedKeys.clear();
+  _vsRenderRows();
   snapUpdateBulkBar();
 }
 
 async function deleteSelectedSnapshots() {
-  var checked = Array.from(document.querySelectorAll('#snapshotsBody .snap-cb:checked'));
-  if (!checked.length) return;
-  if (!await uiConfirm('Delete ' + checked.length + ' snapshot(s)?')) return;
+  if (!_vsSelectedKeys.size) return;
+  var toDelete = _vsAllFiltered.filter(function(s) {
+    var isNative = s.source === 'ontap_native';
+    var k = isNative
+      ? ('n_'+(s.ontap_snap_uuid||'')+'_'+(s.mapping_id||''))
+      : ('p_'+String(s.id||''));
+    return _vsSelectedKeys.has(k);
+  });
+  if (!toDelete.length) return;
+  if (!await uiConfirm('Delete ' + toDelete.length + ' snapshot' + (toDelete.length !== 1 ? 's' : '') + '?')) return;
   var errors = 0;
-  for (var i = 0; i < checked.length; i++) {
-    var cb = checked[i];
+  for (var i = 0; i < toDelete.length; i++) {
+    var s = toDelete[i];
     try {
-      if (cb.dataset.native === '1') {
-        await apiPost('snapshots/delete', {native:true, ontap_snap_uuid:cb.dataset.uuid, mapping_id:cb.dataset.mid, snap_name:cb.dataset.name});
+      if (s.source === 'ontap_native') {
+        await apiPost('snapshots/delete', {native:true, ontap_snap_uuid:s.ontap_snap_uuid, mapping_id:s.mapping_id, snap_name:s.snap_name});
       } else {
-        await apiPost('snapshots/delete', {id:cb.dataset.id});
+        await apiPost('snapshots/delete', {id:s.id});
       }
     } catch(e) { errors++; }
   }
   if (errors) toast(errors + ' deletion(s) failed', 'error');
-  else toast(checked.length + ' snapshot(s) deleted', 'success');
+  else toast(toDelete.length + ' snapshot' + (toDelete.length !== 1 ? 's' : '') + ' deleted', 'success');
   loadSnapshots();
 }
 
@@ -3469,7 +3541,7 @@ function tlUnhover() {
 }
 
 function tlClick(key) {
-  var idx = _tlLastFiltered.findIndex(function(s) {
+  var idx = _vsAllFiltered.findIndex(function(s) {
     var isNative = s.source === 'ontap_native';
     var k = isNative
       ? ('n_' + (s.ontap_snap_uuid||'') + '_' + (s.mapping_id||''))
@@ -3477,16 +3549,21 @@ function tlClick(key) {
     return k === key;
   });
   if (idx < 0) return;
-  var targetPage = Math.floor(idx / _snapPageSize);
-  if (_snapPage !== targetPage) {
-    _snapPage = targetPage;
-    renderSnapshots();
+  var sc = document.getElementById('snapTableScroller');
+  if (sc && _vsAllFiltered.length > _VS_THRESHOLD) {
+    sc.scrollTop = Math.max(0, idx * _vsRowH - sc.clientHeight / 2);
+    setTimeout(function() {
+      _vsRenderRows();
+      var tr = document.querySelector('tr[data-snap-key="' + key + '"]');
+      if (tr) { tr.classList.add('tl-highlight'); setTimeout(function(){ tr.classList.remove('tl-highlight'); }, 2000); }
+    }, 40);
+  } else {
+    var tr = document.querySelector('tr[data-snap-key="' + key + '"]');
+    if (!tr) return;
+    tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    tr.classList.add('tl-highlight');
+    setTimeout(function(){ tr.classList.remove('tl-highlight'); }, 2000);
   }
-  var tr = document.querySelector('tr[data-snap-key="' + key + '"]');
-  if (!tr) return;
-  tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  tr.classList.add('tl-highlight');
-  setTimeout(function(){ tr.classList.remove('tl-highlight'); }, 2000);
 }
 
 async function loadVmsForSchedule(mappingId, preselect) {
