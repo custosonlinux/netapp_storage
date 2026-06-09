@@ -281,3 +281,21 @@ CREATE TABLE IF NOT EXISTS netapp_snapshot_schedules (
     created_by      TEXT NOT NULL,
     created_at      TEXT NOT NULL
 );
+
+-- ── Audit Log ───────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS netapp_audit_log (
+    id           TEXT PRIMARY KEY,
+    timestamp    TEXT NOT NULL,
+    user         TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    target_name  TEXT NOT NULL DEFAULT '',
+    volume_name  TEXT NOT NULL DEFAULT '',
+    vmids_json   TEXT NOT NULL DEFAULT '[]',
+    result       TEXT NOT NULL,
+    error_msg    TEXT NOT NULL DEFAULT '',
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_netapp_audit_ts   ON netapp_audit_log(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_netapp_audit_user ON netapp_audit_log(user);

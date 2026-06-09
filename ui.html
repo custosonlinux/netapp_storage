@@ -228,6 +228,7 @@
     text-transform: uppercase;
     letter-spacing: .03em;
   }
+  .tab-icon { display:inline-block;vertical-align:middle;margin-right:4px;position:relative;top:-1px }
   .badge-green  { background: rgba(63,185,80,.15);  color: #56d364; }
   .badge-orange { background: rgba(229,112,0,.15);  color: #f0a040; }
   .badge-red    { background: rgba(248,81,73,.15);  color: #f08080; }
@@ -260,6 +261,8 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes tlFlash { 0%,100%{background:transparent} 50%{background:rgba(224,120,0,.18)} }
+  .tl-highlight { animation: tlFlash .5s ease 3; }
 
   .log-box {
     background: var(--bg);
@@ -405,7 +408,7 @@ var _LANG = (function(){
 
 var _I18N = {
 de:{
-  tab_schedules:'Zeitpläne',tab_jobs:'Jobs & Logs',tab_settings:'Einstellungen',
+  tab_snapshots:'Snapshots',tab_schedules:'Zeitpläne',tab_jobs:'Jobs & Logs',tab_settings:'Einstellungen',
   btn_create_snapshot:'+ Snapshot erstellen',btn_refresh:'Aktualisieren',btn_start_snapshot:'Snapshot starten',
   btn_cancel:'Abbrechen',btn_save:'Speichern',btn_add_schedule:'+ Zeitplan anlegen',
   btn_start_restore:'VM-Restore starten',btn_start_clone:'Klonen starten',btn_suggest:'Vorschlagen',
@@ -457,11 +460,12 @@ de:{
   hint_discovery:'Durchsucht PVE-Hosts nach NFS-, iSCSI- und NVMe-Datastores und ordnet sie ONTAP-Volumes zu.',
   hint_ontap_native:'ONTAP-nativer Snapshot — VM-ID manuell eingeben. Manifest wird beim Restore aus dem Snapshot gelesen (jüngstes verfügbares Manifest).',
   hint_no_discovery:'Noch keine Erkennung durchgeführt.',hint_cron_prefix:'Zeitplan:',
-  badge_active:'Aktiv',badge_inactive:'Inaktiv',badge_done:'Fertig',badge_failed:'Fehlgeschlagen',
-  badge_running:'Läuft',badge_cancelling:'Wird abgebrochen',badge_cancelled:'Abgebrochen',badge_schedule:'Zeitplan',badge_ontap:'ONTAP-nativ',badge_running_dots:'läuft …',
+  badge_active:'Aktiv',badge_inactive:'Inaktiv',badge_done:'Abgeschlossen',badge_failed:'Fehlgeschlagen',
+  badge_running:'Läuft',badge_pending:'In Warteschlange',badge_cancelling:'Wird abgebrochen',badge_cancelled:'Abgebrochen',badge_schedule:'Zeitplan',badge_ontap:'ONTAP-nativ',badge_running_dots:'läuft …',
   act_restore:'Restore',act_clone:'Clone',act_delete:'Löschen',act_activate:'Aktivieren',
   act_deactivate:'Deaktivieren',act_run_now:'Jetzt',act_edit:'Bearbeiten',
-  pg_prev:'← Zurück',pg_next:'Weiter →',
+  pg_prev:'← Zurück',pg_next:'Weiter →',sched_save:'Zeitplan speichern',sched_update:'Zeitplan aktualisieren',
+  sched_step1:'Grundlagen',sched_step2:'Zeitplan',sched_step3:'VMs & Skripte',sched_step4:'SnapMirror',sched_step5:'Benachrichtigungen',sched_step6:'Zusammenfassung',
   empty_snapshots:'Keine Snapshots vorhanden.',empty_schedules:'Keine Zeitpläne konfiguriert.',
   empty_jobs:'Keine Jobs vorhanden.',empty_endpoints:'Keine Endpoints – oben hinzufügen.',
   empty_pve:'Keine PVE-Hosts – oben hinzufügen.',empty_mappings:'Noch keine Erkennung – „Jetzt erkennen" klicken.',
@@ -520,7 +524,7 @@ de:{
   provision_title:'Storage Provisioning',provision_desc:'Volumes (NFS, iSCSI, NVMe-oF) anlegen und automatisch an Proxmox anbinden – inkl. Vergrößern/Verkleinern. Demnächst verfügbar.',
 },
 en:{
-  tab_schedules:'Schedules',tab_jobs:'Jobs & Logs',tab_settings:'Settings',
+  tab_snapshots:'Snapshots',tab_schedules:'Schedules',tab_jobs:'Jobs & Logs',tab_settings:'Settings',
   btn_create_snapshot:'+ Create Snapshot',btn_refresh:'Refresh',btn_start_snapshot:'Start Snapshot',
   btn_cancel:'Cancel',btn_save:'Save',btn_add_schedule:'+ Add Schedule',
   btn_start_restore:'Start VM Restore',btn_start_clone:'Start Clone',btn_suggest:'Suggest',
@@ -571,11 +575,12 @@ en:{
   hint_discovery:'Scans PVE hosts for NFS, iSCSI, and NVMe datastores and matches them to ONTAP volumes automatically.',
   hint_ontap_native:'ONTAP-native snapshot — enter VM ID manually. Manifest is read from the snapshot during restore (latest available manifest).',
   hint_no_discovery:'No discovery run yet.',hint_cron_prefix:'Schedule:',
-  badge_active:'Active',badge_inactive:'Inactive',badge_done:'Done',badge_failed:'Failed',
-  badge_running:'Running',badge_cancelling:'Cancelling',badge_cancelled:'Cancelled',badge_schedule:'Schedule',badge_ontap:'ONTAP-native',badge_running_dots:'running …',
+  badge_active:'Active',badge_inactive:'Inactive',badge_done:'Completed',badge_failed:'Failed',
+  badge_running:'Running',badge_pending:'Queued',badge_cancelling:'Cancelling',badge_cancelled:'Cancelled',badge_schedule:'Schedule',badge_ontap:'ONTAP-native',badge_running_dots:'running …',
   act_restore:'Restore',act_clone:'Clone',act_delete:'Delete',act_activate:'Activate',
   act_deactivate:'Deactivate',act_run_now:'Run now',act_edit:'Edit',
-  pg_prev:'← Back',pg_next:'Next →',
+  pg_prev:'← Back',pg_next:'Next →',sched_save:'Save Schedule',sched_update:'Update Schedule',
+  sched_step1:'Basics',sched_step2:'Schedule',sched_step3:'VMs & Scripts',sched_step4:'SnapMirror',sched_step5:'Notifications',sched_step6:'Summary',
   empty_snapshots:'No snapshots available.',empty_schedules:'No schedules configured.',
   empty_jobs:'No jobs available.',empty_endpoints:'No endpoints – add one above.',
   empty_pve:'No PVE hosts – add one above.',empty_mappings:'No discovery run yet – click "Detect Now".',
@@ -634,7 +639,7 @@ en:{
   provision_title:'Storage Provisioning',provision_desc:'Create and manage NetApp volumes (NFS, iSCSI, NVMe-oF) and attach them to Proxmox automatically — including resize. Coming soon.',
 },
 fr:{
-  tab_schedules:'Planifications',tab_jobs:'Jobs & Logs',tab_settings:'Paramètres',
+  tab_snapshots:'Snapshots',tab_schedules:'Planifications',tab_jobs:'Jobs & Logs',tab_settings:'Paramètres',
   btn_create_snapshot:'+ Créer Snapshot',btn_refresh:'Actualiser',btn_start_snapshot:'Démarrer Snapshot',
   btn_cancel:'Annuler',btn_save:'Enregistrer',btn_add_schedule:'+ Ajouter planification',
   btn_start_restore:'Démarrer VM Restore',btn_start_clone:'Démarrer Clone',btn_suggest:'Suggérer',
@@ -686,10 +691,11 @@ fr:{
   hint_ontap_native:'Snapshot natif ONTAP — entrer l\'ID VM manuellement. Le manifeste est lu depuis le snapshot lors de la restauration.',
   hint_no_discovery:'Aucune détection effectuée.',hint_cron_prefix:'Planification :',
   badge_active:'Actif',badge_inactive:'Inactif',badge_done:'Terminé',badge_failed:'Échoué',
-  badge_running:'En cours',badge_cancelling:'Annulation en cours',badge_cancelled:'Annulé',badge_schedule:'Planification',badge_ontap:'ONTAP-natif',badge_running_dots:'en cours …',
+  badge_running:'En cours',badge_pending:'En attente',badge_cancelling:'Annulation en cours',badge_cancelled:'Annulé',badge_schedule:'Planification',badge_ontap:'ONTAP-natif',badge_running_dots:'en cours …',
   act_restore:'Restore',act_clone:'Clone',act_delete:'Supprimer',act_activate:'Activer',
   act_deactivate:'Désactiver',act_run_now:'Exécuter',act_edit:'Modifier',
-  pg_prev:'← Précédent',pg_next:'Suivant →',
+  pg_prev:'← Précédent',pg_next:'Suivant →',sched_save:'Enregistrer la planification',sched_update:'Mettre à jour la planification',
+  sched_step1:'Paramètres',sched_step2:'Planification',sched_step3:'VMs & Scripts',sched_step4:'SnapMirror',sched_step5:'Notifications',sched_step6:'Résumé',
   empty_snapshots:'Aucun snapshot disponible.',empty_schedules:'Aucune planification configurée.',
   empty_jobs:'Aucun job disponible.',empty_endpoints:'Aucun endpoint – ajouter ci-dessus.',
   empty_pve:'Aucun hôte PVE – ajouter ci-dessus.',empty_mappings:'Aucune détection – cliquer "Détecter maintenant".',
@@ -748,7 +754,7 @@ fr:{
   provision_title:'Provisionnement du stockage',provision_desc:'Créer et gérer des volumes NetApp (NFS, iSCSI, NVMe-oF) et les attacher automatiquement à Proxmox. Bientôt disponible.',
 },
 es:{
-  tab_schedules:'Programas',tab_jobs:'Jobs & Logs',tab_settings:'Configuración',
+  tab_snapshots:'Snapshots',tab_schedules:'Programas',tab_jobs:'Jobs & Logs',tab_settings:'Configuración',
   btn_create_snapshot:'+ Crear Snapshot',btn_refresh:'Actualizar',btn_start_snapshot:'Iniciar Snapshot',
   btn_cancel:'Cancelar',btn_save:'Guardar',btn_add_schedule:'+ Agregar programa',
   btn_start_restore:'Iniciar VM Restore',btn_start_clone:'Iniciar Clone',btn_suggest:'Sugerir',
@@ -800,10 +806,11 @@ es:{
   hint_ontap_native:'Snapshot nativo ONTAP — ingresar ID VM manualmente. El manifiesto se lee del snapshot al restaurar.',
   hint_no_discovery:'Aún no se ha ejecutado ninguna detección.',hint_cron_prefix:'Programa:',
   badge_active:'Activo',badge_inactive:'Inactivo',badge_done:'Completado',badge_failed:'Fallido',
-  badge_running:'Ejecutando',badge_cancelling:'Cancelando',badge_cancelled:'Cancelado',badge_schedule:'Programa',badge_ontap:'ONTAP-nativo',badge_running_dots:'ejecutando …',
+  badge_running:'Ejecutando',badge_pending:'En cola',badge_cancelling:'Cancelando',badge_cancelled:'Cancelado',badge_schedule:'Programa',badge_ontap:'ONTAP-nativo',badge_running_dots:'ejecutando …',
   act_restore:'Restore',act_clone:'Clonar',act_delete:'Eliminar',act_activate:'Activar',
   act_deactivate:'Desactivar',act_run_now:'Ejecutar',act_edit:'Editar',
-  pg_prev:'← Anterior',pg_next:'Siguiente →',
+  pg_prev:'← Anterior',pg_next:'Siguiente →',sched_save:'Guardar programa',sched_update:'Actualizar programa',
+  sched_step1:'Básico',sched_step2:'Programación',sched_step3:'VMs y Scripts',sched_step4:'SnapMirror',sched_step5:'Notificaciones',sched_step6:'Resumen',
   empty_snapshots:'No hay snapshots disponibles.',empty_schedules:'No hay programas configurados.',
   empty_jobs:'No hay jobs disponibles.',empty_endpoints:'Sin endpoints – agregar arriba.',
   empty_pve:'Sin hosts PVE – agregar arriba.',empty_mappings:'Sin detección – hacer clic en "Detectar ahora".',
@@ -862,7 +869,7 @@ es:{
   provision_title:'Aprovisionamiento de almacenamiento',provision_desc:'Crear y gestionar volúmenes NetApp (NFS, iSCSI, NVMe-oF) y conectarlos a Proxmox automáticamente. Próximamente.',
 },
 pt:{
-  tab_schedules:'Agendamentos',tab_jobs:'Jobs & Logs',tab_settings:'Configurações',
+  tab_snapshots:'Snapshots',tab_schedules:'Agendamentos',tab_jobs:'Jobs & Logs',tab_settings:'Configurações',
   btn_create_snapshot:'+ Criar Snapshot',btn_refresh:'Atualizar',btn_start_snapshot:'Iniciar Snapshot',
   btn_cancel:'Cancelar',btn_save:'Salvar',btn_add_schedule:'+ Adicionar agendamento',
   btn_start_restore:'Iniciar VM Restore',btn_start_clone:'Iniciar Clone',btn_suggest:'Sugerir',
@@ -914,10 +921,11 @@ pt:{
   hint_ontap_native:'Snapshot nativo ONTAP — inserir ID VM manualmente. O manifesto é lido do snapshot durante a restauração.',
   hint_no_discovery:'Nenhuma detecção executada ainda.',hint_cron_prefix:'Agendamento:',
   badge_active:'Ativo',badge_inactive:'Inativo',badge_done:'Concluído',badge_failed:'Falhou',
-  badge_running:'Executando',badge_cancelling:'Cancelando',badge_cancelled:'Cancelado',badge_schedule:'Agendamento',badge_ontap:'ONTAP-nativo',badge_running_dots:'executando …',
+  badge_running:'Executando',badge_pending:'Na fila',badge_cancelling:'Cancelando',badge_cancelled:'Cancelado',badge_schedule:'Agendamento',badge_ontap:'ONTAP-nativo',badge_running_dots:'executando …',
   act_restore:'Restore',act_clone:'Clonar',act_delete:'Excluir',act_activate:'Ativar',
   act_deactivate:'Desativar',act_run_now:'Executar',act_edit:'Editar',
-  pg_prev:'← Anterior',pg_next:'Próximo →',
+  pg_prev:'← Anterior',pg_next:'Próximo →',sched_save:'Salvar agendamento',sched_update:'Atualizar agendamento',
+  sched_step1:'Básico',sched_step2:'Agendamento',sched_step3:'VMs e Scripts',sched_step4:'SnapMirror',sched_step5:'Notificações',sched_step6:'Resumo',
   empty_snapshots:'Nenhum snapshot disponível.',empty_schedules:'Nenhum agendamento configurado.',
   empty_jobs:'Nenhum job disponível.',empty_endpoints:'Sem endpoints – adicionar acima.',
   empty_pve:'Sem hosts PVE – adicionar acima.',empty_mappings:'Sem detecção – clicar em "Detectar agora".',
@@ -976,7 +984,7 @@ pt:{
   provision_title:'Provisionamento de armazenamento',provision_desc:'Criar e gerenciar volumes NetApp (NFS, iSCSI, NVMe-oF) e conectá-los ao Proxmox automaticamente. Em breve.',
 },
 ko:{
-  tab_schedules:'일정',tab_jobs:'Jobs & Logs',tab_settings:'설정',
+  tab_snapshots:'스냅샷',tab_schedules:'일정',tab_jobs:'Jobs & Logs',tab_settings:'설정',
   btn_create_snapshot:'+ Snapshot 생성',btn_refresh:'새로고침',btn_start_snapshot:'Snapshot 시작',
   btn_cancel:'취소',btn_save:'저장',btn_add_schedule:'+ 일정 추가',
   btn_start_restore:'VM Restore 시작',btn_start_clone:'Clone 시작',btn_suggest:'제안',
@@ -1028,10 +1036,11 @@ ko:{
   hint_ontap_native:'ONTAP 네이티브 Snapshot — VM ID를 수동 입력하세요. 복원 시 Snapshot에서 매니페스트를 읽습니다.',
   hint_no_discovery:'아직 검색이 실행되지 않았습니다.',hint_cron_prefix:'일정:',
   badge_active:'활성',badge_inactive:'비활성',badge_done:'완료',badge_failed:'실패',
-  badge_running:'실행 중',badge_cancelling:'취소 중',badge_cancelled:'취소됨',badge_schedule:'일정',badge_ontap:'ONTAP 네이티브',badge_running_dots:'실행 중 …',
+  badge_running:'실행 중',badge_pending:'대기 중',badge_cancelling:'취소 중',badge_cancelled:'취소됨',badge_schedule:'일정',badge_ontap:'ONTAP 네이티브',badge_running_dots:'실행 중 …',
   act_restore:'Restore',act_clone:'Clone',act_delete:'삭제',act_activate:'활성화',
   act_deactivate:'비활성화',act_run_now:'실행',act_edit:'편집',
-  pg_prev:'← 이전',pg_next:'다음 →',
+  pg_prev:'← 이전',pg_next:'다음 →',sched_save:'일정 저장',sched_update:'일정 업데이트',
+  sched_step1:'기본',sched_step2:'스케줄',sched_step3:'VM & 스크립트',sched_step4:'SnapMirror',sched_step5:'알림',sched_step6:'요약',
   empty_snapshots:'Snapshot이 없습니다.',empty_schedules:'구성된 일정이 없습니다.',
   empty_jobs:'Jobs가 없습니다.',empty_endpoints:'Endpoint 없음 – 위에서 추가하세요.',
   empty_pve:'PVE 호스트 없음 – 위에서 추가하세요.',empty_mappings:'검색 미실행 – "지금 검색" 클릭.',
@@ -1090,7 +1099,7 @@ ko:{
   provision_title:'스토리지 프로비저닝',provision_desc:'NetApp 볼륨(NFS, iSCSI, NVMe-oF)을 생성하고 Proxmox에 자동으로 연결합니다. 출시 예정.',
 },
 it:{
-  tab_schedules:'Pianificazioni',tab_jobs:'Jobs & Logs',tab_settings:'Impostazioni',
+  tab_snapshots:'Snapshot',tab_schedules:'Pianificazioni',tab_jobs:'Jobs & Logs',tab_settings:'Impostazioni',
   btn_create_snapshot:'+ Crea Snapshot',btn_refresh:'Aggiorna',btn_start_snapshot:'Avvia Snapshot',
   btn_cancel:'Annulla',btn_save:'Salva',btn_add_schedule:'+ Aggiungi pianificazione',
   btn_start_restore:'Avvia VM Restore',btn_start_clone:'Avvia Clone',btn_suggest:'Suggerisci',
@@ -1142,10 +1151,11 @@ it:{
   hint_ontap_native:"Snapshot nativo ONTAP — inserire ID VM manualmente. Il manifesto viene letto dallo snapshot durante il ripristino.",
   hint_no_discovery:'Nessun rilevamento eseguito.',hint_cron_prefix:'Pianificazione:',
   badge_active:'Attivo',badge_inactive:'Inattivo',badge_done:'Completato',badge_failed:'Fallito',
-  badge_running:'In esecuzione',badge_cancelling:'Annullamento in corso',badge_cancelled:'Annullato',badge_schedule:'Pianificazione',badge_ontap:'ONTAP-nativo',badge_running_dots:'in esecuzione …',
+  badge_running:'In esecuzione',badge_pending:'In coda',badge_cancelling:'Annullamento in corso',badge_cancelled:'Annullato',badge_schedule:'Pianificazione',badge_ontap:'ONTAP-nativo',badge_running_dots:'in esecuzione …',
   act_restore:'Restore',act_clone:'Clona',act_delete:'Elimina',act_activate:'Attiva',
   act_deactivate:'Disattiva',act_run_now:'Esegui',act_edit:'Modifica',
-  pg_prev:'← Indietro',pg_next:'Avanti →',
+  pg_prev:'← Indietro',pg_next:'Avanti →',sched_save:'Salva pianificazione',sched_update:'Aggiorna pianificazione',
+  sched_step1:'Fondamentali',sched_step2:'Pianificazione',sched_step3:'VM e Script',sched_step4:'SnapMirror',sched_step5:'Notifiche',sched_step6:'Riepilogo',
   empty_snapshots:'Nessuno snapshot disponibile.',empty_schedules:'Nessuna pianificazione configurata.',
   empty_jobs:'Nessun job disponibile.',empty_endpoints:'Nessun endpoint – aggiungere sopra.',
   empty_pve:'Nessun host PVE – aggiungere sopra.',empty_mappings:'Nessun rilevamento – cliccare "Rileva ora".',
@@ -1235,14 +1245,14 @@ function applyI18n() {
 
   <!-- Sub-tabs -->
   <div class="subtabs">
-    <div class="subtab active" data-tab="snapshots">📸 Snapshots</div>
-    <div class="subtab" data-tab="schedules"><span aria-hidden="true">🗓️</span> <span data-i18n="tab_schedules">Schedules</span></div>
-    <div class="subtab" data-tab="restore"><span aria-hidden="true">🔙</span> <span data-i18n="tab_restore">Restore</span></div>
-    <div class="subtab" data-tab="clone"><span aria-hidden="true">📋</span> <span data-i18n="tab_clone">Clone</span></div>
-    <div class="subtab" data-tab="storage"><span aria-hidden="true">🗄️</span> <span data-i18n="tab_storage">Storage</span></div>
-    <div class="subtab" data-tab="jobs"><span aria-hidden="true">📜</span> <span data-i18n="tab_jobs">Jobs &amp; Logs</span></div>
-    <div class="subtab" data-tab="dr"><span aria-hidden="true">🛡️</span> <span>Disaster Recovery</span></div>
-    <div class="subtab" data-tab="settings"><span aria-hidden="true">⚙️</span> <span data-i18n="tab_settings">Settings</span></div>
+    <div class="subtab active" data-tab="snapshots"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span data-i18n="tab_snapshots">Snapshots</span></div>
+    <div class="subtab" data-tab="schedules"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span data-i18n="tab_schedules">Schedules</span></div>
+    <div class="subtab" data-tab="restore"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg><span data-i18n="tab_restore">Restore</span></div>
+    <div class="subtab" data-tab="clone"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg><span data-i18n="tab_clone">Clone</span></div>
+    <div class="subtab" data-tab="storage"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><span data-i18n="tab_storage">Storage</span></div>
+    <div class="subtab" data-tab="jobs"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg><span data-i18n="tab_jobs">Jobs &amp; Logs</span></div>
+    <div class="subtab" data-tab="dr"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg><span>Disaster Recovery</span></div>
+    <div class="subtab" data-tab="settings"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span data-i18n="tab_settings">Settings</span></div>
   </div>
 
   <!-- Scrollable content -->
@@ -1268,6 +1278,19 @@ function applyI18n() {
             <option value="" data-i18n="opt_all_datastores">All Datastores</option>
           </select>
         </div>
+      </div>
+
+      <div class="card" style="padding:0;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 6px">
+          <span style="font-weight:600;font-size:13px;color:var(--text)">Timeline</span>
+          <div style="display:flex;gap:4px" id="tl_zoom_btns">
+            <button class="btn btn-ghost btn-sm" onclick="tlSetZoom('day')" data-zoom="day">Day</button>
+            <button class="btn btn-ghost btn-sm" onclick="tlSetZoom('week')" data-zoom="week">Week</button>
+            <button class="btn btn-primary btn-sm" onclick="tlSetZoom('month')" data-zoom="month">Month</button>
+            <button class="btn btn-ghost btn-sm" onclick="tlSetZoom('year')" data-zoom="year">Year</button>
+          </div>
+        </div>
+        <div id="snap_timeline" style="padding:0 8px 10px;min-height:70px;box-sizing:border-box"></div>
       </div>
 
       <div class="card table-scroll">
@@ -1324,7 +1347,7 @@ function applyI18n() {
     <!-- ═══════════════════════ VM-RESTORE ══════════════════════ -->
     <div id="tab-restore" class="tab-panel" style="display:none">
       <div class="card">
-        <div class="card-title"><span aria-hidden="true">🔄</span> <span data-i18n="ct_start_restore">Single VM Restore</span></div>
+        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg><span data-i18n="ct_start_restore">Single VM Restore</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label>Datastore</label>
@@ -1364,7 +1387,7 @@ function applyI18n() {
 
       <!-- DR Restore from SnapMirror® secondary -->
       <div class="card" style="margin-top:16px">
-        <div class="card-title"><span aria-hidden="true">🌐</span> <span data-i18n="sm_dr_title">Restore from SnapMirror® Secondary System</span></div>
+        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg><span data-i18n="sm_dr_title">Restore from SnapMirror® Secondary System</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">SnapMirror® Relationship</label>
@@ -1394,7 +1417,7 @@ function applyI18n() {
 
       <!-- ── Import VMs from Datastore ────────────────────────────────── -->
       <div class="sub-header" style="margin-top:28px">
-        <span class="sub-header-title">📥 Import VMs from Datastore</span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Import VMs from Datastore</span>
         <button class="btn btn-primary btn-sm" onclick="showVmImportModal()">+ Import VMs</button>
       </div>
 
@@ -1403,7 +1426,7 @@ function applyI18n() {
     <!-- ════════════════════════ VM-CLONE ════════════════════════ -->
     <div id="tab-clone" class="tab-panel" style="display:none">
       <div class="card">
-        <div class="card-title"><span aria-hidden="true">📋</span> <span data-i18n="ct_clone_vm">Clone VM</span></div>
+        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg><span data-i18n="ct_clone_vm">Clone VM</span></div>
         <div class="form-grid" style="margin-bottom:10px">
           <div class="form-group">
             <label>Datastore</label>
@@ -1458,7 +1481,7 @@ function applyI18n() {
 
       <!-- DR-Clone vom Sekundärsystem -->
       <div class="card" style="margin-top:16px">
-        <div class="card-title"><span aria-hidden="true">🌐</span> <span data-i18n="ct_dr_clone">DR Clone from Secondary System</span></div>
+        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg><span data-i18n="ct_dr_clone">DR Clone from Secondary System</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">Select relationship</label>
@@ -1507,7 +1530,7 @@ function applyI18n() {
         <button class="btn btn-secondary" onclick="showBindWizard()">⇢ Mount existing</button>
         <button class="btn btn-ghost" onclick="runDiscovery()">
           <span id="discoverSpinner" style="display:none" class="spinner"></span>
-          🔍 Detect
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Detect
         </button>
         <button class="btn btn-ghost" onclick="scanSnapMirror()">↻ Scan SnapMirror</button>
         <button class="btn btn-ghost" onclick="loadStorageUnified()">⟳ Refresh</button>
@@ -1515,8 +1538,8 @@ function applyI18n() {
 
       <!-- ── All Datastores table ──────────────────────────────── -->
       <div class="card table-scroll">
-        <div class="card-title">🗄️ All Datastores</div>
-        <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click &ldquo;🔍 Detect&rdquo; to discover existing datastores, or &ldquo;+ Provision New&rdquo; to create one.</div>
+        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>All Datastores</div>
+        <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click "Detect" to discover existing datastores, or "+ Provision New" to create one.</div>
         <table style="min-width:1040px">
           <thead><tr>
             <th>Datastore / SVM / System</th><th>Protocol</th><th>Volume</th><th>VG / Mount</th>
@@ -1533,7 +1556,7 @@ function applyI18n() {
     <div id="tab-jobs" class="tab-panel" style="display:none">
       <div class="card table-scroll">
         <div class="card-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span data-i18n="ct_jobs_history">📜 Jobs &amp; History</span>
+          <svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg><span data-i18n="ct_jobs_history">Jobs &amp; History</span>
           <button class="btn btn-ghost btn-sm" onclick="loadAllJobs()" data-i18n="btn_refresh">Refresh</button>
           <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="cleanupJobs()" data-i18n="btn_cleanup_jobs">Clean up completed</button>
         </div>
@@ -1552,6 +1575,12 @@ function applyI18n() {
           <button id="jobs_next" class="btn btn-ghost btn-sm" onclick="jobChangePage(+1)" data-i18n="pg_next">Next →</button>
         </div>
       </div>
+
+      <!-- Audit Log — disabled for now
+      <div class="card table-scroll" style="margin-top:20px">
+        ...
+      </div>
+      -->
     </div>
 
     <!-- ════════════════════════ DISASTER RECOVERY ════════════════════════ -->
@@ -1573,13 +1602,13 @@ function applyI18n() {
 
       <!-- Peer Status Section -->
       <div class="sub-header">
-        <span class="sub-header-title">🔗 DR Peer</span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>DR Peer</span>
         <button class="btn btn-primary btn-sm" onclick="drShowPeerConfigModal()">⚙ Configure Peer</button>
       </div>
       <div id="drPeerStatusSection" style="margin-bottom:1.5rem"><div class="muted-hint">Loading…</div></div>
 
       <div class="sub-header" style="margin-top:1.5rem">
-        <span class="sub-header-title">📋 DR Plans</span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>DR Plans</span>
         <button class="btn btn-primary btn-sm" onclick="drShowAddPlanModal()">+ Create DR Plan</button>
       </div>
       <div id="drPlansList" class="card-list"><div class="muted-hint">Loading…</div></div>
@@ -1594,13 +1623,13 @@ function applyI18n() {
         </div>
         <div id="drPlanStatusBar" class="alert alert-info" style="margin-bottom:1rem;font-size:.85rem"></div>
         <div class="nav-tabs" style="margin-bottom:1rem">
-          <div class="subtab active" data-dr-tab="entries" onclick="drShowSubTab('entries',this)">📦 Protected Datastores</div>
-          <div class="subtab" data-dr-tab="groups" onclick="drShowSubTab('groups',this)">🖥️ VM Start Groups</div>
+          <div class="subtab active" data-dr-tab="entries" onclick="drShowSubTab('entries',this)"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>Protected Datastores</div>
+          <div class="subtab" data-dr-tab="groups" onclick="drShowSubTab('groups',this)"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>VM Start Groups</div>
         </div>
         <div id="drSubTab-entries">
           <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
             <button class="btn btn-sm btn-ghost" onclick="drShowAddEntryModal()">+ Add Datastore</button>
-            <button class="btn btn-sm btn-ghost" onclick="drAutoDetect()">🔍 Auto-detect</button>
+            <button class="btn btn-sm btn-ghost" onclick="drAutoDetect()"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Auto-detect</button>
           </div>
           <div id="drEntriesList"></div>
         </div>
@@ -1619,12 +1648,12 @@ function applyI18n() {
 
       <!-- ═══════════════════════ DEPLOY WIZARD ═══════════════════════ -->
       <div class="sub-header">
-        <span class="sub-header-title">🚀 Deploy Wizard</span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>Deploy Wizard</span>
         <button class="btn btn-primary btn-sm" onclick="setupWizardOpen()">+ Initial Setup</button>
       </div>
 
       <div class="sub-header">
-        <span class="sub-header-title"><span aria-hidden="true">🔷</span> <span data-i18n="sect_netapp">NetApp Systems</span></span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg><span data-i18n="sect_netapp">NetApp Systems</span></span>
         <button class="btn btn-primary btn-sm" onclick="showAddEndpointForm()" data-i18n="btn_add_netapp">+ Add NetApp System</button>
       </div>
 
@@ -1640,7 +1669,7 @@ function applyI18n() {
       </div>
 
       <div class="sub-header">
-        <span class="sub-header-title"><span aria-hidden="true">🖥️</span> <span data-i18n="sect_pve">Proxmox VE Hosts</span></span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><span data-i18n="sect_pve">Proxmox VE Hosts</span></span>
         <button class="btn btn-primary btn-sm" onclick="showAddPveHostForm()" data-i18n="btn_add_pve">+ Add PVE Host</button>
       </div>
 
@@ -1657,7 +1686,7 @@ function applyI18n() {
 
       <!-- ═══════════════ EMAIL / SMTP ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title"><span aria-hidden="true">✉️</span> <span data-i18n="sect_smtp">Email Notifications (SMTP)</span></span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><span data-i18n="sect_smtp">Email Notifications (SMTP)</span></span>
       </div>
       <div class="card">
         <div class="form-grid">
@@ -1699,7 +1728,7 @@ function applyI18n() {
 
       <!-- ═══════════════ DATA BACKUP / RESTORE ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title">💾 Data Backup / Restore</span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>Data Backup / Restore</span>
       </div>
       <div class="card">
         <p class="hint" style="margin-bottom:12px">
@@ -1719,7 +1748,7 @@ function applyI18n() {
 
       <!-- ═══════════════ PLUGIN UPDATE ═══════════════ -->
       <div class="sub-header" style="margin-top:16px">
-        <span class="sub-header-title">⬆️ Plugin Update</span>
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Plugin Update</span>
       </div>
       <div class="card">
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px">
@@ -1741,7 +1770,7 @@ function applyI18n() {
           <div>
             <button class="btn btn-ghost" onclick="pluginCheckUpdate()" id="pluginCheckBtn">
               <span id="pluginCheckSpinner" class="spinner" style="display:none;margin-right:4px"></span>
-              🔍 Check for Update
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Check for Update
             </button>
           </div>
         </div>
@@ -1766,7 +1795,7 @@ function applyI18n() {
                   <a id="pluginRelUrl" href="#" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-bottom:6px;display:block;text-align:center">View on GitHub ↗</a>
                   <button id="pluginApplyRelBtn" class="btn btn-primary btn-sm" onclick="pluginApplyUpdate('main')" style="display:none;width:100%">
                     <span id="pluginApplyRelSpinner" class="spinner" style="display:none;margin-right:4px"></span>
-                    ⬆️ Update to Release
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Update to Release
                   </button>
                 </div>
               </div>
@@ -1786,7 +1815,7 @@ function applyI18n() {
                 <div style="flex-shrink:0">
                   <button id="pluginApplyDevBtn" class="btn btn-secondary btn-sm" onclick="pluginApplyUpdate('dev')" style="display:none">
                     <span id="pluginApplyDevSpinner" class="spinner" style="display:none;margin-right:4px"></span>
-                    ⬆️ Update to Dev Build
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Update to Dev Build
                   </button>
                 </div>
               </div>
@@ -2232,12 +2261,12 @@ async function loadMappings() {
       return '<tr>' +
         '<td>'+hostsHtml+'</td>' +
         '<td><strong>'+esc(m.pve_storage_id)+'</strong></td>' +
-        '<td>'+esc(m.svm_name)+'</td>' +
-        '<td>'+esc(m.volume_name)+'</td>' +
+        '<td><code style="font-size:11px">'+esc(m.svm_name)+'</code></td>' +
+        '<td><code style="font-size:11px">'+esc(m.volume_name)+'</code></td>' +
         '<td>'+col5+'</td>' +
         '<td>'+col6+'</td>' +
-        '<td>'+esc(m.endpoint_name||'')+'</td>' +
-        '<td style="color:var(--muted)">'+fmtDate(m.discovered_at)+'</td>' +
+        '<td><code style="font-size:11px">'+esc(m.endpoint_name||'')+'</code></td>' +
+        '<td style="color:var(--muted)">'+fmtDateRel(m.discovered_at)+'</td>' +
         '<td>'+delBtn+importBtn+'</td></tr>';
     }).join('');
   } catch(e) { toast(e.message,'error'); }
@@ -2529,7 +2558,8 @@ function renderSnapshots() {
 
   var tbody = document.getElementById('snapshotsBody');
   if (!page.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">'+t('empty_snapshots')+'</td></tr>';
+    tbody.innerHTML = _emptyRow(10, _svgCamera, 'No snapshots yet', 'Start protecting your VMs with on-demand or scheduled NetApp Snapshots.', '+ Create Snapshot', 'showCreateSnapshotForm()');
+    renderTimeline(filtered);
     return;
   }
   tbody.innerHTML = page.map(function(s) {
@@ -2553,25 +2583,31 @@ function renderSnapshots() {
       : 'deleteSnapshot(\''+s.id+'\',\''+esc(s.snap_name)+'\')';
     actions += '<button class="btn btn-danger btn-sm" onclick="'+delCall+'">'+t('act_delete')+'</button>';
     var sourceBadge = isNative
-      ? '<span class="badge badge-gray">'+t('badge_ontap')+'</span>'
-      : (s.schedule_id ? '<span class="badge badge-blue">'+t('badge_schedule')+'</span>' : '<span style="color:var(--muted)">–</span>');
+      ? '<span class="corp-badge corp-badge-stopped">'+t('badge_ontap')+'</span>'
+      : (s.schedule_id ? '<span class="corp-badge corp-badge-ha">'+t('badge_schedule')+'</span>' : '<span style="color:var(--muted)">–</span>');
     var cbData = isNative
       ? 'data-native="1" data-uuid="'+esc(s.ontap_snap_uuid||'')+'" data-mid="'+esc(s.mapping_id||'')+'" data-name="'+esc(s.snap_name||'')+'"'
       : 'data-native="0" data-id="'+esc(s.id||'')+'"';
-    return '<tr'+(isNative?' style="opacity:.85"':'')+'>' +
+    var snapKey = isNative
+      ? ('n_'+(s.ontap_snap_uuid||'')+'_'+(s.mapping_id||''))
+      : ('p_'+String(s.id||''));
+    return '<tr data-snap-key="'+snapKey+'"'+(isNative?' style="opacity:.85"':'')+'>' +
       '<td style="padding:4px 8px"><input type="checkbox" class="snap-cb" onchange="snapUpdateBulkBar()" '+cbData+'></td>' +
       '<td><code>'+esc(s.snap_name)+'</code></td>' +
-      '<td><strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
-      +(s.svm_name||s.endpoint_name?'<br><span style="font-size:.75rem;color:var(--muted)">'+esc(s.svm_name||'')+(s.svm_name&&s.endpoint_name?' · ':'')+esc(s.endpoint_name||'')+'</span>':'')
+      '<td>'
+      +'<strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
+      +(s.pve_storage_id&&s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:11px;opacity:.7">'+esc(s.volume_name)+'</code>':'')
+      +(s.svm_name||s.endpoint_name?'<br><span style="font-size:.75rem;color:var(--muted);font-family:monospace">'+esc(s.svm_name||'')+(s.svm_name&&s.endpoint_name?' · ':'')+esc(s.endpoint_name||'')+'</span>':'')
       +'</td>' +
       '<td style="max-width:200px;word-break:break-word">'+vmsHtml+'</td>' +
       '<td>'+(isNative?'<span style="color:var(--muted)">–</span>':esc(s.consistency))+'</td>' +
-      '<td>'+(s.label?'<span class="badge badge-blue">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
+      '<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
       '<td>'+statusBadge(s.status)+'</td>' +
       '<td>'+sourceBadge+'</td>' +
-      '<td style="color:var(--muted)">'+fmtDate(s.created_at)+'</td>' +
+      '<td style="color:var(--muted)">'+fmtDateRel(s.created_at)+'</td>' +
       '<td><div class="row-actions">'+actions+'</div></td></tr>';
   }).join('');
+  renderTimeline(filtered);
 }
 
 async function createSnapshot() {
@@ -2652,9 +2688,10 @@ async function deleteSnapshotNative(ontap_snap_uuid, mapping_id, name) {
 // ── Danger Modals: Restore Confirm ────────────────────────────────────────
 
 var _restoreConfirmData = null;
+var _currentLogJobId = null;
 
 function _blastRadiusHtml(vmids, vmNames) {
-  if (!vmids || !vmids.length) return '<span style="opacity:.5;font-size:12px">— keine VM-Informationen verfügbar —</span>';
+  if (!vmids || !vmids.length) return '<span style="opacity:.5;font-size:12px">— no VM information available —</span>';
   return vmids.map(function(v) {
     var n = vmNames && vmNames[String(v)];
     return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(217,83,79,.12);border:1px solid rgba(217,83,79,.3);border-radius:4px;font-family:monospace;font-size:12px">'
@@ -2716,7 +2753,7 @@ async function doRestoreConfirmed() {
 
   var btn = document.getElementById('rcm_submit');
   btn.disabled = true;
-  btn.textContent = 'Wird ausgeführt…';
+  btn.textContent = 'Running…';
 
   if (safety) {
     try {
@@ -2729,13 +2766,13 @@ async function doRestoreConfirmed() {
       });
     } catch(e) {
       var cont = await uiConfirm(
-        'Sicherungs-Snapshot konnte nicht erstellt werden:\n' + (e.message || e) +
-        '\n\nTrotzdem mit dem Restore fortfahren?',
-        'Fortfahren', 'btn-danger'
+        'Safety snapshot could not be created:\n' + (e.message || e) +
+        '\n\nProceed with restore anyway?',
+        'Proceed', 'btn-danger'
       );
       if (!cont) {
         btn.disabled = false;
-        btn.textContent = '⚠ VM Restore starten';
+        btn.textContent = 'Start VM Restore';
         return;
       }
     }
@@ -2754,7 +2791,7 @@ async function doRestoreConfirmed() {
   } catch(e) {
     toast(e.message, 'error');
     btn.disabled = false;
-    btn.textContent = '⚠ VM Restore starten';
+    btn.textContent = 'Start VM Restore';
   }
 }
 
@@ -2804,7 +2841,7 @@ async function doDeleteConfirmed() {
 
   var btn = document.getElementById('dcm_submit');
   btn.disabled = true;
-  btn.textContent = 'Wird gelöscht…';
+  btn.textContent = 'Deleting…';
 
   if (isNative) {
     var payload = { native: true, ontap_snap_uuid: snap_uuid, mapping_id: mapping_id, snap_name: name };
@@ -2816,9 +2853,9 @@ async function doDeleteConfirmed() {
     } catch(e) {
       var msg = e.message || String(e);
       btn.disabled = false;
-      btn.textContent = 'Snapshot löschen';
+      btn.textContent = 'Delete Snapshot';
       var forceOk = await uiConfirm(
-        'Löschen fehlgeschlagen:\n' + msg + '\n\nMit force=true erneut versuchen?\n(entfernt automatisch verwaltete Snapshots, bricht keine SnapMirror-Beziehungen)',
+        'Delete failed:\n' + msg + '\n\nRetry with force=true?\n(removes auto-managed snapshots; does not break SnapMirror relationships)',
         'Force Delete', 'btn-danger'
       );
       if (!forceOk) return;
@@ -2838,7 +2875,7 @@ async function doDeleteConfirmed() {
     } catch(e) {
       toast(e.message, 'error');
       btn.disabled = false;
-      btn.textContent = 'Snapshot löschen';
+      btn.textContent = 'Delete Snapshot';
     }
   }
 }
@@ -3061,7 +3098,7 @@ async function loadSchedules() {
     _schedulesCache = rows;
     var tbody = document.getElementById('schedulesBody');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="10" class="empty">'+t('empty_schedules')+'</td></tr>';
+      tbody.innerHTML = _emptyRow(10, _svgClock, 'No schedules configured', 'Without a schedule, snapshots must be created manually. Add a schedule to automate protection.', '+ Add Schedule', 'showAddScheduleForm()');
       return;
     }
     // Load VM names for all mappings
@@ -3089,12 +3126,12 @@ async function loadSchedules() {
       vmDisplay += '</div>';
       return '<tr>' +
         '<td><strong>'+esc(s.name)+'</strong></td>' +
-        '<td>'+esc(s.pve_storage_id||'')+' → '+esc(s.volume_name||'')+'</td>' +
+        '<td><code style="font-size:11px">'+esc(s.pve_storage_id||'')+'</code>'+(s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:10px;opacity:.6">'+esc(s.volume_name)+'</code>':'')+'</td>' +
         '<td>'+vmDisplay+'</td>' +
         '<td>'+esc(cronHuman(s.cron_expr))+'</td>' +
-        '<td>'+(s.label?'<span class="badge badge-blue">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
+        '<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
         '<td>'+s.retention_count+'×</td>' +
-        '<td>'+(s.enabled?'<span class="badge badge-green">'+t('badge_active')+'</span>':'<span class="badge badge-gray">'+t('badge_inactive')+'</span>')+'</td>' +
+        '<td>'+(s.enabled?'<span class="corp-badge corp-badge-online">'+t('badge_active')+'</span>':'<span class="corp-badge corp-badge-stopped">'+t('badge_inactive')+'</span>')+'</td>' +
         '<td style="color:var(--muted)">'+lastRun+'</td>' +
         '<td>'+schedSmBadge(s.snapmirror)+'</td>' +
         '<td><div class="row-actions">' +
@@ -3150,6 +3187,256 @@ function updateSchedCron() {
   else                        cron = '0 */'+document.getElementById('sched_interval_val').value+' * * *';
   document.getElementById('sched_cron').value = cron;
   document.getElementById('sched_cron_human').textContent = cronHuman(cron);
+  schedUpdateNextRuns();
+}
+
+function _computeNextRunsFromCron(cron, count) {
+  var pts = (cron||'').trim().split(/\s+/);
+  if (pts.length !== 5) return [];
+  var pMin = pts[0], pHour = pts[1], pDom = pts[2], pDow = pts[4];
+  var results = [], lim = 0, now = new Date();
+  if (pHour === '*') {
+    var m = parseInt(pMin), d = new Date(now);
+    d.setSeconds(0); d.setMilliseconds(0); d.setMinutes(m);
+    if (d <= now) d.setHours(d.getHours() + 1);
+    while (results.length < count && lim++ < 300) { results.push(new Date(d)); d = new Date(d); d.setHours(d.getHours() + 1); }
+  } else if (pHour.indexOf('/') !== -1) {
+    var step = parseInt(pHour.split('/')[1]), d = new Date(now);
+    d.setSeconds(0); d.setMilliseconds(0); d.setMinutes(0); d.setHours(d.getHours() + 1);
+    while (d.getHours() % step !== 0) d.setHours(d.getHours() + 1);
+    while (results.length < count && lim++ < 300) { results.push(new Date(d)); d = new Date(d); d.setHours(d.getHours() + step); }
+  } else {
+    var h = parseInt(pHour), m2 = parseInt(pMin);
+    if (pDow !== '*') {
+      var dow = parseInt(pDow), d = new Date(now);
+      d.setHours(h); d.setMinutes(m2); d.setSeconds(0); d.setMilliseconds(0);
+      if (d <= now) d.setDate(d.getDate() + 1);
+      while (d.getDay() !== dow) d.setDate(d.getDate() + 1);
+      while (results.length < count && lim++ < 300) { results.push(new Date(d)); d = new Date(d); d.setDate(d.getDate() + 7); }
+    } else if (pDom !== '*') {
+      var dom = parseInt(pDom), d = new Date(now);
+      d.setDate(dom); d.setHours(h); d.setMinutes(m2); d.setSeconds(0); d.setMilliseconds(0);
+      if (d <= now) { d.setMonth(d.getMonth() + 1); d.setDate(dom); }
+      while (results.length < count && lim++ < 300) { results.push(new Date(d)); d = new Date(d); d.setMonth(d.getMonth() + 1); d.setDate(dom); }
+    } else {
+      var d = new Date(now);
+      d.setHours(h); d.setMinutes(m2); d.setSeconds(0); d.setMilliseconds(0);
+      if (d <= now) d.setDate(d.getDate() + 1);
+      while (results.length < count && lim++ < 300) { results.push(new Date(d)); d = new Date(d); d.setDate(d.getDate() + 1); }
+    }
+  }
+  return results;
+}
+
+function _schedNextRuns(count) {
+  var cron = (document.getElementById('sched_cron') || {}).value || '';
+  return _computeNextRunsFromCron(cron, count);
+}
+
+function schedUpdateNextRuns() {
+  var panel = document.getElementById('sched_next_runs');
+  if (!panel) return;
+  var runs = _schedNextRuns(10);
+  if (!runs.length) { panel.innerHTML = '<span style="opacity:.5">—</span>'; return; }
+  panel.innerHTML = runs.map(function(d, i) {
+    var fmt = d.toLocaleString([], { weekday:'short', year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    return '<div style="display:flex;align-items:center;gap:10px;padding:4px 8px;border-bottom:1px solid var(--border)'
+      + (i === 0 ? ';background:rgba(var(--accent-rgb,200,120,40),.06)' : '') + '">'
+      + '<span style="font-family:monospace;font-size:11px;min-width:18px;text-align:right;opacity:.35">' + (i+1) + '</span>'
+      + '<span style="font-size:12px' + (i === 0 ? ';font-weight:600' : ';opacity:.7') + '">' + esc(fmt) + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+// ── Timeline Ribbon ────────────────────────────────────────────────────────
+var _tlZoom         = 'month';
+var _tlSnapMap      = {};
+var _tlLastFiltered = [];
+
+function tlSetZoom(z) {
+  _tlZoom = z;
+  document.querySelectorAll('#tl_zoom_btns button').forEach(function(b) {
+    var active = b.getAttribute('data-zoom') === z;
+    b.className = 'btn btn-sm ' + (active ? 'btn-primary' : 'btn-ghost');
+  });
+  renderTimeline(_tlLastFiltered);
+}
+
+function renderTimeline(filtered) {
+  _tlLastFiltered = filtered;
+  var container = document.getElementById('snap_timeline');
+  if (!container) return;
+  var W = container.getBoundingClientRect().width;
+  if (W < 80) { requestAnimationFrame(function(){ renderTimeline(filtered); }); return; }
+
+  var padL = 10, padR = 10, padT = 8, axisY = 52, H = 72;
+  var plotW = W - padL - padR;
+
+  var now = Date.now();
+  var zoomMs   = { day: 864e5,   week: 6048e5, month: 2592e6,  year: 31536e6  };
+  var futureMs = { day: 864e5/4, week: 864e5,  month: 864e5*7, year: 864e5*45 };
+  var tStart = now - (zoomMs[_tlZoom]   || 2592e6);
+  var tEnd   = now + (futureMs[_tlZoom] || 864e5*7);
+
+  function toX(ts) { return padL + (ts - tStart) / (tEnd - tStart) * plotW; }
+
+  var svgParts = [];
+
+  // Axis line
+  svgParts.push('<line x1="'+padL+'" y1="'+axisY+'" x2="'+(padL+plotW)+'" y2="'+axisY+'" stroke="var(--border)" stroke-width="1"/>');
+
+  // Tick marks + labels
+  var tickSteps = { day: 6*3600e3, week: 864e5, month: 5*864e5, year: 60*864e5 };
+  var tickStep  = tickSteps[_tlZoom] || 5*864e5;
+  var firstTick = Math.ceil(tStart / tickStep) * tickStep;
+  for (var tk = firstTick; tk <= tEnd; tk += tickStep) {
+    var tx = toX(tk);
+    if (tx < padL || tx > padL + plotW) continue;
+    var txS = tx.toFixed(1);
+    var td  = new Date(tk);
+    var lbl = _tlZoom === 'day'
+      ? td.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+      : td.toLocaleDateString([], {month:'short', day:'numeric'});
+    svgParts.push('<line x1="'+txS+'" y1="'+axisY+'" x2="'+txS+'" y2="'+(axisY+4)+'" stroke="var(--border)" stroke-width="1"/>');
+    svgParts.push('<text x="'+txS+'" y="'+(axisY+14)+'" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="sans-serif">'+esc(lbl)+'</text>');
+  }
+
+  // "Now" marker
+  var nowX = toX(now);
+  if (nowX >= padL && nowX <= padL + plotW) {
+    var nowXS = nowX.toFixed(1);
+    svgParts.push('<line x1="'+nowXS+'" y1="'+padT+'" x2="'+nowXS+'" y2="'+(axisY+4)+'" stroke="var(--accent,#e07800)" stroke-width="1.5" stroke-dasharray="3,3"/>');
+    svgParts.push('<text x="'+nowXS+'" y="'+(axisY+14)+'" text-anchor="middle" font-size="9" fill="var(--accent,#e07800)" font-weight="600" font-family="sans-serif">now</text>');
+  }
+
+  // Retention band + future dots (single datastore filter only)
+  var dsFilter = (document.getElementById('snap_filter_datastore')||{}).value || '';
+  var matchSched = null;
+  if (dsFilter && _schedulesCache && _schedulesCache.length) {
+    var samp = _allSnapshots.find(function(s){ return (s.pve_storage_id||s.volume_name) === dsFilter; });
+    if (samp && samp.mapping_id) {
+      matchSched = _schedulesCache.find(function(sc){ return sc.mapping_id === samp.mapping_id; });
+    }
+  }
+
+  var doneSnaps = filtered.filter(function(s){ return s.status === 'done' && s.created_at; });
+  doneSnaps.sort(function(a, b){ return Date.parse(a.created_at) - Date.parse(b.created_at); });
+
+  if (matchSched) {
+    var ret    = parseInt(matchSched.retention_count) || 7;
+    var oldest = doneSnaps.length >= ret
+      ? Date.parse(doneSnaps[doneSnaps.length - ret].created_at)
+      : (doneSnaps.length ? Date.parse(doneSnaps[0].created_at) : tStart);
+    var bx1 = Math.max(toX(oldest), padL);
+    var bx2 = Math.min(toX(now), padL + plotW);
+    if (bx2 > bx1) {
+      svgParts.push('<rect x="'+bx1.toFixed(1)+'" y="'+padT+'" width="'+(bx2-bx1).toFixed(1)+'" height="'+(axisY-padT+3)+'" fill="rgba(34,197,94,.1)" rx="2"/>');
+      svgParts.push('<text x="'+((bx1+bx2)/2).toFixed(1)+'" y="'+(padT+9)+'" text-anchor="middle" font-size="9" fill="rgba(34,197,94,.7)" font-family="sans-serif">retention</text>');
+    }
+    // Future scheduled triangles
+    if (matchSched.cron_expr) {
+      var futureRuns = _computeNextRunsFromCron(matchSched.cron_expr, 10);
+      futureRuns.forEach(function(fd) {
+        var fts = fd.getTime();
+        if (fts > tEnd) return;
+        var fx = toX(fts);
+        if (fx < padL || fx > padL + plotW) return;
+        var fxS = fx.toFixed(1), fy = axisY - 12, s = 5;
+        var fmtFd = fd.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+        svgParts.push('<polygon points="'+fxS+','+(fy-s)+' '+(fx-s).toFixed(1)+','+(fy+s)+' '+(fx+s).toFixed(1)+','+(fy+s)+'" fill="none" stroke="var(--accent,#e07800)" stroke-width="1.5" opacity="0.5"/>');
+        svgParts.push('<rect x="'+(fx-8).toFixed(1)+'" y="'+(fy-s-2)+'" width="16" height="'+(s*2+4)+'" fill="transparent" onmouseenter="tlHoverFuture(\''+esc(fmtFd)+'\',event)" onmouseleave="tlUnhover()" style="cursor:default"/>');
+      });
+    }
+  }
+
+  // Snapshot dots
+  _tlSnapMap = {};
+  var dotsHtml = [];
+  var leftClipped = 0;
+  doneSnaps.forEach(function(s) {
+    var ts = Date.parse(s.created_at);
+    if (ts < tStart) { leftClipped++; return; }
+    if (ts > now) return;
+    var x = toX(ts);
+    if (x < padL - 4 || x > padL + plotW + 4) return;
+    var isNative = s.source === 'ontap_native';
+    var key = isNative
+      ? ('n_' + (s.ontap_snap_uuid||'') + '_' + (s.mapping_id||''))
+      : ('p_' + String(s.id));
+    _tlSnapMap[key] = s;
+    var cx = x.toFixed(1), cy = (axisY - 12).toFixed(1);
+    var fill = isNative ? 'var(--muted)' : 'var(--accent,#e07800)';
+    dotsHtml.push(
+      '<circle cx="'+cx+'" cy="'+cy+'" r="4.5"'
+      +' fill="'+fill+'" stroke="var(--bg-card,#fff)" stroke-width="1.5"'
+      +' onmouseenter="tlHoverKey(\''+key+'\',event)"'
+      +' onmouseleave="tlUnhover()"'
+      +' onclick="tlClick(\''+key+'\')"'
+      +' style="cursor:pointer"/>'
+    );
+  });
+
+  // Overflow indicator
+  if (leftClipped > 0) {
+    svgParts.push('<text x="'+(padL+2)+'" y="'+(axisY-14)+'" font-size="9" fill="var(--muted)" font-family="sans-serif">+'+leftClipped+' earlier</text>');
+  }
+  if (!doneSnaps.length) {
+    svgParts.push('<text x="'+(padL+plotW/2).toFixed(1)+'" y="'+(axisY-14)+'" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="sans-serif">No snapshots in this range</text>');
+  }
+
+  svgParts.push(dotsHtml.join(''));
+  container.innerHTML = '<svg width="'+W+'" height="'+H+'" style="display:block;overflow:visible">'
+    + svgParts.join('') + '</svg>';
+}
+
+function tlHoverKey(key, evt) {
+  var s = _tlSnapMap[key];
+  if (!s) return;
+  var tt = document.getElementById('tlTooltip');
+  if (!tt) return;
+  var isNative = s.source === 'ontap_native';
+  var vmHtml = (!isNative && s.vmids && s.vmids.length)
+    ? '<div style="margin-top:3px;color:var(--muted)">VMs: ' + s.vmids.map(String).join(', ') + '</div>'
+    : '';
+  tt.innerHTML = '<div style="font-weight:600;font-family:monospace;font-size:11px;word-break:break-all">' + esc(s.snap_name) + '</div>'
+    + '<div style="color:var(--muted);margin-top:2px">' + esc(s.pve_storage_id || s.volume_name || '') + '</div>'
+    + '<div style="margin-top:2px">' + fmtDateRel(s.created_at) + '</div>'
+    + (isNative ? '<div style="color:var(--muted);font-size:11px;margin-top:2px">ONTAP native</div>' : '')
+    + vmHtml;
+  _tlPositionTooltip(evt);
+}
+
+function tlHoverFuture(dateStr, evt) {
+  var tt = document.getElementById('tlTooltip');
+  if (!tt) return;
+  tt.innerHTML = '<div style="font-size:11px;color:var(--muted)">Scheduled</div>'
+    + '<div style="font-weight:600;font-size:12px;margin-top:2px">' + esc(dateStr) + '</div>';
+  _tlPositionTooltip(evt);
+}
+
+function _tlPositionTooltip(evt) {
+  var tt = document.getElementById('tlTooltip');
+  if (!tt) return;
+  tt.style.display = 'block';
+  var x = evt.clientX + 14, y = evt.clientY - 10;
+  var tw = tt.offsetWidth || 200, th = tt.offsetHeight || 80;
+  if (x + tw > window.innerWidth  - 8) x = evt.clientX - tw - 14;
+  if (y + th > window.innerHeight - 8) y = window.innerHeight - th - 8;
+  tt.style.left = x + 'px';
+  tt.style.top  = y + 'px';
+}
+
+function tlUnhover() {
+  var tt = document.getElementById('tlTooltip');
+  if (tt) tt.style.display = 'none';
+}
+
+function tlClick(key) {
+  var tr = document.querySelector('tr[data-snap-key="' + key + '"]');
+  if (!tr) return;
+  tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  tr.classList.add('tl-highlight');
+  setTimeout(function(){ tr.classList.remove('tl-highlight'); }, 2000);
 }
 
 async function loadVmsForSchedule(mappingId, preselect) {
@@ -3197,7 +3484,7 @@ async function showAddScheduleForm() {
   }
   document.getElementById('sched_freq').value = 'daily';
   document.getElementById('sched_time').value = '02:00';
-  document.getElementById('schedWizSaveBtn').textContent = 'Save Schedule';
+  document.getElementById('schedWizSaveBtn').textContent = t('sched_save');
   updateSchedCron();
   document.getElementById('addScheduleForm').style.display = '';
   document.body.style.overflow = 'hidden';
@@ -3242,7 +3529,7 @@ async function showEditScheduleForm(s) {
     document.getElementById('sched_notify_fields').style.display = notifyOn ? 'flex' : 'none';
   }
   parseCronToForm(s.cron_expr);
-  document.getElementById('schedWizSaveBtn').textContent = 'Update Schedule';
+  document.getElementById('schedWizSaveBtn').textContent = t('sched_update');
   document.getElementById('addScheduleForm').style.display = '';
   document.body.style.overflow = 'hidden';
   schedWizShowStep(1);
@@ -3299,7 +3586,7 @@ async function saveSchedule() {
   try {
     if (editId) { await updateSchedule(editId); } else { await addSchedule(); }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = editId ? 'Update Schedule' : 'Save Schedule'; }
+    if (btn) { btn.disabled = false; btn.textContent = editId ? t('sched_update') : t('sched_save'); }
   }
 }
 
@@ -3346,6 +3633,7 @@ function schedWizShowStep(n) {
       else if (i < n) pill.classList.add('done');
     }
   }
+  if (n === 2) schedUpdateNextRuns();
   if (n === 6) schedWizUpdateSummary();
   schedWizUpdateSMPill();
 }
@@ -3754,17 +4042,16 @@ function renderJobsPage() {
 
   var tbody = document.getElementById('jobsBody');
   if (!page.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">'+t('empty_jobs')+'</td></tr>';
+    tbody.innerHTML = _emptyRow(8, _svgCog, 'No jobs yet', 'Job history appears here after a snapshot, restore, or clone operation runs.', null, null);
     return;
   }
   tbody.innerHTML = page.map(function(j) {
     var logHtml = '';
     if (j.log && j.log.length) {
-      var uid = 'log_'+j.id.slice(0,8);
-      logHtml = '<button class="btn btn-ghost btn-sm" onclick="toggleLog(\''+uid+'\')">Log ('+j.log.length+')</button>' +
-        '<div id="'+uid+'" style="display:none"><div class="log-box">' +
-        j.log.map(function(l){ return '<div class="log-entry">'+esc(l.ts||'')+' '+esc(l.msg||l)+'</div>'; }).join('') +
-        '</div></div>';
+      var jidEsc = esc(j.id);
+      logHtml = '<button class="btn btn-ghost btn-sm" onclick="showJobLog(\''+jidEsc+'\')">'
+        + '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>'
+        + 'Logs ('+j.log.length+')</button>';
     } else if (j.error) {
       logHtml = '<span style="color:var(--error);font-size:11px">'+esc(j.error)+'</span>';
     } else {
@@ -3777,12 +4064,12 @@ function renderJobsPage() {
           : '<button class="btn btn-warning btn-sm" onclick="cancelJob(\''+j.id+'\')">'+t('act_cancel_job')+'</button>')
       : '<button class="btn btn-danger btn-sm" onclick="deleteJob(\''+j.id+'\')">'+t('act_delete')+'</button>';
     return '<tr>' +
-      '<td><span class="badge badge-blue">'+esc(j.job_type||'')+'</span></td>' +
-      '<td>'+esc(String(j.vmid||'–'))+'</td>' +
-      '<td>'+esc(j.node||'–')+'</td>' +
+      '<td><span class="corp-badge corp-badge-ha">'+esc(j.job_type||'')+'</span></td>' +
+      '<td><code style="font-size:12px">'+esc(String(j.vmid||'–'))+'</code></td>' +
+      '<td><code style="font-size:12px">'+esc(j.node||'–')+'</code></td>' +
       '<td>'+statusBadge(j.status)+'</td>' +
       '<td style="color:var(--muted)">'+esc(j.created_by||'')+'</td>' +
-      '<td style="color:var(--muted)">'+fmtDate(j.created_at)+'</td>' +
+      '<td style="color:var(--muted)">'+fmtDateRel(j.created_at)+'</td>' +
       '<td>'+logHtml+'</td>' +
       '<td><div class="row-actions">'+actionsHtml+'</div></td></tr>';
   }).join('');
@@ -3825,9 +4112,128 @@ async function cleanupJobs() {
   } catch(e) { toast(e.message,'error'); }
 }
 
-function toggleLog(id) {
-  var d = document.getElementById(id);
-  if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+var _svgShieldCheck = '<svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>';
+
+var _auditActionLabels = {
+  snapshot_delete:        'Delete Snapshot',
+  snapshot_delete_native: 'Delete Native Snapshot',
+  restore_sfsr:           'Restore (SFSR)',
+  restore_flexclone:      'Restore (FlexClone)',
+  restore_san:            'Restore (SAN)',
+  restore_san_single:     'Restore (SAN Single)',
+  restore_dr:             'Restore (DR)'
+};
+
+async function loadAuditLog() {
+  try {
+    var rows = await apiGet('audit/list?limit=200');
+    renderAuditLog(Array.isArray(rows) ? rows : []);
+  } catch(e) {
+    document.getElementById('auditBody').innerHTML =
+      _emptyRow(6, _svgShieldCheck, 'Audit log unavailable', e.message, null, null);
+  }
+}
+
+function renderAuditLog(rows) {
+  var tbody = document.getElementById('auditBody');
+  var count = document.getElementById('audit_count');
+  if (count) count.textContent = rows.length ? rows.length + ' entries' : '';
+  if (!rows.length) {
+    tbody.innerHTML = _emptyRow(6, _svgShieldCheck,
+      'No audit entries yet',
+      'Delete and Restore operations will appear here.',
+      null, null);
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var label  = _auditActionLabels[r.action] || esc(r.action);
+    var isOk   = r.result === 'success';
+    var badge  = isOk
+      ? '<span class="corp-badge corp-badge-online">Success</span>'
+      : '<span class="corp-badge corp-badge-offline">Failed</span>';
+    var vmHtml = (r.vmids && r.vmids.length)
+      ? r.vmids.map(function(v){ return '<code style="font-size:11px;margin-right:3px">'+esc(String(v))+'</code>'; }).join('')
+      : '<span style="color:var(--muted)">–</span>';
+    var target = r.target_name
+      ? '<code style="font-size:11px">'+esc(r.target_name)+'</code>'
+        + (r.volume_name ? '<br><span style="font-size:11px;color:var(--muted)">'+esc(r.volume_name)+'</span>' : '')
+      : '<span style="color:var(--muted)">–</span>';
+    var errorTip = (!isOk && r.error_msg)
+      ? ' <span title="'+esc(r.error_msg)+'" style="cursor:help;color:var(--error)">ⓘ</span>' : '';
+    return '<tr>'
+      + '<td style="white-space:nowrap">'+fmtDateRel(r.timestamp)+'</td>'
+      + '<td><code style="font-size:11px">'+esc(r.user)+'</code></td>'
+      + '<td><span class="corp-badge corp-badge-ha" style="white-space:nowrap">'+label+'</span></td>'
+      + '<td>'+target+'</td>'
+      + '<td>'+vmHtml+'</td>'
+      + '<td>'+badge+errorTip+'</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function _colorizeLog(escapedLine) {
+  return escapedLine
+    .replace(/\[INFO\]/g,  '<span style="color:#16a34a;font-weight:600">[INFO]</span>')
+    .replace(/\[WARN\]/g,  '<span style="color:#d97706;font-weight:600">[WARN]</span>')
+    .replace(/\[ERROR\]/g, '<span style="color:#dc2626;font-weight:600">[ERROR]</span>')
+    .replace(/\[ERR\]/g,   '<span style="color:#dc2626;font-weight:600">[ERR]</span>');
+}
+
+function showJobLog(id) {
+  var j = _allJobsCache.find(function(x){ return x.id === id; });
+  if (!j) return;
+  _currentLogJobId = id;
+
+  document.getElementById('lvm_title').innerHTML =
+    '<span class="corp-badge corp-badge-ha" style="margin-right:8px">'+esc(j.job_type||'Job')+'</span>'
+    + statusBadge(j.status);
+
+  document.getElementById('lvm_meta').innerHTML =
+    '<code style="font-size:11px">'+esc(String(j.vmid||'–'))+'</code>'
+    + (j.node ? ' &nbsp;·&nbsp; <code style="font-size:11px">'+esc(j.node)+'</code>' : '')
+    + (j.created_by ? ' &nbsp;·&nbsp; '+esc(j.created_by) : '')
+    + ' &nbsp;·&nbsp; '+fmtDateRel(j.created_at);
+
+  var lines = (j.log||[]).map(function(l) {
+    var ts  = esc(l.ts  || '');
+    var msg = esc(l.msg || l);
+    return '<div class="log-entry">'
+      + (ts ? '<span style="color:var(--muted);user-select:none">'+ts+'</span> ' : '')
+      + _colorizeLog(msg)
+      + '</div>';
+  });
+  document.getElementById('lvm_log').innerHTML = lines.join('') || '<span style="color:var(--muted)">No log entries.</span>';
+
+  var errDiv = document.getElementById('lvm_error');
+  errDiv.textContent = j.error || '';
+  errDiv.style.display = j.error ? '' : 'none';
+
+  document.getElementById('logViewModal').style.display = 'flex';
+}
+
+function hideJobLog() {
+  document.getElementById('logViewModal').style.display = 'none';
+  _currentLogJobId = null;
+}
+
+function downloadJobLog() {
+  var j = _currentLogJobId && _allJobsCache.find(function(x){ return x.id === _currentLogJobId; });
+  if (!j) return;
+  var lines = (j.log||[]).map(function(l) {
+    return (l.ts ? l.ts + '  ' : '') + (l.msg || l);
+  });
+  if (j.error) lines.push('[ERROR] ' + j.error);
+  var text = lines.join('\n');
+  var blob = new Blob([text], {type:'text/plain'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'netapp-job-' + (j.job_type||'log').replace(/\s+/g,'-').toLowerCase()
+    + '-' + (j.id||'').slice(0,8) + '.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function prepareRestore(snapId) {
@@ -3901,13 +4307,61 @@ function fmtDate(iso) {
   } catch(e) { return iso; }
 }
 
+function _emptyRow(cols, svgIcon, title, subtitle, btnLabel, btnOnclick) {
+  var btn = btnLabel
+    ? '<button class="btn btn-primary btn-sm" onclick="'+btnOnclick+'" style="margin-top:12px">'+btnLabel+'</button>'
+    : '';
+  return '<tr><td colspan="'+cols+'" style="padding:40px 20px;text-align:center;color:var(--muted)">'
+    + '<div style="margin:0 auto 10px;width:32px;height:32px;opacity:.25">'+svgIcon+'</div>'
+    + '<div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--text)">'+title+'</div>'
+    + '<div style="font-size:12px">'+subtitle+'</div>'
+    + btn + '</td></tr>';
+}
+
+var _svgCamera = '<svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>';
+var _svgClock  = '<svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
+var _svgCog    = '<svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>';
+
+function fmtRelative(iso) {
+  if (!iso) return '–';
+  try {
+    var ms = Date.now() - new Date(iso).getTime();
+    var a  = Math.abs(ms);
+    if (a < 60000)     return 'just now';
+    if (a < 3600000)   return Math.round(a/60000)   + ' min ago';
+    if (a < 86400000)  return Math.round(a/3600000)  + ' hr ago';
+    if (a < 604800000) return Math.round(a/86400000) + ' d ago';
+    if (a < 2592000000)return Math.round(a/604800000)+ ' wk ago';
+    return Math.round(a/2592000000) + ' mo ago';
+  } catch(e) { return iso; }
+}
+
+function fmtDateRel(iso) {
+  if (!iso) return '–';
+  return '<span title="' + esc(fmtDate(iso)) + '" style="cursor:default;border-bottom:1px dotted var(--muted)">'
+    + esc(fmtRelative(iso)) + '</span>';
+}
+
 function statusBadge(s) {
-  var map = {done:'green', running:'blue', pending:'gray', failed:'red', error:'red',
-             cancelling:'orange', cancelled:'gray'};
-  var labels = {done:t('badge_done'),running:t('badge_running'),failed:t('badge_failed'),
-                pending:'pending',error:'error',
-                cancelling:t('badge_cancelling'),cancelled:t('badge_cancelled')};
-  return '<span class="badge badge-'+(map[s]||'gray')+'">'+(labels[s]||esc(s||'–'))+'</span>';
+  var cls = {
+    done:       'corp-badge-online',
+    running:    'corp-badge-running',
+    pending:    'corp-badge-stopped',
+    failed:     'corp-badge-offline',
+    error:      'corp-badge-offline',
+    cancelling: 'corp-badge-maintenance',
+    cancelled:  'corp-badge-stopped',
+  };
+  var labels = {
+    done:       t('badge_done'),
+    running:    t('badge_running'),
+    pending:    t('badge_pending'),
+    failed:     t('badge_failed'),
+    error:      t('badge_failed'),
+    cancelling: t('badge_cancelling'),
+    cancelled:  t('badge_cancelled'),
+  };
+  return '<span class="corp-badge '+(cls[s]||'corp-badge-stopped')+'">'+(labels[s]||esc(s||'–'))+'</span>';
 }
 
 function vmBadge(id, name) {
@@ -7543,8 +7997,8 @@ loadSnapshots();
       </div>
       <!-- Blast-radius: shown after datastore is selected -->
       <div id="snap_blast_radius" style="display:none;padding:10px 14px;border:1px solid rgba(217,83,79,.3);border-radius:6px;background:rgba(217,83,79,.05)">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:7px;text-transform:uppercase">Blast-Radius — erfasste VMs auf diesem Volume</div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Dieser Snapshot betrifft das gesamte Volume — alle <strong id="snap_blast_count">0</strong> VM(s) werden eingeschlossen.</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:7px;text-transform:uppercase">Affected VMs</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">This snapshot covers the entire volume — <strong id="snap_blast_count">0</strong> VM(s) will be included.</div>
         <div id="snap_blast_list" style="display:flex;flex-wrap:wrap;gap:4px"></div>
       </div>
       <div class="form-group">
@@ -7607,19 +8061,19 @@ loadSnapshots();
 
       <!-- Progress strip -->
       <div style="display:flex;gap:0;margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
-        <div class="setup-step-pill" id="swpill1" onclick="schedWizGoStep(1)">① Basics</div>
-        <div class="setup-step-pill" id="swpill2" onclick="schedWizGoStep(2)">② Schedule</div>
-        <div class="setup-step-pill" id="swpill3" onclick="schedWizGoStep(3)">③ VMs &amp; Scripts</div>
-        <div class="setup-step-pill" id="swpill4" onclick="schedWizGoStep(4)">④ SnapMirror</div>
-        <div class="setup-step-pill" id="swpill5" onclick="schedWizGoStep(5)">⑤ Notifications</div>
-        <div class="setup-step-pill" id="swpill6" onclick="schedWizGoStep(6)">⑥ Summary</div>
+        <div class="setup-step-pill" id="swpill1" onclick="schedWizGoStep(1)">① <span data-i18n="sched_step1">Basics</span></div>
+        <div class="setup-step-pill" id="swpill2" onclick="schedWizGoStep(2)">② <span data-i18n="sched_step2">Schedule</span></div>
+        <div class="setup-step-pill" id="swpill3" onclick="schedWizGoStep(3)">③ <span data-i18n="sched_step3">VMs &amp; Scripts</span></div>
+        <div class="setup-step-pill" id="swpill4" onclick="schedWizGoStep(4)">④ <span data-i18n="sched_step4">SnapMirror</span></div>
+        <div class="setup-step-pill" id="swpill5" onclick="schedWizGoStep(5)">⑤ <span data-i18n="sched_step5">Notifications</span></div>
+        <div class="setup-step-pill" id="swpill6" onclick="schedWizGoStep(6)">⑥ <span data-i18n="sched_step6">Summary</span></div>
       </div>
 
       <input type="hidden" id="sched_edit_id" value="">
 
       <!-- ── Step 1: Basics ── -->
       <div class="card setup-step-card" id="schedStep1">
-        <div class="card-title">① Basics</div>
+        <div class="card-title">① <span data-i18n="sched_step1">Basics</span></div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Give this schedule a name and select the datastore (NFS volume) to protect.</p>
         <div style="display:flex;flex-direction:column;gap:14px">
           <div class="form-group" style="margin:0">
@@ -7632,7 +8086,7 @@ loadSnapshots();
           </div>
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:20px">
-          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()" data-i18n="pg_next">Next →</button>
         </div>
       </div>
 
@@ -7690,10 +8144,17 @@ loadSnapshots();
             <label>Retention — keep last N snapshots</label>
             <input id="sched_retention" type="number" value="7" min="1" max="99" style="width:120px">
           </div>
+          <!-- Next-run preview -->
+          <div>
+            <div style="margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Next 10 runs</div>
+            <div id="sched_next_runs" style="border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:12px">
+              <span style="opacity:.5;padding:8px;display:block">—</span>
+            </div>
+          </div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:20px">
-          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
-          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()" data-i18n="pg_prev">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()" data-i18n="pg_next">Next →</button>
         </div>
       </div>
 
@@ -7746,8 +8207,8 @@ loadSnapshots();
           </details>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:20px">
-          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
-          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()" data-i18n="pg_prev">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()" data-i18n="pg_next">Next →</button>
         </div>
       </div>
 
@@ -7770,8 +8231,8 @@ loadSnapshots();
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:20px">
-          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
-          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()" data-i18n="pg_prev">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()" data-i18n="pg_next">Next →</button>
         </div>
       </div>
 
@@ -7803,21 +8264,21 @@ loadSnapshots();
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:20px">
-          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
-          <button class="btn btn-primary btn-sm" onclick="schedWizNext()">Next →</button>
+          <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()" data-i18n="pg_prev">← Back</button>
+          <button class="btn btn-primary btn-sm" onclick="schedWizNext()" data-i18n="pg_next">Next →</button>
         </div>
       </div>
 
       <!-- ── Step 6: Summary ── -->
       <div class="card setup-step-card" id="schedStep6" style="display:none">
-        <div class="card-title">⑥ Summary</div>
+        <div class="card-title">⑥ <span data-i18n="sched_step6">Summary</span></div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Review your schedule configuration before saving.</p>
         <div id="schedWizSummary"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
           <button class="btn btn-ghost btn-sm" onclick="schedWizPrev()">← Back</button>
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost" onclick="hideForm('addScheduleForm')">Cancel</button>
-            <button class="btn btn-primary" onclick="saveSchedule()" id="schedWizSaveBtn">Save Schedule</button>
+            <button class="btn btn-primary" onclick="saveSchedule()" id="schedWizSaveBtn" data-i18n="sched_save">Save Schedule</button>
           </div>
         </div>
       </div>
@@ -8213,8 +8674,8 @@ loadSnapshots();
 <div id="restoreConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
   <div style="max-width:540px;width:100%;margin:0 auto;background:var(--card);border:1px solid rgba(217,83,79,.4);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.55)">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(217,83,79,.25);background:rgba(217,83,79,.07)">
-      <span style="font-size:18px;line-height:1">⚠</span>
-      <span style="font-size:15px;font-weight:700;color:#d9534f">VM Restore starten</span>
+      <svg width="20" height="20" fill="none" stroke="#d9534f" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      <span style="font-size:15px;font-weight:700;color:#d9534f">Start VM Restore</span>
       <button onclick="hideRestoreConfirm()" style="margin-left:auto;background:none;border:none;color:var(--text);opacity:.6;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
@@ -8223,30 +8684,30 @@ loadSnapshots();
             <td style="padding:4px 0"><code id="rcm_snap_name" style="font-family:monospace;font-size:12px;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code></td></tr>
         <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Datastore</td>
             <td style="padding:4px 0"><span id="rcm_datastore"></span></td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Methode</td>
+        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Method</td>
             <td style="padding:4px 0"><code id="rcm_method" style="font-family:monospace;font-size:12px;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code></td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Ziel-VM</td>
+        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Target VM</td>
             <td style="padding:4px 0"><code id="rcm_vmid" style="font-family:monospace;font-size:12px;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code></td></tr>
       </table>
       <div style="border:1px solid rgba(217,83,79,.35);border-radius:6px;padding:10px 14px;background:rgba(217,83,79,.05)">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:8px;text-transform:uppercase">Blast-Radius — VMs in diesem Snapshot</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:8px;text-transform:uppercase">Affected VMs</div>
         <div id="rcm_blast_vms" style="display:flex;flex-wrap:wrap;gap:4px"></div>
       </div>
       <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;padding:10px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg)">
         <input type="checkbox" id="rcm_safety" checked style="margin-top:2px;flex-shrink:0">
         <span>
-          <strong>Sicherungs-Snapshot vorher erstellen</strong><br>
-          <span style="font-size:11px;opacity:.7">Erstellt <code>safety_pre_restore_YYYYMMDD</code> (Crash-Consistent) bevor der Restore startet.</span>
+          <strong>Create safety snapshot before restore</strong><br>
+          <span style="font-size:11px;opacity:.7">Creates <code>safety_pre_restore_YYYYMMDD</code> (crash-consistent) before the restore runs.</span>
         </span>
       </label>
       <div style="display:flex;flex-direction:column;gap:6px">
-        <label style="font-size:13px;font-weight:600;color:#d9534f">Zur Bestätigung den Snapshot-Namen eingeben:</label>
-        <div style="font-size:12px;color:var(--muted)">Gib <code id="rcm_expected" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> ein um fortzufahren</div>
-        <input id="rcm_confirm_input" oninput="rcmCheckInput()" placeholder="Snapshot-Namen eingeben …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
+        <label style="font-size:13px;font-weight:600;color:#d9534f">Type the snapshot name to confirm:</label>
+        <div style="font-size:12px;color:var(--muted)">Enter <code id="rcm_expected" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> to continue</div>
+        <input id="rcm_confirm_input" oninput="rcmCheckInput()" placeholder="Type snapshot name …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-        <button class="btn btn-ghost" onclick="hideRestoreConfirm()">Abbrechen</button>
-        <button id="rcm_submit" class="btn btn-danger" disabled onclick="doRestoreConfirmed()">⚠ VM Restore starten</button>
+        <button class="btn btn-ghost" onclick="hideRestoreConfirm()">Cancel</button>
+        <button id="rcm_submit" class="btn btn-danger" disabled onclick="doRestoreConfirmed()">Start VM Restore</button>
       </div>
     </div>
   </div>
@@ -8256,24 +8717,24 @@ loadSnapshots();
 <div id="deleteConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
   <div style="max-width:480px;width:100%;margin:0 auto;background:var(--card);border:1px solid rgba(217,83,79,.4);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.55)">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(217,83,79,.25);background:rgba(217,83,79,.07)">
-      <span style="font-size:18px;line-height:1">⚠</span>
-      <span style="font-size:15px;font-weight:700;color:#d9534f">Snapshot löschen</span>
+      <svg width="20" height="20" fill="none" stroke="#d9534f" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      <span style="font-size:15px;font-weight:700;color:#d9534f">Delete Snapshot</span>
       <button onclick="hideDeleteConfirm()" style="margin-left:auto;background:none;border:none;color:var(--text);opacity:.6;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
-      <p style="margin:0;font-size:13px">Snapshot <code id="dcm_snap_name" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> wird dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.</p>
+      <p style="margin:0;font-size:13px">Snapshot <code id="dcm_snap_name" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> will be permanently deleted. This action cannot be undone.</p>
       <div id="dcm_blast_wrap" style="border:1px solid rgba(217,83,79,.35);border-radius:6px;padding:10px 14px;background:rgba(217,83,79,.05)">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:8px;text-transform:uppercase">Betroffene VMs</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:8px;text-transform:uppercase">Affected VMs</div>
         <div id="dcm_blast_vms" style="display:flex;flex-wrap:wrap;gap:4px"></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px">
-        <label style="font-size:13px;font-weight:600;color:#d9534f">Zur Bestätigung den Snapshot-Namen eingeben:</label>
-        <div style="font-size:12px;color:var(--muted)">Gib <code id="dcm_expected" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> ein um fortzufahren</div>
-        <input id="dcm_confirm_input" oninput="dcmCheckInput()" placeholder="Snapshot-Namen eingeben …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
+        <label style="font-size:13px;font-weight:600;color:#d9534f">Type the snapshot name to confirm:</label>
+        <div style="font-size:12px;color:var(--muted)">Enter <code id="dcm_expected" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> to continue</div>
+        <input id="dcm_confirm_input" oninput="dcmCheckInput()" placeholder="Type snapshot name …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-        <button class="btn btn-ghost" onclick="hideDeleteConfirm()">Abbrechen</button>
-        <button id="dcm_submit" class="btn btn-danger" disabled onclick="doDeleteConfirmed()">Snapshot löschen</button>
+        <button class="btn btn-ghost" onclick="hideDeleteConfirm()">Cancel</button>
+        <button id="dcm_submit" class="btn btn-danger" disabled onclick="doDeleteConfirmed()">Delete Snapshot</button>
       </div>
     </div>
   </div>
@@ -8283,5 +8744,39 @@ loadSnapshots();
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
   This plugin is an independent community project and is not affiliated with, endorsed by, or sponsored by NetApp, Inc.
 </footer>
+
+<!-- ── Log Viewer Modal ── -->
+<div id="logViewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9200;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;width:min(820px,100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+
+    <!-- Header -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px" id="lvm_title"></div>
+        <div style="font-size:12px;color:var(--muted)" id="lvm_meta"></div>
+      </div>
+      <button onclick="hideJobLog()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:2px 6px;flex-shrink:0">&#x2715;</button>
+    </div>
+
+    <!-- Log body -->
+    <div style="flex:1;overflow-y:auto;padding:16px 20px;min-height:0">
+      <div id="lvm_log" style="background:#0f172a;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:12px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.7;color:#94a3b8;white-space:pre-wrap;word-break:break-all;min-height:120px"></div>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div id="lvm_error" style="font-size:12px;color:var(--error)"></div>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn btn-ghost btn-sm" onclick="downloadJobLog()" title="Download as .txt">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:4px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Download
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="hideJobLog()">Close</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="tlTooltip" style="display:none;position:fixed;z-index:9100;pointer-events:none;background:var(--bg-card,#fff);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:260px;line-height:1.55"></div>
 </body>
 </html>

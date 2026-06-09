@@ -1759,12 +1759,43 @@ def _set_progress(db, job_id, pct):
     db.execute("UPDATE netapp_jobs SET progress_pct=? WHERE id=?", (pct, job_id))
 
 
+def _write_restore_audit(db, job_id, result):
+    try:
+        job = db.query_one("SELECT * FROM netapp_jobs WHERE id=?", (job_id,))
+        if not job:
+            return
+        job = dict(job)
+        snap_name, vol_name, vmids = "", "", []
+        if job.get("snapshot_id"):
+            snap = db.query_one("SELECT snap_name, mapping_id, vmids_json FROM netapp_snapshots WHERE id=?",
+                                (job["snapshot_id"],))
+            if snap:
+                snap_name = snap["snap_name"] or ""
+                vmids = json.loads(snap["vmids_json"] or "[]")
+                mapping = db.query_one("SELECT volume_name FROM netapp_volume_mapping WHERE id=?",
+                                       (snap["mapping_id"],))
+                if mapping:
+                    vol_name = mapping["volume_name"] or ""
+        db.execute(
+            "INSERT INTO netapp_audit_log "
+            "(id, timestamp, user, action, target_name, volume_name, vmids_json, result, error_msg, details_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), datetime.now(timezone.utc).isoformat(),
+             job.get("created_by", "system"), job.get("job_type", "restore"),
+             snap_name, vol_name, json.dumps(vmids), result, "",
+             json.dumps({"job_id": job_id, "vmid": job.get("vmid"), "node": job.get("node")}))
+        )
+    except Exception as exc:
+        log.warning(f"[netapp_storage] audit write failed for job {job_id}: {exc}")
+
+
 def _finish_job(db, job_id):
     now = datetime.now(timezone.utc).isoformat()
     db.execute(
         "UPDATE netapp_jobs SET status='done', progress_pct=100, completed_at=? WHERE id=?",
         (now, job_id),
     )
+    _write_restore_audit(db, job_id, "success")
 
 
 def _fail_job(db, job_id):
@@ -1773,6 +1804,7 @@ def _fail_job(db, job_id):
         "UPDATE netapp_jobs SET status='failed', completed_at=? WHERE id=?",
         (now, job_id),
     )
+    _write_restore_audit(db, job_id, "failed")
 
 
 def _cancel_job(db, job_id):

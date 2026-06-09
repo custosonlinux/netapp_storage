@@ -36,6 +36,19 @@ log = logging.getLogger(__name__)
 from ..core._helpers import PLUGIN_ID  # noqa: F401
 
 
+def _write_audit(db, action, user, result, target_name="", volume_name="",
+                 vmids=None, error_msg="", details=None):
+    db.execute(
+        "INSERT INTO netapp_audit_log "
+        "(id, timestamp, user, action, target_name, volume_name, vmids_json, result, error_msg, details_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (str(uuid.uuid4()), datetime.now(timezone.utc).isoformat(),
+         user, action, target_name or "", volume_name or "",
+         json.dumps(vmids or []), result, error_msg or "",
+         json.dumps(details or {}))
+    )
+
+
 def _require_admin():
     from pegaprox.utils.auth import load_users
     from pegaprox.models.permissions import ROLE_ADMIN
@@ -459,6 +472,7 @@ def _delete_snapshot():
         return err
     data = request.get_json() or {}
     db = get_db()
+    user = request.session.get("user", "system")
 
     # ── ONTAP-native snapshot (not in plugin DB) ───────────────────────
     if data.get("native"):
@@ -468,16 +482,25 @@ def _delete_snapshot():
         if not ontap_snap_uuid or not mapping_id:
             return {"error": "ontap_snap_uuid and mapping_id required"}, 400
         snap_name = data.get("snap_name", "")
+        vol_name = ""
         try:
             from ..core._helpers import get_mapping, get_endpoint
             mapping = get_mapping(db, mapping_id)
+            vol_name = mapping.get("volume_name", "")
             endpoint = get_endpoint(db, mapping["endpoint_id"])
             client = build_ontap_client(endpoint)
             del_job = client.delete_snapshot(mapping["volume_uuid"], ontap_snap_uuid,
                                              force=force, snap_name=snap_name)
             if del_job:
                 client.poll_job(del_job, timeout_s=120)
+            _write_audit(db, "snapshot_delete_native", user, "success",
+                         target_name=snap_name, volume_name=vol_name,
+                         details={"ontap_snap_uuid": ontap_snap_uuid, "mapping_id": mapping_id})
         except Exception as exc:
+            _write_audit(db, "snapshot_delete_native", user, "failed",
+                         target_name=snap_name, volume_name=vol_name,
+                         error_msg=str(exc),
+                         details={"ontap_snap_uuid": ontap_snap_uuid, "mapping_id": mapping_id})
             return {"error": str(exc)}, 500
         return {"success": True}
 
@@ -491,9 +514,12 @@ def _delete_snapshot():
         return {"error": "Snapshot not found"}, 404
     snap = dict(snap)
 
+    vol_name = ""
+    ontap_err = ""
     try:
         from ..core._helpers import get_mapping, get_endpoint
         mapping = get_mapping(db, snap["mapping_id"])
+        vol_name = mapping.get("volume_name", "")
         endpoint = get_endpoint(db, mapping["endpoint_id"])
         client = build_ontap_client(endpoint)
 
@@ -504,9 +530,15 @@ def _delete_snapshot():
             if del_job:
                 client.poll_job(del_job, timeout_s=120)
     except Exception as exc:
+        ontap_err = str(exc)
         log.warning(f"[netapp_storage] ONTAP snapshot deletion failed: {exc}")
 
     db.execute("DELETE FROM netapp_snapshots WHERE id=?", (snapshot_id,))
+    _write_audit(db, "snapshot_delete", user, "success",
+                 target_name=snap.get("snap_name", ""), volume_name=vol_name,
+                 vmids=json.loads(snap.get("vmids_json") or "[]"),
+                 error_msg=ontap_err,
+                 details={"snapshot_id": snapshot_id})
     return {"success": True}
 
 
@@ -766,6 +798,21 @@ def _cleanup_jobs():
     return {"success": True, "deleted": count}
 
 
+def _list_audit():
+    db = get_db()
+    limit = int(request.args.get("limit", 200))
+    rows = db.query(
+        "SELECT * FROM netapp_audit_log ORDER BY timestamp DESC LIMIT ?", (limit,)
+    )
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["vmids"] = json.loads(d.get("vmids_json") or "[]")
+        d["details"] = json.loads(d.get("details_json") or "{}")
+        result.append(d)
+    return result
+
+
 # ── SAN: snapmanifest LV ─────────────────────────────────────────────────────────
 
 def _snapmanifest_init():
@@ -904,4 +951,5 @@ def register_routes():
     register_plugin_route(PLUGIN_ID, "jobs/delete", _delete_job)
     register_plugin_route(PLUGIN_ID, "jobs/cancel", _cancel_job)
     register_plugin_route(PLUGIN_ID, "jobs/cleanup", _cleanup_jobs)
+    register_plugin_route(PLUGIN_ID, "audit/list",   _list_audit)
     register_plugin_route(PLUGIN_ID, "ui", _serve_ui)
