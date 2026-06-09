@@ -2,7 +2,7 @@
 
 A [PegaProx](https://github.com/PegaProx/project-pegaprox) community plugin that adds VM-consistent NetApp® ONTAP® snapshot management directly to the PegaProx UI — for **NFS**, **iSCSI**, and **NVMe-oF** (NVMe/TCP, NVMe/FC) datastores.
 
-**Current version: 1.1.2** · [Changelog](CHANGELOG.md) · [Known Issues](KNOWN_ISSUES.md)
+**Current stable: 1.1.2** · **Development: 1.2.0** · [Changelog](CHANGELOG.md) · [Known Issues](KNOWN_ISSUES.md)
 
 ---
 
@@ -45,7 +45,7 @@ All operations run as background jobs with live log streaming. Every snapshot em
 | Job cancellation | ✅ | 🟡 Beta | 🟡 Beta |
 | Import VMs from Datastore (adopt existing volumes with VMs) | 🟡 Beta | 🟡 Beta | 🟡 Beta |
 | Plugin self-update (from GitHub, release or dev) | ✅ | ✅ | ✅ |
-| Full DR Scenario — Failover, Test-DR, Failback | 🔄 Planned | 🔄 Planned | 🔄 Planned |
+| Full DR Scenario — Failover, Test-DR, Failback | 🔵 In Development | 🔵 In Development | 🔵 In Development |
 
 Legend: ✅ Stable · 🟡 Beta · 🟠 Alpha · 🔵 In Development · 🔄 Planned · ❌ N/A
 
@@ -760,16 +760,38 @@ All routes are relative to `/api/plugins/netapp_storage/api/`.
 
 ## Roadmap
 
-### v1.2 — Full Disaster Recovery *(In Development)*
+### v1.2 — Full Disaster Recovery *(In Development — v1.2.0)*
 
 Building on SnapMirror DR restore/clone, v1.2.x adds a fully orchestrated DR workflow driven from the DR-side PegaProx — avoiding the chicken-and-egg problem of needing the primary site to trigger failover.
 
-#### v1.2.0 — DR Configuration & Plan Management *(implemented, not yet released)*
+#### v1.2.0 — DR Configuration & Plan Management + UI Overhaul *(implemented, pre-release)*
 
-- **DR Sites** — group a DR ONTAP endpoint with its DR PVE hosts; SSH test, key push, and `pv_port` configuration.
+**Disaster Recovery:**
+- **DR Peer Sync** — direct plugin-to-plugin HTTPS communication replaces the previous NFS config-volume approach; shared sync token (`X-DR-Sync-Token`); roles: `PRIMARY` / `SECONDARY` / `STANDALONE`; heartbeat every 30 s, DB sync every 60 s.
 - **DR Plans** — link source datastores to their SnapMirror destinations; dashboard shows lag and health per datastore.
 - **VM Start Groups** — define ordered startup groups (DNS/AD → app servers → optional services) with per-group startup delay and auto/manual release.
-- **DB Sync** — replicate the plugin database to the DR PegaProx via SCP; auto-import on next tab open.
+
+**UI — Snapshot Timeline:**
+- **Timeline ribbon** — SVG-based horizontal timeline above the snapshot table; Day/Week/Month/Year zoom; ● dots for existing snapshots (hover tooltip, click jumps to row); △ triangles for scheduled future runs; orange retention band; "+N earlier" overflow indicator.
+
+**UI — Snapshot Table:**
+- **Virtual scrolling** — windowed row rendering above 80 rows; sticky header; bulk selection (`_vsSelectedKeys`) preserved across viewport boundaries.
+- **Mobile card layout** — responsive `@media ≤680px` card view with `data-label` column headers.
+- **Relative timestamps** — `created_at` shown as `3 hours ago` with absolute ISO-8601 tooltip.
+- **Status vocabulary** — unified badge (`done` / `running` / `pending` / `failed`) with consistent icon + colour.
+- **Monospace identifiers** — volume, SVM, VMID, node, snapshot name, and ONTAP job ID in `<code>` throughout.
+
+**UI — Safety & Confirmations:**
+- **Danger modals** — Restore and Delete require typing the snapshot name; blast-radius VM list shown; optional safety snapshot before restore (default on).
+- **Audit log** — every destructive action (delete, restore) logged to `netapp_audit_log` with user, timestamp, target, result, and ONTAP job ID. Visible under **Jobs → Audit**.
+- **Actionable error toasts** — 12 s display, ✕ close, "Show details" toggle with full ONTAP JSON response in monospace.
+
+**UI — Schedule Wizard:**
+- **6-step wizard** — ① Basics, ② Schedule & Retention (with live next-run preview), ③ VMs & Scripts, ④ SnapMirror (auto-skipped if no relationship), ⑤ Notifications, ⑥ Summary.
+- **Retention warning** — inline alert when reducing retention would immediately purge snapshots on the next run.
+
+**UI — Accessibility:**
+- **Keyboard navigation** — `trapFocus()` on all modals; global Escape handler closes topmost modal; `role="dialog" aria-modal="true"` on all main modals; `aria-live="polite"` on toast region.
 
 #### v1.2.1 — Failover *(implemented, full end-to-end test pending)*
 

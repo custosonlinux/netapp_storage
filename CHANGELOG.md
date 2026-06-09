@@ -3,6 +3,61 @@
 All notable changes to this project will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] – Unreleased
+
+### Added
+
+**Disaster Recovery — Peer-to-Peer Sync (v3.0 architecture):**
+- **DR Peer Sync** — replaces the previous NFS config-volume approach with direct plugin-to-plugin HTTPS communication. Single-row `netapp_dr_peer` configuration; shared sync token (`X-DR-Sync-Token` header); background heartbeat every 30 s and DB sync every 60 s (PRIMARY only). Roles: `PRIMARY` / `SECONDARY` / `STANDALONE` (legacy `MASTER`/`DR_SLAVE` migrated automatically).
+- New endpoints: `dr/peer/status`, `dr/peer/configure`, `dr/peer/remove`, `dr/peer/sync/push`, `dr/peer/heartbeat`, `dr/peer/sync/receive`, `dr/peer/role-notify`.
+
+**UI — Snapshot Timeline (§5 Signature-Element):**
+- **Timeline ribbon** — SVG-based horizontal timeline above the snapshot table; Day/Week/Month/Year zoom; ● dots for existing snapshots (hover = dark tooltip, click = row highlight + flash animation); △ triangles for scheduled future runs (visible when a single datastore is selected and a SnapMirror relationship exists); orange retention band; "now" marker; "+N earlier" overflow indicator.
+
+**UI — Snapshot Table:**
+- **Virtual scrolling** — windowed row rendering above 80 rows with spacer TRs for correct scroll position; sticky header; `_vsSelectedKeys` Set preserves bulk selection state across viewport boundaries when rows leave the DOM.
+- **Mobile card layout** — `@media (max-width: 680px)`: `thead` hidden, each `tr[data-snap-key]` displayed as a block card; all `td` elements carry `data-label` attributes rendered as column headers via CSS `::before`; timeline ribbon hidden on mobile.
+- **Relative timestamps** — `created_at` and `discovered_at` shown as relative text (`3 hours ago`) with absolute ISO-8601 date/time as tooltip.
+- **Status vocabulary** — unified `statusBadge()` helper with consistent icon + colour for `done`, `running`, `pending`, `failed`, `cancelling`, `cancelled`; i18n keys `badge_*` for all 7 locales.
+- **Monospace technical identifiers** — volume names, SVM names, VMIDs, node names, snapshot names, and ONTAP job IDs rendered in `<code>` throughout the UI.
+- **Empty states as CTAs** — all empty tables now show a hero icon and a contextual call-to-action button ("Create Snapshot", "Add Schedule", "Add NetApp System", etc.) instead of a plain "nothing here" message.
+
+**UI — Safety & Confirmations:**
+- **Danger modal — Restore** — full confirmation dialog: type the snapshot name to confirm; VM blast-radius list; optional "create safety snapshot first" checkbox (default: on); Danger-style confirm button.
+- **Danger modal — Delete** — type the snapshot name to confirm; affected VM list.
+- **Blast-radius in Create Snapshot** — when a multi-VM datastore is selected, a notice shows all VMs covered by the snapshot.
+- **Audit log** — `netapp_audit_log` DB table logs every destructive action (delete, restore) with user, timestamp, target object, result, and ONTAP job ID. Visible in **Jobs → Audit** section.
+- **Actionable error toasts** — error toasts stay visible for 12 s (up from 4.5 s); ✕ close button; "Show details" toggle exposes the full ONTAP JSON response in a monospace `<pre>` block. `apiFetch` populates `err.detail` automatically for all non-2xx responses that carry extra JSON fields.
+- **Retention warning** — inline alert in the schedule wizard when reducing the retention count would immediately schedule existing snapshots for deletion on the next run.
+
+**UI — Schedule Wizard:**
+- 6-step wizard replaces the flat add-schedule form: ① Basics (name + datastore), ② Schedule & Retention (frequency, time, count, live next-run preview), ③ VMs & Scripts (consistency, VM selection, pre/post hooks as accordion), ④ SnapMirror (auto-skipped with greyed pill if no relationship configured), ⑤ Notifications (SMTP recipients, notify-on, test button), ⑥ Summary (read-only table before save).
+- Live next-run preview in step ② shows the next 10 execution times computed from the cron expression.
+- All wizard strings added to i18n for all 7 locales.
+
+**UI — Snapshot Tab:**
+- SnapMirror policy labels endpoint (`snapmirror/policy-labels?mapping_id=…`) returns `has_relationship`, `labels[]`, source/destination info, `policy_type`, and `healthy`. Displayed as green/yellow SnapMirror® badge in the create-snapshot modal.
+- Search now matches against VM names (via `s.vm_names`) in addition to snapshot names.
+
+**UI — Accessibility (§11):**
+- `trapFocus(el)` — Tab/Shift-Tab focus cycle is trapped within each open modal; first focusable element receives focus automatically on modal open.
+- Global Escape handler — closes the topmost open modal (logViewModal → deleteConfirmModal → restoreConfirmModal → addScheduleForm) in z-order.
+- `role="dialog" aria-modal="true"` added to all 4 main modals.
+- `aria-live="polite" aria-atomic="true"` on the `#toast` region for screen-reader announcements.
+
+### Changed
+- **Snapshot table sort** — `created_at` now sorted using `Date.parse()` instead of lexicographic string comparison; timestamps sort correctly regardless of format.
+- **Restore / Clone buttons** — "Full Restore" renamed to "Restore"; a separate "Clone" button appears next to it in the snapshot row actions; both navigate to the respective tab with the snapshot pre-selected.
+- **`snapmirror.*` snapshots filtered** — snapshots whose names begin with `snapmirror.` are removed from all API responses; they are never shown in the UI or acted upon.
+- **Create Snapshot modal** — redesigned as 960 px single-column layout; "Volume Mapping" label changed to "Datastore"; PVE Cluster/Node fields removed (not relevant to snapshot scope); VM list enlarged; SnapMirror section shown conditionally only when a relationship exists.
+- **DR NFS config-volume sync removed** — approximately 900 lines of NFS config-volume sync code removed; replaced by the peer-to-peer sync architecture described above.
+
+### Fixed
+- **Timeline tooltip white background** — tooltip used `var(--bg-card,#fff)` which fell back to white in some themes; replaced with hardcoded dark values (`background: #1e293b; color: #e2e8f0`).
+- **Timeline dot click with virtual scroll** — `tlClick()` previously only searched the DOM for `tr[data-snap-key]` rows, missing rows that were not rendered in the current virtual scroll window. Now computes `sc.scrollTop = idx * _vsRowH` to scroll the target into view, then defers `_vsRenderRows` by 40 ms so the row is in the DOM before the highlight flash fires.
+- **DR background threads: `BlockingSwitchOutError` under gevent** — peer sync background thread now uses `gevent.spawn()` instead of a bare OS thread.
+- **DR peer endpoints bypass CSRF and session auth** — `/peer/` routes are exempted from PegaProx session authentication and CSRF validation; they authenticate via the shared sync token.
+
 ## [1.1.2] – 2026-06-08
 
 ### Fixed
