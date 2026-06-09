@@ -2357,6 +2357,25 @@ function _smInfoHtml(data) {
 async function updateSnapMapping() {
   var selId = document.getElementById('snap_mapping').value;
   await loadVmsForMapping(selId);
+
+  // Update blast-radius panel
+  var blastDiv = document.getElementById('snap_blast_radius');
+  if (selId) {
+    var vmSel = document.getElementById('snap_vmids_select');
+    var vms = Array.from(vmSel.options).filter(function(o){ return !o.disabled; });
+    if (vms.length) {
+      document.getElementById('snap_blast_count').textContent = vms.length;
+      document.getElementById('snap_blast_list').innerHTML = vms.map(function(o) {
+        return '<span style="display:inline-flex;align-items:center;padding:2px 8px;background:rgba(217,83,79,.12);border:1px solid rgba(217,83,79,.3);border-radius:4px;font-family:monospace;font-size:12px">' + esc(o.text) + '</span>';
+      }).join(' ');
+      blastDiv.style.display = '';
+    } else {
+      blastDiv.style.display = 'none';
+    }
+  } else {
+    blastDiv.style.display = 'none';
+  }
+
   var smSection = document.getElementById('snap_sm_section');
   if (!selId) { smSection.style.display = 'none'; return; }
   try {
@@ -2623,34 +2642,204 @@ async function deleteSelectedSnapshots() {
 }
 
 async function deleteSnapshot(id, name) {
-  if (!await uiConfirm(tf('confirm_delete_snap', name))) return;
-  try {
-    await apiPost('snapshots/delete', {id:id});
-    toast(t('msg_snap_deleted'),'success');
-    loadSnapshots();
-  } catch(e) { toast(e.message,'error'); }
+  showDeleteConfirm(id, name, false, null, null);
 }
 
 async function deleteSnapshotNative(ontap_snap_uuid, mapping_id, name) {
-  if (!await uiConfirm(tf('confirm_delete_snap_native', name))) return;
-  var payload = {native:true, ontap_snap_uuid, mapping_id, snap_name: name};
-  try {
-    await apiPost('snapshots/delete', payload);
-    toast(t('msg_snap_deleted'),'success');
-    loadSnapshots();
-  } catch(e) {
-    var msg = e.message || String(e);
-    var forceOk = await uiConfirm(
-      t('lang')==='de'
-        ? 'Löschen fehlgeschlagen:\n' + msg + '\n\nMit force=true erneut versuchen? (kann automatisch verwaltete Snapshots entfernen, bricht keine SnapMirror-Beziehungen)'
-        : 'Delete failed:\n' + msg + '\n\nRetry with force=true? (removes auto-managed snapshots; does not break SnapMirror relationships)'
-    );
-    if (!forceOk) return;
+  showDeleteConfirm(null, name, true, ontap_snap_uuid, mapping_id);
+}
+
+// ── Danger Modals: Restore Confirm ────────────────────────────────────────
+
+var _restoreConfirmData = null;
+
+function _blastRadiusHtml(vmids, vmNames) {
+  if (!vmids || !vmids.length) return '<span style="opacity:.5;font-size:12px">— keine VM-Informationen verfügbar —</span>';
+  return vmids.map(function(v) {
+    var n = vmNames && vmNames[String(v)];
+    return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(217,83,79,.12);border:1px solid rgba(217,83,79,.3);border-radius:4px;font-family:monospace;font-size:12px">'
+      + esc(String(v)) + (n ? ' <span style="font-family:sans-serif;opacity:.65">– ' + esc(n) + '</span>' : '')
+      + '</span>';
+  }).join(' ');
+}
+
+function showRestoreConfirm() {
+  var snap = _selectedRestoreSnap;
+  if (!snap) return;
+  var txtVisible = document.getElementById('restore_vmid_text').style.display !== 'none';
+  var vmid = txtVisible
+    ? parseInt(document.getElementById('restore_vmid_text').value)
+    : parseInt(document.getElementById('restore_vmid').value);
+  var method = document.getElementById('restore_method').value;
+  var dsSel = document.getElementById('restore_datastore');
+  var dsText = dsSel && dsSel.options[dsSel.selectedIndex] ? dsSel.options[dsSel.selectedIndex].text : snap.mapping_id;
+
+  _restoreConfirmData = { snap: snap, vmid: vmid, method: method };
+
+  var vmids = snap.vmids || [];
+  var vmNames = snap.vm_names || {};
+
+  document.getElementById('rcm_snap_name').textContent = snap.snap_name;
+  document.getElementById('rcm_datastore').textContent = dsText;
+  document.getElementById('rcm_method').textContent = method;
+  document.getElementById('rcm_vmid').textContent = vmid + (vmNames[String(vmid)] ? ' – ' + vmNames[String(vmid)] : '');
+  document.getElementById('rcm_blast_vms').innerHTML = _blastRadiusHtml(vmids, vmNames);
+  document.getElementById('rcm_expected').textContent = snap.snap_name;
+  document.getElementById('rcm_confirm_input').value = '';
+  document.getElementById('rcm_submit').disabled = true;
+  document.getElementById('rcm_safety').checked = true;
+
+  var modal = document.getElementById('restoreConfirmModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  setTimeout(function(){ document.getElementById('rcm_confirm_input').focus(); }, 80);
+}
+
+function hideRestoreConfirm() {
+  document.getElementById('restoreConfirmModal').style.display = 'none';
+  document.body.style.overflow = '';
+  _restoreConfirmData = null;
+}
+
+function rcmCheckInput() {
+  var expected = document.getElementById('rcm_expected').textContent;
+  var val = document.getElementById('rcm_confirm_input').value;
+  document.getElementById('rcm_submit').disabled = (val !== expected);
+}
+
+async function doRestoreConfirmed() {
+  if (!_restoreConfirmData) return;
+  var snap   = _restoreConfirmData.snap;
+  var vmid   = _restoreConfirmData.vmid;
+  var method = _restoreConfirmData.method;
+  var safety = document.getElementById('rcm_safety').checked;
+
+  var btn = document.getElementById('rcm_submit');
+  btn.disabled = true;
+  btn.textContent = 'Wird ausgeführt…';
+
+  if (safety) {
     try {
-      await apiPost('snapshots/delete', {...payload, force:true});
-      toast(t('msg_snap_deleted'),'success');
+      var today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      await apiPost('snapshots/create', {
+        mapping_id:  snap.mapping_id,
+        name:        'safety_pre_restore_' + today,
+        consistency: 'crash',
+        vmids:       [],
+      });
+    } catch(e) {
+      var cont = await uiConfirm(
+        'Sicherungs-Snapshot konnte nicht erstellt werden:\n' + (e.message || e) +
+        '\n\nTrotzdem mit dem Restore fortfahren?',
+        'Fortfahren', 'btn-danger'
+      );
+      if (!cont) {
+        btn.disabled = false;
+        btn.textContent = '⚠ VM Restore starten';
+        return;
+      }
+    }
+  }
+
+  var isNative = snap.source === 'ontap_native';
+  var payload  = isNative
+    ? { native: true, mapping_id: snap.mapping_id, snap_name: snap.snap_name, vmid: vmid, method: method }
+    : { snapshot_id: snap.id, vmid: vmid, method: method };
+
+  try {
+    var d = await apiPost('restore/start', payload);
+    hideRestoreConfirm();
+    toast(tf('msg_restore_started', d.job_id), 'success');
+    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); }, 800);
+  } catch(e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '⚠ VM Restore starten';
+  }
+}
+
+// ── Danger Modals: Delete Confirm ────────────────────────────────────────
+
+var _deleteConfirmData = null;
+
+function showDeleteConfirm(id, name, isNative, ontap_snap_uuid, mapping_id) {
+  var snap   = id ? _allSnapshots.find(function(s){ return String(s.id) === String(id); }) : null;
+  var vmids  = snap ? (snap.vmids  || []) : [];
+  var vmNames = snap ? (snap.vm_names || {}) : {};
+
+  _deleteConfirmData = { id: id, name: name, isNative: isNative, ontap_snap_uuid: ontap_snap_uuid, mapping_id: mapping_id };
+
+  document.getElementById('dcm_snap_name').textContent = name;
+  document.getElementById('dcm_expected').textContent  = name;
+  document.getElementById('dcm_blast_vms').innerHTML   = _blastRadiusHtml(vmids, vmNames);
+  document.getElementById('dcm_blast_wrap').style.display = vmids.length ? '' : 'none';
+  document.getElementById('dcm_confirm_input').value  = '';
+  document.getElementById('dcm_submit').disabled = true;
+
+  var modal = document.getElementById('deleteConfirmModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  setTimeout(function(){ document.getElementById('dcm_confirm_input').focus(); }, 80);
+}
+
+function hideDeleteConfirm() {
+  document.getElementById('deleteConfirmModal').style.display = 'none';
+  document.body.style.overflow = '';
+  _deleteConfirmData = null;
+}
+
+function dcmCheckInput() {
+  var expected = document.getElementById('dcm_expected').textContent;
+  var val = document.getElementById('dcm_confirm_input').value;
+  document.getElementById('dcm_submit').disabled = (val !== expected);
+}
+
+async function doDeleteConfirmed() {
+  if (!_deleteConfirmData) return;
+  var id            = _deleteConfirmData.id;
+  var name          = _deleteConfirmData.name;
+  var isNative      = _deleteConfirmData.isNative;
+  var snap_uuid     = _deleteConfirmData.ontap_snap_uuid;
+  var mapping_id    = _deleteConfirmData.mapping_id;
+
+  var btn = document.getElementById('dcm_submit');
+  btn.disabled = true;
+  btn.textContent = 'Wird gelöscht…';
+
+  if (isNative) {
+    var payload = { native: true, ontap_snap_uuid: snap_uuid, mapping_id: mapping_id, snap_name: name };
+    try {
+      await apiPost('snapshots/delete', payload);
+      toast(t('msg_snap_deleted'), 'success');
+      hideDeleteConfirm();
       loadSnapshots();
-    } catch(e2) { toast(e2.message,'error'); }
+    } catch(e) {
+      var msg = e.message || String(e);
+      btn.disabled = false;
+      btn.textContent = 'Snapshot löschen';
+      var forceOk = await uiConfirm(
+        'Löschen fehlgeschlagen:\n' + msg + '\n\nMit force=true erneut versuchen?\n(entfernt automatisch verwaltete Snapshots, bricht keine SnapMirror-Beziehungen)',
+        'Force Delete', 'btn-danger'
+      );
+      if (!forceOk) return;
+      try {
+        await apiPost('snapshots/delete', Object.assign({}, payload, { force: true }));
+        toast(t('msg_snap_deleted'), 'success');
+        hideDeleteConfirm();
+        loadSnapshots();
+      } catch(e2) { toast(e2.message, 'error'); }
+    }
+  } else {
+    try {
+      await apiPost('snapshots/delete', { id: id });
+      toast(t('msg_snap_deleted'), 'success');
+      hideDeleteConfirm();
+      loadSnapshots();
+    } catch(e) {
+      toast(e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Snapshot löschen';
+    }
   }
 }
 
@@ -3096,8 +3285,22 @@ function parseCronToForm(expr) {
 }
 
 async function saveSchedule() {
+  // Re-validate step 1 in case the user bypassed it
+  var name = (document.getElementById('sched_name').value || '').trim();
+  var mid  = document.getElementById('sched_mapping').value;
+  if (!name || !mid) {
+    schedWizShowStep(1);
+    toast(t('msg_fill_required'), 'error');
+    return;
+  }
   var editId = document.getElementById('sched_edit_id').value;
-  if (editId) { await updateSchedule(editId); } else { await addSchedule(); }
+  var btn = document.getElementById('schedWizSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    if (editId) { await updateSchedule(editId); } else { await addSchedule(); }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = editId ? 'Update Schedule' : 'Save Schedule'; }
+  }
 }
 
 function _schedNotifyPayload() {
@@ -3149,6 +3352,9 @@ function schedWizShowStep(n) {
 
 function schedWizGoStep(n) {
   if (n === 4 && !_schedWizHasSM) return;
+  // Pills only navigate backward (already-visited steps).
+  // Forward navigation goes through schedWizNext() which validates each step.
+  if (n > _schedWizStep) return;
   schedWizShowStep(n);
 }
 
@@ -3501,8 +3707,6 @@ async function updateRestoreVmList() {
 }
 
 async function startRestore() {
-  var method   = document.getElementById('restore_method').value;
-  var isNative   = _selectedRestoreSnap && _selectedRestoreSnap.source === 'ontap_native';
   var txtVisible = document.getElementById('restore_vmid_text').style.display !== 'none';
   var vmid       = txtVisible
     ? parseInt(document.getElementById('restore_vmid_text').value)
@@ -3510,29 +3714,7 @@ async function startRestore() {
 
   if (!_selectedRestoreSnap) { toast(t('msg_snap_req'),'error'); return; }
   if (!vmid) { toast(t('msg_vmid_req2'),'error'); return; }
-  /* confirm() is blocked in iframe context — proceed directly */
-
-  var payload;
-  if (isNative) {
-    payload = {
-      native:     true,
-      mapping_id: _selectedRestoreSnap.mapping_id,
-      snap_name:  _selectedRestoreSnap.snap_name,
-      vmid:       vmid,
-      method:     method,
-    };
-  } else {
-    payload = {
-      snapshot_id: _selectedRestoreSnap.id,
-      vmid:        vmid,
-      method:      method,
-    };
-  }
-  try {
-    var d = await apiPost('restore/start', payload);
-    toast(tf('msg_restore_started', d.job_id), 'success');
-    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); }, 800);
-  } catch(e) { toast(e.message,'error'); }
+  showRestoreConfirm();
 }
 
 var _allJobsCache = [];
@@ -7359,6 +7541,12 @@ loadSnapshots();
         <label>Datastore</label>
         <select id="snap_mapping" onchange="updateSnapMapping()"></select>
       </div>
+      <!-- Blast-radius: shown after datastore is selected -->
+      <div id="snap_blast_radius" style="display:none;padding:10px 14px;border:1px solid rgba(217,83,79,.3);border-radius:6px;background:rgba(217,83,79,.05)">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:7px;text-transform:uppercase">Blast-Radius — erfasste VMs auf diesem Volume</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Dieser Snapshot betrifft das gesamte Volume — alle <strong id="snap_blast_count">0</strong> VM(s) werden eingeschlossen.</div>
+        <div id="snap_blast_list" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      </div>
       <div class="form-group">
         <label><span data-i18n="lbl_vms">VMs</span> &nbsp;<button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="selectAllVms()" data-i18n="btn_all">All</button></label>
         <select id="snap_vmids_select" multiple size="12" style="min-height:220px">
@@ -8020,6 +8208,76 @@ loadSnapshots();
   </div>
 </div>
 
+
+<!-- ── Restore Confirm Modal (danger) ──────────────────────────────── -->
+<div id="restoreConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
+  <div style="max-width:540px;width:100%;margin:0 auto;background:var(--card);border:1px solid rgba(217,83,79,.4);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.55)">
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(217,83,79,.25);background:rgba(217,83,79,.07)">
+      <span style="font-size:18px;line-height:1">⚠</span>
+      <span style="font-size:15px;font-weight:700;color:#d9534f">VM Restore starten</span>
+      <button onclick="hideRestoreConfirm()" style="margin-left:auto;background:none;border:none;color:var(--text);opacity:.6;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <tr><td style="padding:4px 10px 4px 0;color:var(--muted);white-space:nowrap;width:90px">Snapshot</td>
+            <td style="padding:4px 0"><code id="rcm_snap_name" style="font-family:monospace;font-size:12px;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code></td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Datastore</td>
+            <td style="padding:4px 0"><span id="rcm_datastore"></span></td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Methode</td>
+            <td style="padding:4px 0"><code id="rcm_method" style="font-family:monospace;font-size:12px;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code></td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:var(--muted)">Ziel-VM</td>
+            <td style="padding:4px 0"><code id="rcm_vmid" style="font-family:monospace;font-size:12px;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code></td></tr>
+      </table>
+      <div style="border:1px solid rgba(217,83,79,.35);border-radius:6px;padding:10px 14px;background:rgba(217,83,79,.05)">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:8px;text-transform:uppercase">Blast-Radius — VMs in diesem Snapshot</div>
+        <div id="rcm_blast_vms" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;padding:10px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg)">
+        <input type="checkbox" id="rcm_safety" checked style="margin-top:2px;flex-shrink:0">
+        <span>
+          <strong>Sicherungs-Snapshot vorher erstellen</strong><br>
+          <span style="font-size:11px;opacity:.7">Erstellt <code>safety_pre_restore_YYYYMMDD</code> (Crash-Consistent) bevor der Restore startet.</span>
+        </span>
+      </label>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label style="font-size:13px;font-weight:600;color:#d9534f">Zur Bestätigung den Snapshot-Namen eingeben:</label>
+        <div style="font-size:12px;color:var(--muted)">Gib <code id="rcm_expected" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> ein um fortzufahren</div>
+        <input id="rcm_confirm_input" oninput="rcmCheckInput()" placeholder="Snapshot-Namen eingeben …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+        <button class="btn btn-ghost" onclick="hideRestoreConfirm()">Abbrechen</button>
+        <button id="rcm_submit" class="btn btn-danger" disabled onclick="doRestoreConfirmed()">⚠ VM Restore starten</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Confirm Modal (danger) ───────────────────────────────── -->
+<div id="deleteConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
+  <div style="max-width:480px;width:100%;margin:0 auto;background:var(--card);border:1px solid rgba(217,83,79,.4);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.55)">
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(217,83,79,.25);background:rgba(217,83,79,.07)">
+      <span style="font-size:18px;line-height:1">⚠</span>
+      <span style="font-size:15px;font-weight:700;color:#d9534f">Snapshot löschen</span>
+      <button onclick="hideDeleteConfirm()" style="margin-left:auto;background:none;border:none;color:var(--text);opacity:.6;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+      <p style="margin:0;font-size:13px">Snapshot <code id="dcm_snap_name" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> wird dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.</p>
+      <div id="dcm_blast_wrap" style="border:1px solid rgba(217,83,79,.35);border-radius:6px;padding:10px 14px;background:rgba(217,83,79,.05)">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;margin-bottom:8px;text-transform:uppercase">Betroffene VMs</div>
+        <div id="dcm_blast_vms" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label style="font-size:13px;font-weight:600;color:#d9534f">Zur Bestätigung den Snapshot-Namen eingeben:</label>
+        <div style="font-size:12px;color:var(--muted)">Gib <code id="dcm_expected" style="font-family:monospace;background:rgba(0,0,0,.15);padding:1px 6px;border-radius:3px"></code> ein um fortzufahren</div>
+        <input id="dcm_confirm_input" oninput="dcmCheckInput()" placeholder="Snapshot-Namen eingeben …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+        <button class="btn btn-ghost" onclick="hideDeleteConfirm()">Abbrechen</button>
+        <button id="dcm_submit" class="btn btn-danger" disabled onclick="doDeleteConfirmed()">Snapshot löschen</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <footer style="margin-top:2rem;padding:0.75rem 1rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.7rem;line-height:1.5">
   NetApp&#174;, ONTAP&#174;, SnapMirror&#174;, SnapVault&#174;, SnapRestore&#174;, and FlexClone&#174; are registered trademarks of NetApp, Inc.
