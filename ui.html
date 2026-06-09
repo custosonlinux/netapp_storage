@@ -264,6 +264,43 @@
   @keyframes tlFlash { 0%,100%{background:transparent} 50%{background:rgba(224,120,0,.18)} }
   .tl-highlight { animation: tlFlash .5s ease 3; }
 
+  @media (max-width: 680px) {
+    #snapTableScroller { max-height: none !important; }
+    #snapTableScroller table { min-width: 0 !important; width: 100%; border-collapse: collapse; }
+    #snapTableScroller thead { display: none; }
+    #snapTableScroller tr:not([data-snap-key]) { display: none; }
+    #snapTableScroller tr[data-snap-key] {
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin: 6px 10px;
+      padding: 8px 10px;
+      background: var(--card);
+    }
+    #snapTableScroller td {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 3px 0;
+      border: none !important;
+      font-size: 13px;
+    }
+    #snapTableScroller td[data-label]::before {
+      content: attr(data-label);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      min-width: 78px;
+      flex-shrink: 0;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      padding-top: 3px;
+    }
+    #snapTableScroller td:first-child { display: none; }
+    #snapTableScroller .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .snap-timeline-card { display: none; }
+  }
+
   .log-box {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -1280,7 +1317,7 @@ function applyI18n() {
         </div>
       </div>
 
-      <div class="card" style="padding:0;margin-bottom:12px">
+      <div class="card snap-timeline-card" style="padding:0;margin-bottom:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 6px">
           <span style="font-weight:600;font-size:13px;color:var(--text)">Timeline</span>
           <div style="display:flex;gap:4px" id="tl_zoom_btns">
@@ -1839,7 +1876,7 @@ function applyI18n() {
   </div><!-- /.content -->
 </div><!-- /.layout -->
 
-<div id="toast" class="toast" style="display:none;position:relative"></div>
+<div id="toast" class="toast" style="display:none;position:relative" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 const API = '/api/plugins/netapp_storage/api';
@@ -1965,6 +2002,40 @@ function uiAlert(msg) {
     setTimeout(function(){ box.querySelector('._ua-ok').focus(); }, 50);
   });
 }
+
+// ── Focus trap + keyboard helpers ──────────────────────────────────────────
+var _FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+function trapFocus(el) {
+  var nodes = Array.from(el.querySelectorAll(_FOCUSABLE)).filter(function(n){ return n.offsetParent !== null; });
+  if (!nodes.length) return;
+  nodes[0].focus();
+  el.addEventListener('keydown', function handler(ev) {
+    if (ev.key !== 'Tab') return;
+    var visible = Array.from(el.querySelectorAll(_FOCUSABLE)).filter(function(n){ return n.offsetParent !== null; });
+    if (!visible.length) return;
+    var first = visible[0], last = visible[visible.length - 1];
+    if (ev.shiftKey) {
+      if (document.activeElement === first) { last.focus(); ev.preventDefault(); }
+    } else {
+      if (document.activeElement === last) { first.focus(); ev.preventDefault(); }
+    }
+  });
+}
+
+document.addEventListener('keydown', function(ev) {
+  if (ev.key !== 'Escape') return;
+  var order = [
+    { id: 'logViewModal',      fn: function(){ hideJobLog(); } },
+    { id: 'deleteConfirmModal', fn: function(){ var b=document.querySelector('#deleteConfirmModal ._cancel-btn'); if(b) b.click(); } },
+    { id: 'restoreConfirmModal',fn: function(){ var b=document.querySelector('#restoreConfirmModal ._cancel-btn'); if(b) b.click(); } },
+    { id: 'addScheduleForm',   fn: function(){ hideForm('addScheduleForm'); } }
+  ];
+  for (var i = 0; i < order.length; i++) {
+    var el = document.getElementById(order[i].id);
+    if (el && el.style.display !== 'none') { order[i].fn(); break; }
+  }
+});
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 document.querySelectorAll('.subtab').forEach(function(t) {
@@ -2548,18 +2619,18 @@ function _snapRowHtml(s) {
   return '<tr data-snap-key="'+snapKey+'"'+(isNative?' style="opacity:.85"':'')+'>'
     +'<td style="padding:4px 8px"><input type="checkbox" class="snap-cb"'+(isSel?' checked':'')
     +' onchange="snapCbChange(\''+snapKey+'\',this)" '+cbData+'></td>'
-    +'<td><code>'+esc(s.snap_name)+'</code></td>'
-    +'<td><strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
+    +'<td data-label="Name"><code>'+esc(s.snap_name)+'</code></td>'
+    +'<td data-label="Datastore"><strong>'+esc(s.pve_storage_id||s.volume_name||'')+'</strong>'
     +(s.pve_storage_id&&s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:11px;opacity:.7">'+esc(s.volume_name)+'</code>':'')
     +(s.svm_name||s.endpoint_name?'<br><span style="font-size:.75rem;color:var(--muted);font-family:monospace">'+esc(s.svm_name||'')+(s.svm_name&&s.endpoint_name?' · ':'')+esc(s.endpoint_name||'')+'</span>':'')
     +'</td>'
-    +'<td style="max-width:200px;word-break:break-word">'+vmsHtml+'</td>'
-    +'<td>'+(isNative?'<span style="color:var(--muted)">–</span>':esc(s.consistency))+'</td>'
-    +'<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>'
-    +'<td>'+statusBadge(s.status)+'</td>'
-    +'<td>'+sourceBadge+'</td>'
-    +'<td style="color:var(--muted)">'+fmtDateRel(s.created_at)+'</td>'
-    +'<td><div class="row-actions">'+actions+'</div></td></tr>';
+    +'<td data-label="VMs" style="max-width:200px;word-break:break-word">'+vmsHtml+'</td>'
+    +'<td data-label="Consistency">'+(isNative?'<span style="color:var(--muted)">–</span>':esc(s.consistency))+'</td>'
+    +'<td data-label="Label">'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>'
+    +'<td data-label="Status">'+statusBadge(s.status)+'</td>'
+    +'<td data-label="Source">'+sourceBadge+'</td>'
+    +'<td data-label="Created" style="color:var(--muted)">'+fmtDateRel(s.created_at)+'</td>'
+    +'<td data-label="Actions"><div class="row-actions">'+actions+'</div></td></tr>';
 }
 
 var _VS_THRESHOLD = 80;
@@ -2815,7 +2886,7 @@ function showRestoreConfirm() {
   var modal = document.getElementById('restoreConfirmModal');
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
-  setTimeout(function(){ document.getElementById('rcm_confirm_input').focus(); }, 80);
+  setTimeout(function(){ trapFocus(modal); document.getElementById('rcm_confirm_input').focus(); }, 80);
 }
 
 function hideRestoreConfirm() {
@@ -2902,7 +2973,7 @@ function showDeleteConfirm(id, name, isNative, ontap_snap_uuid, mapping_id) {
   var modal = document.getElementById('deleteConfirmModal');
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
-  setTimeout(function(){ document.getElementById('dcm_confirm_input').focus(); }, 80);
+  setTimeout(function(){ trapFocus(modal); document.getElementById('dcm_confirm_input').focus(); }, 80);
 }
 
 function hideDeleteConfirm() {
@@ -4337,7 +4408,9 @@ function showJobLog(id) {
   errDiv.textContent = j.error || '';
   errDiv.style.display = j.error ? '' : 'none';
 
-  document.getElementById('logViewModal').style.display = 'flex';
+  var lvm = document.getElementById('logViewModal');
+  lvm.style.display = 'flex';
+  setTimeout(function(){ trapFocus(lvm); }, 60);
 }
 
 function hideJobLog() {
@@ -8176,7 +8249,7 @@ loadSnapshots();
 </div><!-- /createSnapshotForm -->
 
 <!-- ── Add/Edit Schedule Modal ───────────────────────────────────── -->
-<div id="addScheduleForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addScheduleBackdropClick(event)">
+<div id="addScheduleForm" role="dialog" aria-modal="true" aria-label="Schedule" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="addScheduleBackdropClick(event)">
   <div style="max-width:960px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
 
     <!-- Header -->
@@ -8804,7 +8877,7 @@ loadSnapshots();
 
 
 <!-- ── Restore Confirm Modal (danger) ──────────────────────────────── -->
-<div id="restoreConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
+<div id="restoreConfirmModal" role="dialog" aria-modal="true" aria-label="Confirm restore" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
   <div style="max-width:540px;width:100%;margin:0 auto;background:var(--card);border:1px solid rgba(217,83,79,.4);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.55)">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(217,83,79,.25);background:rgba(217,83,79,.07)">
       <svg width="20" height="20" fill="none" stroke="#d9534f" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
@@ -8839,7 +8912,7 @@ loadSnapshots();
         <input id="rcm_confirm_input" oninput="rcmCheckInput()" placeholder="Type snapshot name …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-        <button class="btn btn-ghost" onclick="hideRestoreConfirm()">Cancel</button>
+        <button class="btn btn-ghost _cancel-btn" onclick="hideRestoreConfirm()">Cancel</button>
         <button id="rcm_submit" class="btn btn-danger" disabled onclick="doRestoreConfirmed()">Start VM Restore</button>
       </div>
     </div>
@@ -8847,7 +8920,7 @@ loadSnapshots();
 </div>
 
 <!-- ── Delete Confirm Modal (danger) ───────────────────────────────── -->
-<div id="deleteConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
+<div id="deleteConfirmModal" role="dialog" aria-modal="true" aria-label="Confirm delete" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9100;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
   <div style="max-width:480px;width:100%;margin:0 auto;background:var(--card);border:1px solid rgba(217,83,79,.4);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.55)">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid rgba(217,83,79,.25);background:rgba(217,83,79,.07)">
       <svg width="20" height="20" fill="none" stroke="#d9534f" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
@@ -8866,7 +8939,7 @@ loadSnapshots();
         <input id="dcm_confirm_input" oninput="dcmCheckInput()" placeholder="Type snapshot name …" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04)">
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
-        <button class="btn btn-ghost" onclick="hideDeleteConfirm()">Cancel</button>
+        <button class="btn btn-ghost _cancel-btn" onclick="hideDeleteConfirm()">Cancel</button>
         <button id="dcm_submit" class="btn btn-danger" disabled onclick="doDeleteConfirmed()">Delete Snapshot</button>
       </div>
     </div>
@@ -8879,7 +8952,7 @@ loadSnapshots();
 </footer>
 
 <!-- ── Log Viewer Modal ── -->
-<div id="logViewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9200;align-items:center;justify-content:center;padding:20px">
+<div id="logViewModal" role="dialog" aria-modal="true" aria-label="Job log" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9200;align-items:center;justify-content:center;padding:20px">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;width:min(820px,100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)">
 
     <!-- Header -->
