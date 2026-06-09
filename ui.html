@@ -550,7 +550,7 @@ de:{
   sm_no_dest_ep:'Kein Sekundär-Endpoint — erst scannen',
   ct_dr_clone:'DR-Clone von Sekundärsystem',btn_start_dr_clone:'DR-Clone starten',
   sm_source_vol:'Quell-Volume',sm_dest_vol:'Ziel-Volume',sm_state:'Zustand',sm_lag:'Verzug',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
+  tab_restore:'Restore & Clone',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
   sect_smtp:'E-Mail-Benachrichtigungen (SMTP)',
   lbl_smtp_host:'SMTP-Server',lbl_smtp_port:'Port',lbl_smtp_user:'Benutzername',
   lbl_smtp_pass:'Passwort',lbl_smtp_from:'Absender (Von)',lbl_smtp_encryption:'Verschlüsselung',
@@ -665,7 +665,7 @@ en:{
   sm_no_dest_ep:'No secondary endpoint configured — scan first',
   ct_dr_clone:'DR Clone from Secondary',btn_start_dr_clone:'Start DR Clone',
   sm_source_vol:'Source Volume',sm_dest_vol:'Destination Volume',sm_state:'State',sm_lag:'Lag',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
+  tab_restore:'Restore & Clone',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
   sect_smtp:'Email Notifications (SMTP)',
   lbl_smtp_host:'SMTP Server',lbl_smtp_port:'Port',lbl_smtp_user:'Username',
   lbl_smtp_pass:'Password',lbl_smtp_from:'Sender (From)',lbl_smtp_encryption:'Encryption',
@@ -780,7 +780,7 @@ fr:{
   sm_no_dest_ep:'Aucun endpoint secondaire configuré — scanner d\'abord',
   ct_dr_clone:'DR Clone depuis le secondaire',btn_start_dr_clone:'Démarrer DR Clone',
   sm_source_vol:'Volume Source',sm_dest_vol:'Volume Destination',sm_state:'État',sm_lag:'Décalage',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
+  tab_restore:'Restore & Clone',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
   sect_smtp:'Notifications e-mail (SMTP)',
   lbl_smtp_host:'Serveur SMTP',lbl_smtp_port:'Port',lbl_smtp_user:"Nom d'utilisateur",
   lbl_smtp_pass:'Mot de passe',lbl_smtp_from:'Expéditeur (De)',lbl_smtp_encryption:'Chiffrement',
@@ -895,7 +895,7 @@ es:{
   sm_no_dest_ep:'Sin endpoint secundario configurado — escanear primero',
   ct_dr_clone:'DR Clone desde Secundario',btn_start_dr_clone:'Iniciar DR Clone',
   sm_source_vol:'Volumen Origen',sm_dest_vol:'Volumen Destino',sm_state:'Estado',sm_lag:'Retraso',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
+  tab_restore:'Restore & Clone',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
   sect_smtp:'Notificaciones por correo (SMTP)',
   lbl_smtp_host:'Servidor SMTP',lbl_smtp_port:'Puerto',lbl_smtp_user:'Usuario',
   lbl_smtp_pass:'Contraseña',lbl_smtp_from:'Remitente (De)',lbl_smtp_encryption:'Cifrado',
@@ -1010,7 +1010,7 @@ pt:{
   sm_no_dest_ep:'Sem endpoint secundário configurado — escanear primeiro',
   ct_dr_clone:'DR Clone do Secundário',btn_start_dr_clone:'Iniciar DR Clone',
   sm_source_vol:'Volume Origem',sm_dest_vol:'Volume Destino',sm_state:'Estado',sm_lag:'Atraso',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
+  tab_restore:'Restore & Clone',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
   sect_smtp:'Notificações por e-mail (SMTP)',
   lbl_smtp_host:'Servidor SMTP',lbl_smtp_port:'Porta',lbl_smtp_user:'Usuário',
   lbl_smtp_pass:'Senha',lbl_smtp_from:'Remetente (De)',lbl_smtp_encryption:'Criptografia',
@@ -1240,7 +1240,7 @@ it:{
   sm_no_dest_ep:'Nessun endpoint secondario configurato — scansionare prima',
   ct_dr_clone:'DR Clone dal Secondario',btn_start_dr_clone:'Avvia DR Clone',
   sm_source_vol:'Volume Sorgente',sm_dest_vol:'Volume Destinazione',sm_state:'Stato',sm_lag:'Ritardo',
-  tab_restore:'Restore',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
+  tab_restore:'Restore & Clone',tab_clone:'Clone',tab_provision:'Provision',tab_storage:'Storage',
   sect_smtp:'Notifiche e-mail (SMTP)',
   lbl_smtp_host:'Server SMTP',lbl_smtp_port:'Porta',lbl_smtp_user:'Nome utente',
   lbl_smtp_pass:'Password',lbl_smtp_from:'Mittente (Da)',lbl_smtp_encryption:'Cifratura',
@@ -1284,8 +1284,7 @@ function applyI18n() {
   <div class="subtabs">
     <div class="subtab active" data-tab="snapshots"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg><span data-i18n="tab_snapshots">Snapshots</span></div>
     <div class="subtab" data-tab="schedules"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span data-i18n="tab_schedules">Schedules</span></div>
-    <div class="subtab" data-tab="restore"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg><span data-i18n="tab_restore">Restore</span></div>
-    <div class="subtab" data-tab="clone"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg><span data-i18n="tab_clone">Clone</span></div>
+    <div class="subtab" data-tab="restore"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg><span data-i18n="tab_restore">Restore &amp; Clone</span></div>
     <div class="subtab" data-tab="storage"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg><span data-i18n="tab_storage">Storage</span></div>
     <div class="subtab" data-tab="jobs"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg><span data-i18n="tab_jobs">Jobs &amp; Logs</span></div>
     <div class="subtab" data-tab="dr"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg><span>Disaster Recovery</span></div>
@@ -1386,61 +1385,48 @@ function applyI18n() {
 
     <!-- ══════════════════════ SNAPMIRROR® ══════════════════════ -->
     <!-- ═══════════════════════ VM-RESTORE ══════════════════════ -->
+    <!-- ════════════════ RESTORE & CLONE ════════════════ -->
     <div id="tab-restore" class="tab-panel" style="display:none">
-      <div class="card">
-        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg><span data-i18n="ct_start_restore">Single VM Restore</span></div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Datastore</label>
-            <select id="restore_datastore" onchange="onRestoreDatastoreChange()">
-              <option value="">— Select datastore —</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_snapshot">Snapshot</label>
-            <select id="restore_snap" onchange="updateRestoreVmList()" disabled>
-              <option value="">— select datastore first —</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_vm_id">VM-ID</label>
-            <select id="restore_vmid" disabled>
-              <option value="">—</option>
-            </select>
-            <input id="restore_vmid_text" type="number" placeholder="Enter VMID manually"
-                   style="display:none;width:100%;margin-top:4px">
-            <p id="restore_native_hint" class="hint" style="display:none;margin-top:4px" data-i18n="hint_ontap_native">
-              ONTAP native snapshot — enter VM-ID manually. Manifest is read from the snapshot during restore (most recent available manifest).
-            </p>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_method">Method</label>
-            <select id="restore_method" onchange="onRestoreMethodChange()">
-              <option value="sfsr">SFSR – in-place (fast)</option>
-            </select>
-            <p id="restore_method_hint" class="hint" style="margin-top:4px;display:none"></p>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="startRestore()" data-i18n="btn_start_restore">Start VM Restore</button>
-        </div>
+
+      <!-- VM List header -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        <span style="font-weight:700;font-size:15px">Restore &amp; Clone</span>
+        <input id="rcSearch" type="text" placeholder="Filter by VM name or ID…" oninput="rcFilterChanged()" style="flex:1;min-width:160px;max-width:240px;margin-left:8px">
+        <button class="btn btn-ghost btn-sm" onclick="loadRcVmList()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh
+        </button>
+      </div>
+
+      <div class="card table-scroll">
+        <table style="min-width:700px">
+          <thead><tr>
+            <th>VMID</th><th>Name</th><th>Datastore</th><th>Protocol</th>
+            <th>Snapshots</th><th>Last Snapshot</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="rcVmTbody">
+            <tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+        <p style="font-size:11px;color:var(--muted);padding:6px 14px 8px;margin:0">All VMs that have ever been snapshotted — including VMs no longer in the cluster — appear here.</p>
+      </div>
+
+      <!-- ── SnapMirror® DR ─────────────────────────────────────────────── -->
+      <div class="sub-header" style="margin-top:24px">
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>SnapMirror® DR Restore &amp; Clone</span>
       </div>
 
       <!-- DR Restore from SnapMirror® secondary -->
-      <div class="card" style="margin-top:16px">
+      <div class="card">
         <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg><span data-i18n="sm_dr_title">Restore from SnapMirror® Secondary System</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">SnapMirror® Relationship</label>
-            <select id="dr_relationship" onchange="loadDrSecondarySnaps()">
-              <option value=""></option>
-            </select>
+            <select id="dr_relationship" onchange="loadDrSecondarySnaps()"><option value=""></option></select>
           </div>
           <div class="form-group">
             <label data-i18n="sm_select_snap">Secondary Snapshot</label>
-            <select id="dr_snap_name" onchange="loadDrSnapVmids()">
-              <option value=""></option>
-            </select>
+            <select id="dr_snap_name" onchange="loadDrSnapVmids()"><option value=""></option></select>
           </div>
           <div class="form-group">
             <label data-i18n="lbl_vm_id">VM-ID</label>
@@ -1456,79 +1442,13 @@ function applyI18n() {
         </div>
       </div>
 
-      <!-- ── Import VMs from Datastore ────────────────────────────────── -->
-      <div class="sub-header" style="margin-top:28px">
-        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Import VMs from Datastore</span>
-        <button class="btn btn-primary btn-sm" onclick="showVmImportModal()">+ Import VMs</button>
-      </div>
-
-    </div>
-
-    <!-- ════════════════════════ VM-CLONE ════════════════════════ -->
-    <div id="tab-clone" class="tab-panel" style="display:none">
-      <div class="card">
-        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg><span data-i18n="ct_clone_vm">Clone VM</span></div>
-        <div class="form-grid" style="margin-bottom:10px">
-          <div class="form-group">
-            <label>Datastore</label>
-            <select id="clone_datastore" onchange="onCloneDatastoreChange()">
-              <option value="">— Select datastore —</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_snapshot">Snapshot</label>
-            <select id="clone_snap" onchange="prepareCloneFromSelect()" disabled>
-              <option value="">— select datastore first —</option>
-            </select>
-          </div>
-        </div>
-        <div id="cloneFormInfo" style="margin-bottom:10px;color:var(--muted);font-size:13px"></div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="lbl_source_vm">Source VM</label>
-            <select id="clone_src_vmid" onchange="onCloneSrcChange()"></select>
-            <input id="clone_src_vmid_text" type="number" placeholder="Enter source VMID manually"
-                   style="display:none;width:100%;margin-top:4px">
-            <p id="clone_manifest_hint" class="hint" style="display:none;margin-top:4px"></p>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_new_name">New Name</span> <span style="opacity:.6" data-i18n="lbl_new_name_hint">(optional)</span></label>
-            <input id="clone_new_name" placeholder="e.g. clone-webserver">
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_new_vmid">New VM-ID</span>
-              <button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px"
-                      onclick="suggestNextId()" data-i18n="btn_suggest">Suggest</button>
-            </label>
-            <input id="clone_new_vmid" type="number" placeholder="e.g. 201">
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_target_node">Target Node</label>
-            <select id="clone_target_node"></select>
-            <input id="clone_target_node_text" type="text" placeholder="node name"
-                   style="display:none;margin-top:4px" oninput="_syncNodeText(this.value)">
-          </div>
-          <div class="form-group" style="display:flex;align-items:center;padding-top:20px">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
-              <input id="clone_start_after" type="checkbox">
-              <span data-i18n="lbl_start_after">Start VM after cloning</span>
-            </label>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="startClone()" data-i18n="btn_start_clone">Start Clone</button>
-        </div>
-      </div>
-
-      <!-- DR-Clone vom Sekundärsystem -->
+      <!-- DR Clone from SnapMirror® secondary -->
       <div class="card" style="margin-top:16px">
         <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg><span data-i18n="ct_dr_clone">DR Clone from Secondary System</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label data-i18n="sm_select_rel">Select relationship</label>
-            <select id="dr_clone_relationship" onchange="loadDrCloneSnaps()">
-              <option value=""></option>
-            </select>
+            <select id="dr_clone_relationship" onchange="loadDrCloneSnaps()"><option value=""></option></select>
           </div>
           <div class="form-group">
             <label data-i18n="sm_select_snap">Select snapshot</label>
@@ -1544,8 +1464,7 @@ function applyI18n() {
           </div>
           <div class="form-group">
             <label><span data-i18n="lbl_new_vmid">New VM-ID</span>
-              <button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px"
-                      onclick="suggestDrCloneNextId()" data-i18n="btn_suggest">Suggest</button>
+              <button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="suggestDrCloneNextId()" data-i18n="btn_suggest">Suggest</button>
             </label>
             <input id="dr_clone_new_vmid" type="number" placeholder="e.g. 201">
           </div>
@@ -1561,7 +1480,17 @@ function applyI18n() {
           <button class="btn btn-primary" onclick="startDrClone()" data-i18n="btn_start_dr_clone">Start DR Clone</button>
         </div>
       </div>
+
+      <!-- ── Import VMs (temporary — moving to Storage tab in next release) ── -->
+      <div class="sub-header" style="margin-top:28px">
+        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Import VMs from Datastore</span>
+        <button class="btn btn-primary btn-sm" onclick="showVmImportModal()">+ Import VMs</button>
+      </div>
+
     </div>
+
+    <!-- tab-clone: nav pill removed, panel kept as empty placeholder for compat -->
+    <div id="tab-clone" class="tab-panel" style="display:none"></div>
 
     <!-- ══════════════════════ PROVISION ══════════════════════ -->
     <div id="tab-storage" class="tab-panel" style="display:none">
@@ -2028,7 +1957,8 @@ document.addEventListener('keydown', function(ev) {
   var order = [
     { id: 'logViewModal',      fn: function(){ hideJobLog(); } },
     { id: 'deleteConfirmModal', fn: function(){ var b=document.querySelector('#deleteConfirmModal ._cancel-btn'); if(b) b.click(); } },
-    { id: 'restoreConfirmModal',fn: function(){ var b=document.querySelector('#restoreConfirmModal ._cancel-btn'); if(b) b.click(); } },
+    { id: 'rwModal', fn: function(){ closeRestoreWizard(); } },
+    { id: 'cwModal', fn: function(){ closeCloneWizard(); } },
     { id: 'addScheduleForm',   fn: function(){ hideForm('addScheduleForm'); } }
   ];
   for (var i = 0; i < order.length; i++) {
@@ -2049,8 +1979,7 @@ document.querySelectorAll('.subtab').forEach(function(t) {
     var loaders = {
       snapshots: loadSnapshots,
       schedules: loadSchedules,
-      restore:   function(){ loadSnapshotsForRestore(); loadDrRelationshipSelector(); },
-      clone:     function(){ loadCloneSnapshots(); loadDrCloneRelationshipSelector(); },
+      restore:   function(){ loadRcVmList(); loadDrRelationshipSelector(); loadDrCloneRelationshipSelector(); },
       storage:   loadStorageUnified,
       jobs:      loadAllJobs,
       settings:  function(){ loadEndpoints(); loadPveHosts(); loadSmtp(); },
@@ -2846,6 +2775,414 @@ async function deleteSnapshotNative(ontap_snap_uuid, mapping_id, name) {
 
 var _restoreConfirmData = null;
 var _currentLogJobId = null;
+
+// ══════════════════════════════════════════════════════════════════════════
+// RESTORE & CLONE — VM-centric list + wizard
+// ══════════════════════════════════════════════════════════════════════════
+
+var _rcVms    = [];
+var _rcSearch = '';
+
+function loadRcVmList() {
+  apiFetch('snapshots').then(function(snaps){
+    _allSnapshots = snaps;
+    renderRcVmList();
+  }).catch(function(e){ toast(e.message,'error'); });
+}
+
+function renderRcVmList() {
+  var done = _allSnapshots.filter(function(s){ return s.status === 'done'; });
+  var vmMap = {};
+  done.forEach(function(s) {
+    var vmids   = s.vmids   || [];
+    var vmNames = s.vm_names || {};
+    vmids.forEach(function(vid) {
+      var key = String(vid);
+      if (!vmMap[key]) {
+        vmMap[key] = {
+          vmid:         vid,
+          name:         vmNames[key] || '',
+          mappingId:    s.mapping_id,
+          dsName:       s.pve_storage_id || s.volume_name || s.mapping_id,
+          protocol:     _snapProtoLabel(s),
+          isSan:        _snapIsSan(s),
+          sanOpt:       !!s.san_optimized,
+          pveClusterId: s.pve_cluster_id || '',
+          snapCount:    0,
+          lastSnap:     null,
+          lastSnapId:   null,
+        };
+      }
+      vmMap[key].snapCount++;
+      if (!vmMap[key].lastSnap || (s.created_at||'') > vmMap[key].lastSnap) {
+        vmMap[key].lastSnap   = s.created_at;
+        vmMap[key].lastSnapId = s.id;
+        if (vmNames[key]) vmMap[key].name = vmNames[key];
+      }
+    });
+  });
+  _rcVms = Object.values(vmMap).sort(function(a,b){
+    var na = (a.name||'').toLowerCase(), nb = (b.name||'').toLowerCase();
+    if (na && nb) return na.localeCompare(nb);
+    if (na) return -1; if (nb) return 1;
+    return a.vmid - b.vmid;
+  });
+  _renderRcRows();
+}
+
+function _renderRcRows() {
+  var tbody = document.getElementById('rcVmTbody');
+  if (!tbody) return;
+  var q = (_rcSearch||'').toLowerCase();
+  var rows = _rcVms.filter(function(v){
+    if (!q) return true;
+    return String(v.vmid).indexOf(q) >= 0
+      || (v.name||'').toLowerCase().indexOf(q) >= 0
+      || (v.dsName||'').toLowerCase().indexOf(q) >= 0;
+  });
+  if (!rows.length) {
+    var svgVm = '<svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
+    var msg = q ? 'No VMs match “'+esc(q)+'”.' : 'No snapshots found.';
+    var sub = q ? '' : 'Create a snapshot first — all VMs that have been snapshotted will appear here.';
+    tbody.innerHTML = _emptyRow(7, svgVm, msg, sub, q ? null : 'Go to Snapshots', q ? null : "document.querySelector('[data-tab=\"snapshots\"]').click()");
+    return;
+  }
+  tbody.innerHTML = rows.map(function(v) {
+    var cnt = v.snapCount === 1 ? '1 snapshot' : v.snapCount + ' snapshots';
+    return '<tr>' +
+      '<td><code style="font-size:12px">'+v.vmid+'</code></td>' +
+      '<td>'+(v.name ? esc(v.name) : '<span style="opacity:.4">—</span>')+'</td>' +
+      '<td><code style="font-size:11px">'+esc(v.dsName)+'</code></td>' +
+      '<td><span class="corp-badge corp-badge-ha">'+esc(v.protocol)+'</span></td>' +
+      '<td style="color:var(--muted)">'+cnt+'</td>' +
+      '<td style="color:var(--muted)">'+fmtDateRel(v.lastSnap)+'</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="btn btn-secondary btn-sm" onclick="openRestoreWizard('+v.vmid+')">' +
+          '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Restore</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="openCloneWizard('+v.vmid+')">' +
+          '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>Clone</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function rcFilterChanged() {
+  _rcSearch = (document.getElementById('rcSearch')||{}).value || '';
+  _renderRcRows();
+}
+
+// ── Restore Wizard ────────────────────────────────────────────────────────
+
+var _rwState = { vmid:null, name:'', mappingId:'', isSan:false, sanOpt:false, pveClusterId:'', snap:null, step:1 };
+
+function openRestoreWizard(vmid, preSnapId) {
+  var vm = _rcVms.find(function(v){ return v.vmid === vmid; });
+  if (!vm) { toast('VM not found in snapshot history','error'); return; }
+  _rwState = { vmid:vmid, name:vm.name, mappingId:vm.mappingId, isSan:vm.isSan, sanOpt:vm.sanOpt, pveClusterId:vm.pveClusterId, snap:null, step:1 };
+  document.getElementById('rw_vm_hdr').textContent = (vm.name||'VM')+' (ID: '+vmid+')';
+  rwPopulateSnaps(preSnapId);
+  rwUpdateStep(1);
+  var modal = document.getElementById('rwModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  setTimeout(function(){ trapFocus(modal); }, 80);
+}
+
+function closeRestoreWizard() {
+  document.getElementById('rwModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function rwPopulateSnaps(preSnapId) {
+  var done = _allSnapshots.filter(function(s){
+    return s.status === 'done' && s.mapping_id === _rwState.mappingId &&
+      s.vmids && s.vmids.indexOf(_rwState.vmid) >= 0;
+  });
+  if (!_rwState.isSan) {
+    _allSnapshots.forEach(function(s){
+      if (s.status==='done' && s.mapping_id===_rwState.mappingId && s.source==='ontap_native'
+          && !done.find(function(d){ return d.id===s.id; })) done.push(s);
+    });
+  }
+  var plugin = done.filter(function(s){ return s.source!=='ontap_native'; });
+  var native = done.filter(function(s){ return s.source==='ontap_native'; });
+  var sel = document.getElementById('rw_snap');
+  var all = plugin.concat(native);
+  sel.innerHTML = all.length
+    ? all.map(function(s){
+        var pfx = s.source==='ontap_native' ? '[ONTAP] ' : '';
+        return '<option value="'+s.id+'">'+pfx+esc(s.snap_name)+' ('+fmtDate(s.created_at)+')</option>';
+      }).join('')
+    : '<option value="">— no snapshots —</option>';
+  if (preSnapId) sel.value = String(preSnapId);
+  rwSnapChanged();
+}
+
+function rwSnapChanged() {
+  var sid = document.getElementById('rw_snap').value;
+  _rwState.snap = _allSnapshots.find(function(s){ return String(s.id)===sid; }) || null;
+  var info = document.getElementById('rw_snap_info');
+  if (!_rwState.snap) { info.textContent=''; rwRebuildMethod(); return; }
+  info.textContent = (_rwState.snap.vmids||[]).length+' VM(s) in snapshot — '+(_rwState.snap.volume_name||'');
+  rwRebuildMethod();
+}
+
+function rwRebuildMethod() {
+  var sel  = document.getElementById('rw_method');
+  if (_rwState.isSan) {
+    sel.innerHTML =
+      '<option value="san_single">Single VM restore (LV-copy — target VM only, others keep running)</option>' +
+      '<option value="san">Volume Revert — ALL VMs on datastore ⚠ destructive</option>';
+  } else {
+    sel.innerHTML = '<option value="sfsr">SFSR — in-place, fast (NFS)</option>';
+  }
+  rwMethodChanged();
+}
+
+function rwMethodChanged() {
+  var method = document.getElementById('rw_method').value;
+  var hint   = document.getElementById('rw_method_hint');
+  var msgs = {
+    sfsr:       'Individual disk files restored in-place. VM is stopped during restore.',
+    san_single: 'Only the target VM’s LVs are overwritten. Other VMs on this datastore keep running.',
+    san:        '⚠ Volume Revert: all VMs on this datastore are rolled back. All data written after the snapshot is permanently lost.',
+  };
+  hint.textContent = msgs[method]||'';
+  hint.style.color = method==='san' ? 'var(--danger)' : '';
+}
+
+function rwUpdateStep(n) {
+  _rwState.step = n;
+  [1,2,3].forEach(function(i){
+    document.getElementById('rwStep'+i).style.display = (i===n)?'':'none';
+    var pill = document.getElementById('rwPill'+i);
+    pill.classList.toggle('active', i===n);
+    pill.classList.toggle('done',   i<n);
+  });
+  document.getElementById('rwBackBtn').style.display   = n>1 ? '' : 'none';
+  document.getElementById('rwNextBtn').style.display   = n<3 ? '' : 'none';
+  document.getElementById('rwSubmitBtn').style.display = n===3 ? '' : 'none';
+  if (n===2) rwLoadNodes();
+  if (n===3) rwBuildSummary();
+}
+
+async function rwLoadNodes() {
+  var sel = document.getElementById('rw_target_node');
+  sel.innerHTML = '<option value="">Auto (any host in cluster)</option>';
+  if (!_rwState.pveClusterId) return;
+  try {
+    var d = await apiFetch('clone/nodes?pve_cluster_id='+encodeURIComponent(_rwState.pveClusterId));
+    (d.nodes||[]).forEach(function(n){ var o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+  } catch(e) {}
+}
+
+function rwBuildSummary() {
+  var snap = _rwState.snap;
+  if (!snap) { rwUpdateStep(1); return; }
+  var method = document.getElementById('rw_method').value;
+  var node   = document.getElementById('rw_target_node').value || 'auto';
+  var startA = document.getElementById('rw_start_after').checked;
+  document.getElementById('rw_sum_safety').checked = document.getElementById('rw_safety').checked;
+  document.getElementById('rw_sum_snap').textContent    = snap.snap_name;
+  document.getElementById('rw_sum_vmid').textContent    = _rwState.vmid + (_rwState.name?' – '+_rwState.name:'');
+  document.getElementById('rw_sum_method').textContent  = method;
+  document.getElementById('rw_sum_node').textContent    = node;
+  document.getElementById('rw_sum_start').textContent   = startA ? 'Yes' : 'No';
+  document.getElementById('rw_sum_expected').textContent= snap.snap_name;
+  document.getElementById('rw_confirm_input').value     = '';
+  document.getElementById('rwSubmitBtn').disabled       = true;
+  document.getElementById('rw_sum_blast').innerHTML     = _blastRadiusHtml(snap.vmids||[], snap.vm_names||{});
+}
+
+function rwCheckConfirm() {
+  var exp = document.getElementById('rw_sum_expected').textContent;
+  document.getElementById('rwSubmitBtn').disabled = (document.getElementById('rw_confirm_input').value !== exp);
+}
+
+function rwNext() {
+  if (_rwState.step===1 && !_rwState.snap) { toast('Please select a snapshot','error'); return; }
+  if (_rwState.step<3) rwUpdateStep(_rwState.step+1);
+}
+function rwBack() { if (_rwState.step>1) rwUpdateStep(_rwState.step-1); }
+
+async function doRestore() {
+  var snap   = _rwState.snap;
+  var vmid   = _rwState.vmid;
+  var method = document.getElementById('rw_method').value;
+  var node   = document.getElementById('rw_target_node').value;
+  var safety = document.getElementById('rw_sum_safety').checked;
+  var startA = document.getElementById('rw_start_after').checked;
+  if (!snap||!vmid) return;
+  var btn = document.getElementById('rwSubmitBtn');
+  btn.disabled=true; btn.textContent='Running…';
+  if (safety) {
+    try {
+      var today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+      await apiPost('snapshots/create',{mapping_id:snap.mapping_id,name:'safety_pre_restore_'+today,consistency:'crash',vmids:[]});
+    } catch(e) {
+      var cont = await uiConfirm('Safety snapshot failed: '+(e.message||e)+'\n\nProceed with restore anyway?','Proceed','btn-danger');
+      if (!cont) { btn.disabled=false; btn.textContent='Start Restore'; return; }
+    }
+  }
+  var isNative = snap.source==='ontap_native';
+  var payload = isNative
+    ? {native:true,mapping_id:snap.mapping_id,snap_name:snap.snap_name,vmid:vmid,method:method,node:node||'',start_after:startA}
+    : {snapshot_id:snap.id,vmid:vmid,method:method,node:node||'',start_after:startA};
+  try {
+    var r = await apiPost('restore/start', payload);
+    toast('Restore started — Job '+r.job_id,'success');
+    closeRestoreWizard();
+    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
+  } catch(e) {
+    toast(e.message,'error',e.detail);
+    btn.disabled=false; btn.textContent='Start Restore';
+  }
+}
+
+// ── Clone Wizard ──────────────────────────────────────────────────────────
+
+var _cwState = { vmid:null, name:'', mappingId:'', isSan:false, pveClusterId:'', snap:null, step:1 };
+
+function openCloneWizard(vmid, preSnapId) {
+  var vm = _rcVms.find(function(v){ return v.vmid===vmid; });
+  if (!vm) { toast('VM not found in snapshot history','error'); return; }
+  _cwState = { vmid:vmid, name:vm.name, mappingId:vm.mappingId, isSan:vm.isSan, pveClusterId:vm.pveClusterId, snap:null, step:1 };
+  document.getElementById('cw_vm_hdr').textContent = (vm.name||'VM')+' (ID: '+vmid+')';
+  cwPopulateSnaps(preSnapId);
+  cwUpdateStep(1);
+  var modal = document.getElementById('cwModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  setTimeout(function(){ trapFocus(modal); }, 80);
+}
+
+function closeCloneWizard() {
+  document.getElementById('cwModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function cwPopulateSnaps(preSnapId) {
+  var done = _allSnapshots.filter(function(s){
+    return s.status==='done' && s.mapping_id===_cwState.mappingId &&
+      s.vmids && s.vmids.indexOf(_cwState.vmid)>=0;
+  });
+  if (!_cwState.isSan) {
+    _allSnapshots.forEach(function(s){
+      if (s.status==='done' && s.mapping_id===_cwState.mappingId && s.source==='ontap_native'
+          && !done.find(function(d){ return d.id===s.id; })) done.push(s);
+    });
+  }
+  var plugin = done.filter(function(s){ return s.source!=='ontap_native'; });
+  var native = done.filter(function(s){ return s.source==='ontap_native'; });
+  var sel = document.getElementById('cw_snap');
+  var all = plugin.concat(native);
+  sel.innerHTML = all.length
+    ? all.map(function(s){
+        var pfx = s.source==='ontap_native'?'[ONTAP] ':'';
+        return '<option value="'+s.id+'">'+pfx+esc(s.snap_name)+' ('+fmtDate(s.created_at)+')</option>';
+      }).join('')
+    : '<option value="">— no snapshots —</option>';
+  if (preSnapId) sel.value = String(preSnapId);
+  cwSnapChanged();
+}
+
+function cwSnapChanged() {
+  var sid = document.getElementById('cw_snap').value;
+  _cwState.snap = _allSnapshots.find(function(s){ return String(s.id)===sid; })||null;
+  var info = document.getElementById('cw_snap_info');
+  if (!_cwState.snap) { info.textContent=''; return; }
+  var proto = (_cwState.snap.storage_protocol||'nfs').toLowerCase();
+  var method = {nvme:'NVMe — LV-copy via volume clone',iscsi:'iSCSI — LV-copy via LUN clone',nfs:'NFS — file clone (CoW)'}[proto]||'';
+  info.textContent = method+' · '+(_cwState.snap.vmids||[]).length+' VM(s) in snapshot';
+}
+
+function cwUpdateStep(n) {
+  _cwState.step = n;
+  [1,2,3].forEach(function(i){
+    document.getElementById('cwStep'+i).style.display = (i===n)?'':'none';
+    var pill = document.getElementById('cwPill'+i);
+    pill.classList.toggle('active', i===n);
+    pill.classList.toggle('done',   i<n);
+  });
+  document.getElementById('cwBackBtn').style.display   = n>1 ? '' : 'none';
+  document.getElementById('cwNextBtn').style.display   = n<3 ? '' : 'none';
+  document.getElementById('cwSubmitBtn').style.display = n===3 ? '' : 'none';
+  if (n===2) { cwLoadNodes(); cwSuggestId(); }
+  if (n===3) cwBuildSummary();
+}
+
+async function cwLoadNodes() {
+  var sel = document.getElementById('cw_target_node');
+  sel.innerHTML = '<option value="">Auto (any host in cluster)</option>';
+  if (!_cwState.pveClusterId) return;
+  try {
+    var d = await apiFetch('clone/nodes?pve_cluster_id='+encodeURIComponent(_cwState.pveClusterId));
+    (d.nodes||[]).forEach(function(n){ var o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+  } catch(e) {}
+}
+
+async function cwSuggestId() {
+  if (!_cwState.pveClusterId) return;
+  try {
+    var d = await apiFetch('clone/nextid?pve_cluster_id='+encodeURIComponent(_cwState.pveClusterId));
+    if (d.vmid) document.getElementById('cw_new_vmid').value = d.vmid;
+  } catch(e) {}
+}
+
+function cwBuildSummary() {
+  var snap = _cwState.snap;
+  if (!snap) { cwUpdateStep(1); return; }
+  var newName = document.getElementById('cw_new_name').value.trim();
+  var newVmid = document.getElementById('cw_new_vmid').value;
+  var node    = document.getElementById('cw_target_node').value||'auto';
+  var netIso  = document.getElementById('cw_network_isolated').checked;
+  var startA  = document.getElementById('cw_start_after').checked;
+  document.getElementById('cw_sum_src').textContent   = _cwState.vmid+(_cwState.name?' – '+_cwState.name:'');
+  document.getElementById('cw_sum_snap').textContent  = snap.snap_name;
+  document.getElementById('cw_sum_vmid').textContent  = newVmid||'—';
+  document.getElementById('cw_sum_name').textContent  = newName||'(auto)';
+  document.getElementById('cw_sum_node').textContent  = node;
+  document.getElementById('cw_sum_net').textContent   = netIso ? 'Disconnected (link_down=1)' : 'Connected';
+  document.getElementById('cw_sum_start').textContent = startA ? 'Yes' : 'No';
+  document.getElementById('cwSubmitBtn').disabled = !newVmid;
+}
+
+function cwNext() {
+  if (_cwState.step===1 && !_cwState.snap) { toast('Please select a snapshot','error'); return; }
+  if (_cwState.step===2 && !document.getElementById('cw_new_vmid').value) { toast('Please enter a new VM ID','error'); return; }
+  if (_cwState.step<3) cwUpdateStep(_cwState.step+1);
+}
+function cwBack() { if (_cwState.step>1) cwUpdateStep(_cwState.step-1); }
+
+async function doClone() {
+  var snap    = _cwState.snap;
+  var srcVmid = _cwState.vmid;
+  var newVmid = parseInt(document.getElementById('cw_new_vmid').value);
+  var node    = document.getElementById('cw_target_node').value;
+  var newName = document.getElementById('cw_new_name').value.trim();
+  var netIso  = document.getElementById('cw_network_isolated').checked;
+  var startA  = document.getElementById('cw_start_after').checked;
+  if (!snap||!srcVmid||!newVmid) return;
+  var btn = document.getElementById('cwSubmitBtn');
+  btn.disabled=true; btn.textContent='Starting…';
+  var isNative = snap.source==='ontap_native';
+  var payload = isNative
+    ? {native:true,mapping_id:snap.mapping_id,snap_name:snap.snap_name,
+       src_vmid:srcVmid,new_vmid:newVmid,target_node:node,new_name:newName,start_after:startA,network_isolated:netIso}
+    : {snapshot_id:snap.id,src_vmid:srcVmid,new_vmid:newVmid,target_node:node,
+       new_name:newName,start_after:startA,network_isolated:netIso};
+  try {
+    var r = await apiPost('clone/start', payload);
+    toast('Clone started — Job '+r.job_id,'success');
+    closeCloneWizard();
+    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
+  } catch(e) {
+    toast(e.message,'error',e.detail);
+    btn.disabled=false; btn.textContent='Start Clone';
+  }
+}
+
+// ── Navigate from snapshot table ─────────────────────────────────────────
 
 function _blastRadiusHtml(vmids, vmNames) {
   if (!vmids || !vmids.length) return '<span style="opacity:.5;font-size:12px">— no VM information available —</span>';
@@ -4439,38 +4776,35 @@ function downloadJobLog() {
 }
 
 function prepareRestore(snapId) {
+  var snap = _allSnapshots.find(function(s){ return String(s.id)===String(snapId); });
+  var vmid = snap && snap.vmids && snap.vmids.length ? snap.vmids[0] : null;
   document.querySelectorAll('.subtab').forEach(function(x){ x.classList.remove('active'); });
   document.querySelectorAll('.tab-panel').forEach(function(x){ x.style.display='none'; });
   document.querySelector('[data-tab="restore"]').classList.add('active');
   document.getElementById('tab-restore').style.display = 'block';
-  loadSnapshotsForRestore().then(function(){
-    // Find the snapshot to pre-select the correct datastore first
-    var snap = _allSnapshots.find(function(s){ return String(s.id) === String(snapId); });
-    if (snap && snap.mapping_id) {
-      var dsSel = document.getElementById('restore_datastore');
-      dsSel.value = snap.mapping_id;
-      onRestoreDatastoreChange();
-    }
-    document.getElementById('restore_snap').value = snapId;
-    updateRestoreVmList();
-  });
+  if (!vmid) { toast('Snapshot has no VM entries','error'); return; }
+  if (!_rcVms.length) {
+    loadRcVmList();
+    setTimeout(function(){ openRestoreWizard(vmid, snapId); }, 600);
+  } else {
+    openRestoreWizard(vmid, snapId);
+  }
 }
 
 function prepareClone(snapId) {
+  var snap = _allSnapshots.find(function(s){ return String(s.id)===String(snapId); });
+  var vmid = snap && snap.vmids && snap.vmids.length ? snap.vmids[0] : null;
   document.querySelectorAll('.subtab').forEach(function(x){ x.classList.remove('active'); });
   document.querySelectorAll('.tab-panel').forEach(function(x){ x.style.display='none'; });
-  document.querySelector('[data-tab="clone"]').classList.add('active');
-  document.getElementById('tab-clone').style.display = 'block';
-  loadCloneSnapshots().then(function(){
-    var snap = _allSnapshots.find(function(s){ return String(s.id) === String(snapId); });
-    if (snap && snap.mapping_id) {
-      var dsSel = document.getElementById('clone_datastore');
-      dsSel.value = snap.mapping_id;
-      onCloneDatastoreChange();
-    }
-    document.getElementById('clone_snap').value = snapId;
-    prepareCloneFromSelect();
-  });
+  document.querySelector('[data-tab="restore"]').classList.add('active');
+  document.getElementById('tab-restore').style.display = 'block';
+  if (!vmid) { toast('Snapshot has no VM entries','error'); return; }
+  if (!_rcVms.length) {
+    loadRcVmList();
+    setTimeout(function(){ openCloneWizard(vmid, snapId); }, 600);
+  } else {
+    openCloneWizard(vmid, snapId);
+  }
 }
 
 // ═══════════════════════════ HELPERS ══════════════════════════════════════
@@ -8984,5 +9318,182 @@ loadSnapshots();
 </div>
 
 <div id="tlTooltip" style="display:none;position:fixed;z-index:9100;pointer-events:none;background:#1e293b;color:#e2e8f0;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px 12px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:260px;line-height:1.55"></div>
+
+<!-- ══════════════ RESTORE WIZARD MODAL ══════════════ -->
+<div id="rwModal" role="dialog" aria-modal="true" aria-label="Restore Wizard"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9150;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center;flex-direction:column">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:640px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0">
+      <div>
+        <h2 style="margin:0;font-size:18px;font-weight:600">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:6px;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Restore VM
+        </h2>
+        <p id="rw_vm_hdr" style="margin:4px 0 0;font-size:13px;color:var(--muted)"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeRestoreWizard()" aria-label="Close" style="font-size:18px;padding:4px 8px">✕</button>
+    </div>
+    <!-- Step pills -->
+    <div style="display:flex;gap:8px;padding:16px 24px 0">
+      <div id="rwPill1" class="setup-step-pill active">① Snapshot &amp; Method</div>
+      <div id="rwPill2" class="setup-step-pill">② Options</div>
+      <div id="rwPill3" class="setup-step-pill">③ Confirm</div>
+    </div>
+    <!-- Step 1: Snapshot + Method -->
+    <div id="rwStep1" style="padding:20px 24px">
+      <div class="form-group">
+        <label class="form-label">Snapshot</label>
+        <select id="rw_snap" class="form-control" onchange="rwSnapChanged()" style="width:100%"></select>
+        <div id="rw_snap_info" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+      </div>
+      <div class="form-group" style="margin-top:14px">
+        <label class="form-label">Restore Method</label>
+        <select id="rw_method" class="form-control" onchange="rwMethodChanged()" style="width:100%"></select>
+        <div id="rw_method_hint" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+      </div>
+    </div>
+    <!-- Step 2: Options -->
+    <div id="rwStep2" style="display:none;padding:20px 24px">
+      <div class="form-group">
+        <label class="form-label">Target Host</label>
+        <select id="rw_target_node" class="form-control" style="width:100%">
+          <option value="">Auto (any host in cluster)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-top:14px;display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="rw_start_after" style="width:16px;height:16px">
+        <label for="rw_start_after" style="margin:0;cursor:pointer">Start VM after restore</label>
+      </div>
+      <div class="form-group" style="margin-top:10px;display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="rw_safety" checked style="width:16px;height:16px">
+        <label for="rw_safety" style="margin:0;cursor:pointer">Create safety snapshot before restore <span style="color:var(--muted);font-size:12px">(recommended)</span></label>
+      </div>
+    </div>
+    <!-- Step 3: Confirm (danger) -->
+    <div id="rwStep3" style="display:none;padding:20px 24px">
+      <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+        <div style="font-weight:600;color:var(--danger);margin-bottom:8px">⚠ Destructive Action — Restore will overwrite VM data</div>
+        <table style="font-size:13px;width:100%;border-collapse:collapse">
+          <tr><td style="color:var(--muted);padding:2px 8px 2px 0;white-space:nowrap">Snapshot</td><td id="rw_sum_snap" style="font-family:var(--mono)"></td></tr>
+          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">VM</td><td id="rw_sum_vmid"></td></tr>
+          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">Method</td><td id="rw_sum_method"></td></tr>
+          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">Target Host</td><td id="rw_sum_node"></td></tr>
+          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">Start after</td><td id="rw_sum_start"></td></tr>
+        </table>
+        <div style="margin-top:10px">
+          <label style="font-size:12px;color:var(--muted)">Affected VMs (blast radius)</label>
+          <div id="rw_sum_blast" style="margin-top:4px"></div>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="rw_sum_safety" style="width:16px;height:16px">
+          <label for="rw_sum_safety" style="margin:0;font-size:13px;cursor:pointer">Create safety snapshot first</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="color:var(--danger)">Type the snapshot name to confirm:</label>
+        <div style="font-family:var(--mono);background:var(--bg-alt);padding:6px 10px;border-radius:6px;margin-bottom:8px;font-size:13px" id="rw_sum_expected"></div>
+        <input type="text" id="rw_confirm_input" class="form-control" oninput="rwCheckConfirm()" placeholder="Type snapshot name…" autocomplete="off">
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-top:1px solid var(--border)">
+      <button id="rwBackBtn" class="btn btn-secondary" onclick="rwBack()" style="display:none">← Back</button>
+      <span></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeRestoreWizard()">Cancel</button>
+        <button id="rwNextBtn" class="btn btn-primary" onclick="rwNext()">Next →</button>
+        <button id="rwSubmitBtn" class="btn btn-danger" onclick="doRestore()" style="display:none" disabled>Start Restore</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ CLONE WIZARD MODAL ══════════════ -->
+<div id="cwModal" role="dialog" aria-modal="true" aria-label="Clone Wizard"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9150;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center;flex-direction:column">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:640px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0">
+      <div>
+        <h2 style="margin:0;font-size:18px;font-weight:600">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:6px;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>Clone VM
+        </h2>
+        <p id="cw_vm_hdr" style="margin:4px 0 0;font-size:13px;color:var(--muted)"></p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeCloneWizard()" aria-label="Close" style="font-size:18px;padding:4px 8px">✕</button>
+    </div>
+    <!-- Step pills -->
+    <div style="display:flex;gap:8px;padding:16px 24px 0">
+      <div id="cwPill1" class="setup-step-pill active">① Snapshot</div>
+      <div id="cwPill2" class="setup-step-pill">② Options</div>
+      <div id="cwPill3" class="setup-step-pill">③ Summary</div>
+    </div>
+    <!-- Step 1: Snapshot -->
+    <div id="cwStep1" style="padding:20px 24px">
+      <div class="form-group">
+        <label class="form-label">Snapshot to clone from</label>
+        <select id="cw_snap" class="form-control" onchange="cwSnapChanged()" style="width:100%"></select>
+        <div id="cw_snap_info" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+      </div>
+    </div>
+    <!-- Step 2: Options -->
+    <div id="cwStep2" style="display:none;padding:20px 24px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="form-group">
+          <label class="form-label">New VM ID <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="cw_new_vmid" class="form-control" placeholder="e.g. 200" min="100" max="999999999" oninput="cwBuildSummary()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">New VM Name <span style="color:var(--muted);font-size:12px">(optional)</span></label>
+          <input type="text" id="cw_new_name" class="form-control" placeholder="auto" oninput="cwBuildSummary()">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:6px">
+        <label class="form-label">Target Host</label>
+        <select id="cw_target_node" class="form-control" style="width:100%">
+          <option value="">Auto (any host in cluster)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="cw_network_isolated" checked style="width:16px;height:16px">
+          <label for="cw_network_isolated" style="margin:0;cursor:pointer">
+            Disconnect from network after clone
+            <span style="display:block;font-size:12px;color:var(--muted)">Sets link_down=1 on all network interfaces — prevents IP conflicts</span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="cw_start_after" style="width:16px;height:16px">
+          <label for="cw_start_after" style="margin:0;cursor:pointer">Start VM after clone</label>
+        </div>
+      </div>
+    </div>
+    <!-- Step 3: Summary -->
+    <div id="cwStep3" style="display:none;padding:20px 24px">
+      <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <table style="font-size:13px;width:100%;border-collapse:collapse">
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0;white-space:nowrap">Source VM</td><td id="cw_sum_src"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Snapshot</td><td id="cw_sum_snap" style="font-family:var(--mono)"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">New VM ID</td><td id="cw_sum_vmid" style="font-family:var(--mono)"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">New Name</td><td id="cw_sum_name"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Target Host</td><td id="cw_sum_node"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Network</td><td id="cw_sum_net"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Start after</td><td id="cw_sum_start"></td></tr>
+        </table>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-top:1px solid var(--border)">
+      <button id="cwBackBtn" class="btn btn-secondary" onclick="cwBack()" style="display:none">← Back</button>
+      <span></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeCloneWizard()">Cancel</button>
+        <button id="cwNextBtn" class="btn btn-primary" onclick="cwNext()">Next →</button>
+        <button id="cwSubmitBtn" class="btn btn-primary" onclick="doClone()" style="display:none" disabled>Start Clone</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

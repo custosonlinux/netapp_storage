@@ -103,12 +103,13 @@ def _start_clone():
     )
 
     params = {
-        "snapshot_id": snapshot_id,
-        "src_vmid":    data["src_vmid"],
-        "new_vmid":    data["new_vmid"],
-        "target_node": data.get("target_node", ""),
-        "new_name":    data.get("new_name", ""),
-        "start_after": bool(data.get("start_after", False)),
+        "snapshot_id":     snapshot_id,
+        "src_vmid":        data["src_vmid"],
+        "new_vmid":        data["new_vmid"],
+        "target_node":     data.get("target_node", ""),
+        "new_name":        data.get("new_name", ""),
+        "start_after":     bool(data.get("start_after", False)),
+        "network_isolated": bool(data.get("network_isolated", False)),
     }
 
     # Route SAN snapshots to the SAN clone engine

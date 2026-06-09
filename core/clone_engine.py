@@ -54,12 +54,13 @@ def _run_clone(job_id, params, username):
     db = get_db()
     jlog = JobLogger(job_id, db)
 
-    snapshot_id = params["snapshot_id"]
-    src_vmid    = int(params["src_vmid"])
-    new_vmid    = int(params["new_vmid"])
-    target_node = params.get("target_node", "")
-    new_name    = params.get("new_name", "")
-    start_after = bool(params.get("start_after", False))
+    snapshot_id      = params["snapshot_id"]
+    src_vmid         = int(params["src_vmid"])
+    new_vmid         = int(params["new_vmid"])
+    target_node      = params.get("target_node", "")
+    new_name         = params.get("new_name", "")
+    start_after      = bool(params.get("start_after", False))
+    network_isolated = bool(params.get("network_isolated", False))
 
     conf_path_reserved = ""
     pve_host = ""
@@ -141,6 +142,7 @@ def _run_clone(job_id, params, username):
             raw_conf, src_vmid, new_vmid,
             mapping["pve_storage_id"], new_disk_map,
             eff_name, vm_type,
+            network_isolated=network_isolated,
         )
         name_key = "hostname" if vm_type == "lxc" else "name"
         conf_lines = [l for l in conf_str.splitlines() if not l.startswith(f"{name_key}:")]
@@ -213,12 +215,13 @@ def _run_clone_san(job_id, params, username):
     db   = get_db()
     jlog = JobLogger(job_id, db)
 
-    snapshot_id = params["snapshot_id"]
-    src_vmid    = int(params["src_vmid"])
-    new_vmid    = int(params["new_vmid"])
-    target_node = params.get("target_node", "")
-    new_name    = params.get("new_name", "")
-    start_after = bool(params.get("start_after", False))
+    snapshot_id      = params["snapshot_id"]
+    src_vmid         = int(params["src_vmid"])
+    new_vmid         = int(params["new_vmid"])
+    target_node      = params.get("target_node", "")
+    new_name         = params.get("new_name", "")
+    start_after      = bool(params.get("start_after", False))
+    network_isolated = bool(params.get("network_isolated", False))
 
     temp_lun_uuid             = ""
     temp_iscsi_clone_vol_uuid = ""
@@ -508,6 +511,7 @@ def _run_clone_san(job_id, params, username):
             raw_conf, src_vmid, new_vmid,
             mapping["pve_storage_id"], new_disk_map,
             eff_name, vm_type,
+            network_isolated=network_isolated,
         )
         name_key   = "hostname" if vm_type == "lxc" else "name"
         conf_lines = [l for l in conf_str.splitlines() if not l.startswith(f"{name_key}:")]
@@ -731,7 +735,7 @@ def _random_mac():
     )
 
 
-def _build_clone_config(raw_conf, old_vmid, new_vmid, storage_id, disk_map, new_name, vm_type):
+def _build_clone_config(raw_conf, old_vmid, new_vmid, storage_id, disk_map, new_name, vm_type, network_isolated=False):
     """Builds the .conf string for the cloned VM."""
     lines = []
     for k, v in sorted(raw_conf.items()):
@@ -744,9 +748,11 @@ def _build_clone_config(raw_conf, old_vmid, new_vmid, storage_id, disk_map, new_
             for old_f, new_f in disk_map.items():
                 v = v.replace(f"{storage_id}:{old_f}", f"{storage_id}:{new_f}")
 
-        # Regenerate MAC addresses
+        # Regenerate MAC addresses and optionally disconnect network
         if k.startswith("net"):
             v = re.sub(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', lambda m: _random_mac(), v)
+            if network_isolated and ',link_down=1' not in v:
+                v = v + ',link_down=1'
 
         # Set name
         if k == "name" and new_name and vm_type == "qemu":
