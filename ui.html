@@ -3396,12 +3396,12 @@ function tlHoverKey(key, evt) {
   if (!tt) return;
   var isNative = s.source === 'ontap_native';
   var vmHtml = (!isNative && s.vmids && s.vmids.length)
-    ? '<div style="margin-top:3px;color:var(--muted)">VMs: ' + s.vmids.map(String).join(', ') + '</div>'
+    ? '<div style="margin-top:3px;color:#94a3b8">VMs: ' + s.vmids.map(String).join(', ') + '</div>'
     : '';
   tt.innerHTML = '<div style="font-weight:600;font-family:monospace;font-size:11px;word-break:break-all">' + esc(s.snap_name) + '</div>'
-    + '<div style="color:var(--muted);margin-top:2px">' + esc(s.pve_storage_id || s.volume_name || '') + '</div>'
+    + '<div style="color:#94a3b8;margin-top:2px">' + esc(s.pve_storage_id || s.volume_name || '') + '</div>'
     + '<div style="margin-top:2px">' + fmtDateRel(s.created_at) + '</div>'
-    + (isNative ? '<div style="color:var(--muted);font-size:11px;margin-top:2px">ONTAP native</div>' : '')
+    + (isNative ? '<div style="color:#94a3b8;font-size:11px;margin-top:2px">ONTAP native</div>' : '')
     + vmHtml;
   _tlPositionTooltip(evt);
 }
@@ -3409,7 +3409,7 @@ function tlHoverKey(key, evt) {
 function tlHoverFuture(dateStr, evt) {
   var tt = document.getElementById('tlTooltip');
   if (!tt) return;
-  tt.innerHTML = '<div style="font-size:11px;color:var(--muted)">Scheduled</div>'
+  tt.innerHTML = '<div style="font-size:11px;color:#94a3b8">Scheduled</div>'
     + '<div style="font-weight:600;font-size:12px;margin-top:2px">' + esc(dateStr) + '</div>';
   _tlPositionTooltip(evt);
 }
@@ -3432,6 +3432,19 @@ function tlUnhover() {
 }
 
 function tlClick(key) {
+  var idx = _tlLastFiltered.findIndex(function(s) {
+    var isNative = s.source === 'ontap_native';
+    var k = isNative
+      ? ('n_' + (s.ontap_snap_uuid||'') + '_' + (s.mapping_id||''))
+      : ('p_' + String(s.id||''));
+    return k === key;
+  });
+  if (idx < 0) return;
+  var targetPage = Math.floor(idx / _snapPageSize);
+  if (_snapPage !== targetPage) {
+    _snapPage = targetPage;
+    renderSnapshots();
+  }
   var tr = document.querySelector('tr[data-snap-key="' + key + '"]');
   if (!tr) return;
   tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -8777,6 +8790,6 @@ loadSnapshots();
   </div>
 </div>
 
-<div id="tlTooltip" style="display:none;position:fixed;z-index:9100;pointer-events:none;background:var(--bg-card,#fff);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:260px;line-height:1.55"></div>
+<div id="tlTooltip" style="display:none;position:fixed;z-index:9100;pointer-events:none;background:#1e293b;color:#e2e8f0;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:8px 12px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:260px;line-height:1.55"></div>
 </body>
 </html>
