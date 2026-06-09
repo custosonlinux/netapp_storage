@@ -1389,13 +1389,33 @@ function applyI18n() {
     <div id="tab-restore" class="tab-panel" style="display:none">
 
       <!-- VM List header -->
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
         <span style="font-weight:700;font-size:15px">Restore &amp; Clone</span>
-        <input id="rcSearch" type="text" placeholder="Filter by VM name or ID…" oninput="rcFilterChanged()" style="flex:1;min-width:160px;max-width:240px;margin-left:8px">
-        <button class="btn btn-ghost btn-sm" onclick="loadRcVmList()">
+        <div style="display:flex;gap:4px;margin-left:4px">
+          <button id="rcSrcPrimary" class="btn btn-primary btn-sm" onclick="rcSetSource('primary')">Primary</button>
+          <button id="rcSrcSecondary" class="btn btn-ghost btn-sm" onclick="rcSetSource('secondary')">SnapMirror Secondary</button>
+        </div>
+        <input id="rcSearch" type="text" placeholder="Filter by VM name or ID…" oninput="rcFilterChanged()" style="flex:1;min-width:140px;max-width:200px;margin-left:4px">
+        <select id="rcSort" onchange="rcSortChanged()" style="max-width:170px;font-size:12px">
+          <option value="lastSnap_desc">Newest snapshot ↓</option>
+          <option value="lastSnap_asc">Oldest snapshot ↑</option>
+          <option value="name_asc">Name A → Z</option>
+          <option value="name_desc">Name Z → A</option>
+          <option value="vmid_asc">VMID ↑</option>
+          <option value="vmid_desc">VMID ↓</option>
+          <option value="count_desc">Most snapshots ↓</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="_rcSource==='secondary'?rcDrRelChanged():loadRcVmList()">
           <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh
         </button>
+      </div>
+      <!-- DR relationship selector (hidden for primary) -->
+      <div id="rcDrRow" style="display:none;margin-bottom:10px;gap:8px;align-items:center">
+        <svg width="14" height="14" fill="none" stroke="#58A6FF" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+        <select id="rcDrRelSel" onchange="rcDrRelChanged()" style="flex:1;max-width:420px;font-size:13px">
+          <option value="">— Select SnapMirror relationship —</option>
+        </select>
       </div>
 
       <div class="card table-scroll">
@@ -2780,8 +2800,12 @@ var _currentLogJobId = null;
 // RESTORE & CLONE — VM-centric list + wizard
 // ══════════════════════════════════════════════════════════════════════════
 
-var _rcVms    = [];
-var _rcSearch = '';
+var _rcVms       = [];
+var _rcSearch    = '';
+var _rcSortKey   = 'lastSnap_desc';
+var _rcSource    = 'primary';
+var _rcDrRelId   = '';
+var _rcDrMappingId = '';
 
 function loadRcVmList() {
   apiFetch('snapshots').then(function(snaps){
@@ -2800,17 +2824,12 @@ function renderRcVmList() {
       var key = String(vid);
       if (!vmMap[key]) {
         vmMap[key] = {
-          vmid:         vid,
-          name:         vmNames[key] || '',
-          mappingId:    s.mapping_id,
-          dsName:       s.pve_storage_id || s.volume_name || s.mapping_id,
-          protocol:     _snapProtoLabel(s),
-          isSan:        _snapIsSan(s),
-          sanOpt:       !!s.san_optimized,
-          pveClusterId: s.pve_cluster_id || '',
-          snapCount:    0,
-          lastSnap:     null,
-          lastSnapId:   null,
+          vmid: vid, name: vmNames[key] || '',
+          mappingId: s.mapping_id, relId: '', isDR: false,
+          dsName: s.pve_storage_id || s.volume_name || s.mapping_id,
+          protocol: _snapProtoLabel(s), isSan: _snapIsSan(s),
+          sanOpt: !!s.san_optimized, pveClusterId: s.pve_cluster_id || '',
+          snapCount: 0, lastSnap: null, lastSnapId: null,
         };
       }
       vmMap[key].snapCount++;
@@ -2821,13 +2840,25 @@ function renderRcVmList() {
       }
     });
   });
-  _rcVms = Object.values(vmMap).sort(function(a,b){
-    var na = (a.name||'').toLowerCase(), nb = (b.name||'').toLowerCase();
-    if (na && nb) return na.localeCompare(nb);
-    if (na) return -1; if (nb) return 1;
-    return a.vmid - b.vmid;
-  });
+  _rcVms = Object.values(vmMap);
   _renderRcRows();
+}
+
+function _rcSorted(rows) {
+  var parts = (_rcSortKey||'lastSnap_desc').split('_');
+  var col = parts[0], dir = parts[parts.length-1]==='asc' ? 1 : -1;
+  return rows.slice().sort(function(a,b){
+    var av, bv;
+    if (col==='lastSnap'){ av=a.lastSnap||''; bv=b.lastSnap||''; return dir*av.localeCompare(bv); }
+    if (col==='name'){
+      av=(a.name||'').toLowerCase(); bv=(b.name||'').toLowerCase();
+      if (!av&&!bv) return 0; if (!av) return 1; if (!bv) return -1;
+      return dir*av.localeCompare(bv);
+    }
+    if (col==='vmid') return dir*(a.vmid-b.vmid);
+    if (col==='count') return dir*(a.snapCount-b.snapCount);
+    return 0;
+  });
 }
 
 function _renderRcRows() {
@@ -2836,32 +2867,34 @@ function _renderRcRows() {
   var q = (_rcSearch||'').toLowerCase();
   var rows = _rcVms.filter(function(v){
     if (!q) return true;
-    return String(v.vmid).indexOf(q) >= 0
-      || (v.name||'').toLowerCase().indexOf(q) >= 0
-      || (v.dsName||'').toLowerCase().indexOf(q) >= 0;
+    return String(v.vmid).indexOf(q)>=0
+      || (v.name||'').toLowerCase().indexOf(q)>=0
+      || (v.dsName||'').toLowerCase().indexOf(q)>=0;
   });
+  rows = _rcSorted(rows);
   if (!rows.length) {
     var svgVm = '<svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
-    var msg = q ? 'No VMs match “'+esc(q)+'”.' : 'No snapshots found.';
-    var sub = q ? '' : 'Create a snapshot first — all VMs that have been snapshotted will appear here.';
-    tbody.innerHTML = _emptyRow(7, svgVm, msg, sub, q ? null : 'Go to Snapshots', q ? null : "document.querySelector('[data-tab=\"snapshots\"]').click()");
+    var msg = q ? 'No VMs match "'+esc(q)+'".' : (_rcSource==='secondary' ? 'Select a SnapMirror relationship to load VMs.' : 'No snapshots found.');
+    var sub = (!q&&_rcSource==='primary') ? 'Create a snapshot first — all VMs that have been snapshotted will appear here.' : '';
+    tbody.innerHTML = _emptyRow(7, svgVm, msg, sub, (!q&&_rcSource==='primary') ? 'Go to Snapshots' : null, (!q&&_rcSource==='primary') ? "document.querySelector('[data-tab=\"snapshots\"]').click()" : null);
     return;
   }
-  tbody.innerHTML = rows.map(function(v) {
-    var cnt = v.snapCount === 1 ? '1 snapshot' : v.snapCount + ' snapshots';
-    return '<tr>' +
-      '<td><code style="font-size:12px">'+v.vmid+'</code></td>' +
-      '<td>'+(v.name ? esc(v.name) : '<span style="opacity:.4">—</span>')+'</td>' +
-      '<td><code style="font-size:11px">'+esc(v.dsName)+'</code></td>' +
-      '<td><span class="corp-badge corp-badge-ha">'+esc(v.protocol)+'</span></td>' +
-      '<td style="color:var(--muted)">'+cnt+'</td>' +
-      '<td style="color:var(--muted)">'+fmtDateRel(v.lastSnap)+'</td>' +
-      '<td><div class="row-actions">' +
-        '<button class="btn btn-secondary btn-sm" onclick="openRestoreWizard('+v.vmid+')">' +
-          '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Restore</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="openCloneWizard('+v.vmid+')">' +
-          '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>Clone</button>' +
-      '</div></td>' +
+  tbody.innerHTML = rows.map(function(v){
+    var cnt = v.snapCount===1 ? '1 snapshot' : v.snapCount+' snapshots';
+    var drBadge = v.isDR ? '<span style="display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(88,166,255,.15);color:#58A6FF;border:1px solid rgba(88,166,255,.3);margin-right:4px">DR</span>' : '';
+    return '<tr>'+
+      '<td><code style="font-size:12px">'+v.vmid+'</code></td>'+
+      '<td>'+drBadge+(v.name ? esc(v.name) : '<span style="opacity:.4">—</span>')+'</td>'+
+      '<td><code style="font-size:11px">'+esc(v.dsName)+'</code></td>'+
+      '<td><span class="corp-badge corp-badge-ha">'+esc(v.protocol)+'</span></td>'+
+      '<td style="color:var(--muted)">'+cnt+'</td>'+
+      '<td style="color:var(--muted)">'+fmtDateRel(v.lastSnap)+'</td>'+
+      '<td><div class="row-actions">'+
+        '<button class="btn btn-secondary btn-sm" onclick="openRestoreWizard('+v.vmid+')">'+
+          '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Restore</button>'+
+        '<button class="btn btn-ghost btn-sm" onclick="openCloneWizard('+v.vmid+')">'+
+          '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>Clone</button>'+
+      '</div></td>'+
     '</tr>';
   }).join('');
 }
@@ -2871,15 +2904,71 @@ function rcFilterChanged() {
   _renderRcRows();
 }
 
+function rcSortChanged() {
+  _rcSortKey = (document.getElementById('rcSort')||{}).value || 'lastSnap_desc';
+  _renderRcRows();
+}
+
+function rcSetSource(src) {
+  _rcSource = src;
+  document.getElementById('rcSrcPrimary').className  = src==='primary'   ? 'btn btn-primary btn-sm'  : 'btn btn-ghost btn-sm';
+  document.getElementById('rcSrcSecondary').className = src==='secondary' ? 'btn btn-primary btn-sm'  : 'btn btn-ghost btn-sm';
+  document.getElementById('rcDrRow').style.display = src==='secondary' ? 'flex' : 'none';
+  if (src==='primary') { loadRcVmList(); }
+  else { _rcVms=[]; _renderRcRows(); loadRcDrRelationships(); }
+}
+
+async function loadRcDrRelationships() {
+  var sel = document.getElementById('rcDrRelSel');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select relationship —</option>';
+  try {
+    var rels = await apiFetch('snapmirror/relationships');
+    var matched = rels.filter(function(r){ return r.dest_endpoint_id; });
+    sel.innerHTML = '<option value="">— Select relationship —</option>'+
+      matched.map(function(r){
+        return '<option value="'+r.id+'">'+esc(r.source_volume)+' → '+esc(r.dest_cluster_name||'?')+':'+esc(r.dest_volume||'?')+'</option>';
+      }).join('');
+    if (!matched.length) toast('No SnapMirror relationships with secondary endpoint configured','error');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function rcDrRelChanged() {
+  var relId = (document.getElementById('rcDrRelSel')||{}).value||'';
+  _rcDrRelId = relId; _rcVms=[]; _renderRcRows();
+  if (!relId) return;
+  var tbody = document.getElementById('rcVmTbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>';
+  try {
+    var rels = await apiFetch('snapmirror/relationships');
+    var mappings = await apiFetch('volume-mappings');
+    var rel = (rels||[]).find(function(r){ return r.id===relId; });
+    var mapping = rel ? (mappings||[]).find(function(m){ return m.volume_uuid===rel.source_volume_uuid; }) : null;
+    _rcDrMappingId = mapping ? mapping.id : '';
+    var vmData = mapping ? await apiFetch('snapshots/vms-for-mapping?mapping_id='+encodeURIComponent(mapping.id)) : {vms:[]};
+    var snapsData = await apiFetch('snapmirror/secondary-snapshots?relationship_id='+encodeURIComponent(relId));
+    var snapCount = (snapsData.snapshots||[]).length;
+    var lastSnap  = snapCount ? ((snapsData.snapshots||[])[0].created_at||null) : null;
+    _rcVms = (vmData.vms||[]).map(function(v){
+      return { vmid:v.vmid, name:v.name||'', relId:relId, isDR:true,
+               mappingId:_rcDrMappingId, pveClusterId:mapping?mapping.pve_cluster_id:'',
+               dsName:rel?(rel.source_volume||''):'', protocol:'NFS',
+               isSan:false, sanOpt:false, snapCount:snapCount, lastSnap:lastSnap, lastSnapId:null };
+    });
+    _renderRcRows();
+  } catch(e) { toast(e.message,'error'); }
+}
+
 // ── Restore Wizard ────────────────────────────────────────────────────────
 
-var _rwState = { vmid:null, name:'', mappingId:'', isSan:false, sanOpt:false, pveClusterId:'', snap:null, step:1 };
+var _rwState = { vmid:null, name:'', mappingId:'', relId:'', isDR:false, isSan:false, sanOpt:false, pveClusterId:'', snap:null, snapName:'', step:1 };
 
 function openRestoreWizard(vmid, preSnapId) {
-  var vm = _rcVms.find(function(v){ return v.vmid === vmid; });
+  var vm = _rcVms.find(function(v){ return v.vmid===vmid; });
   if (!vm) { toast('VM not found in snapshot history','error'); return; }
-  _rwState = { vmid:vmid, name:vm.name, mappingId:vm.mappingId, isSan:vm.isSan, sanOpt:vm.sanOpt, pveClusterId:vm.pveClusterId, snap:null, step:1 };
-  document.getElementById('rw_vm_hdr').textContent = (vm.name||'VM')+' (ID: '+vmid+')';
+  _rwState = { vmid:vmid, name:vm.name, mappingId:vm.mappingId, relId:vm.relId||'', isDR:!!vm.isDR,
+               isSan:vm.isSan, sanOpt:vm.sanOpt||false, pveClusterId:vm.pveClusterId, snap:null, snapName:'', step:1 };
+  document.getElementById('rw_vm_hdr').textContent = (vm.name||'VM')+' (ID: '+vmid+(vm.isDR?' · DR Secondary':'')+ ')';
   rwPopulateSnaps(preSnapId);
   rwUpdateStep(1);
   var modal = document.getElementById('rwModal');
@@ -2893,24 +2982,32 @@ function closeRestoreWizard() {
   document.body.style.overflow = '';
 }
 
-function rwPopulateSnaps(preSnapId) {
-  var done = _allSnapshots.filter(function(s){
-    return s.status === 'done' && s.mapping_id === _rwState.mappingId &&
-      s.vmids && s.vmids.indexOf(_rwState.vmid) >= 0;
-  });
-  if (!_rwState.isSan) {
-    _allSnapshots.forEach(function(s){
-      if (s.status==='done' && s.mapping_id===_rwState.mappingId && s.source==='ontap_native'
-          && !done.find(function(d){ return d.id===s.id; })) done.push(s);
-    });
-  }
-  var plugin = done.filter(function(s){ return s.source!=='ontap_native'; });
-  var native = done.filter(function(s){ return s.source==='ontap_native'; });
+async function rwPopulateSnaps(preSnapId) {
   var sel = document.getElementById('rw_snap');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  if (_rwState.isDR) {
+    try {
+      var data = await apiFetch('snapmirror/secondary-snapshots?relationship_id='+encodeURIComponent(_rwState.relId));
+      var snaps = data.snapshots||[];
+      sel.innerHTML = snaps.length
+        ? snaps.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+(s.created_at?' ('+fmtDate(s.created_at)+')':'')+'</option>'; }).join('')
+        : '<option value="">— no secondary snapshots —</option>';
+    } catch(e) { sel.innerHTML = '<option value="">— error loading —</option>'; }
+    _rwState.snapName = sel.value;
+    document.getElementById('rw_snap_info').textContent = 'SnapMirror® secondary snapshot';
+    rwRebuildMethod();
+    return;
+  }
+  var done = _allSnapshots.filter(function(s){
+    return s.status==='done' && s.mapping_id===_rwState.mappingId &&
+      s.vmids && s.vmids.indexOf(_rwState.vmid)>=0;
+  });
+  var plugin = done.filter(function(s){ return s.source!=='ontap_native'; });
+  var native  = done.filter(function(s){ return s.source==='ontap_native'; });
   var all = plugin.concat(native);
   sel.innerHTML = all.length
     ? all.map(function(s){
-        var pfx = s.source==='ontap_native' ? '[ONTAP] ' : '';
+        var pfx = s.source==='ontap_native'?'[ONTAP] ':'';
         return '<option value="'+s.id+'">'+pfx+esc(s.snap_name)+' ('+fmtDate(s.created_at)+')</option>';
       }).join('')
     : '<option value="">— no snapshots —</option>';
@@ -2919,8 +3016,9 @@ function rwPopulateSnaps(preSnapId) {
 }
 
 function rwSnapChanged() {
+  if (_rwState.isDR) { _rwState.snapName = document.getElementById('rw_snap').value; return; }
   var sid = document.getElementById('rw_snap').value;
-  _rwState.snap = _allSnapshots.find(function(s){ return String(s.id)===sid; }) || null;
+  _rwState.snap = _allSnapshots.find(function(s){ return String(s.id)===sid; })||null;
   var info = document.getElementById('rw_snap_info');
   if (!_rwState.snap) { info.textContent=''; rwRebuildMethod(); return; }
   info.textContent = (_rwState.snap.vmids||[]).length+' VM(s) in snapshot — '+(_rwState.snap.volume_name||'');
@@ -2928,10 +3026,15 @@ function rwSnapChanged() {
 }
 
 function rwRebuildMethod() {
-  var sel  = document.getElementById('rw_method');
+  var sel = document.getElementById('rw_method');
+  if (_rwState.isDR) {
+    sel.innerHTML = '<option value="dr_restore">DR Restore (from SnapMirror® secondary)</option>';
+    document.getElementById('rw_method_hint').textContent = 'Restores the VM using the SnapMirror® secondary snapshot. Primary volume is not affected.';
+    return;
+  }
   if (_rwState.isSan) {
     sel.innerHTML =
-      '<option value="san_single">Single VM restore (LV-copy — target VM only, others keep running)</option>' +
+      '<option value="san_single">Single VM restore (LV-copy — target VM only)</option>'+
       '<option value="san">Volume Revert — ALL VMs on datastore ⚠ destructive</option>';
   } else {
     sel.innerHTML = '<option value="sfsr">SFSR — in-place, fast (NFS)</option>';
@@ -2944,11 +3047,12 @@ function rwMethodChanged() {
   var hint   = document.getElementById('rw_method_hint');
   var msgs = {
     sfsr:       'Individual disk files restored in-place. VM is stopped during restore.',
-    san_single: 'Only the target VM’s LVs are overwritten. Other VMs on this datastore keep running.',
+    san_single: 'Only the target VM\'s LVs are overwritten. Other VMs on this datastore keep running.',
     san:        '⚠ Volume Revert: all VMs on this datastore are rolled back. All data written after the snapshot is permanently lost.',
+    dr_restore: 'Restores the VM using the SnapMirror® secondary snapshot.',
   };
   hint.textContent = msgs[method]||'';
-  hint.style.color = method==='san' ? 'var(--danger)' : '';
+  hint.style.color = method==='san' ? 'var(--error)' : '';
 }
 
 function rwUpdateStep(n) {
@@ -2962,7 +3066,11 @@ function rwUpdateStep(n) {
   document.getElementById('rwBackBtn').style.display   = n>1 ? '' : 'none';
   document.getElementById('rwNextBtn').style.display   = n<3 ? '' : 'none';
   document.getElementById('rwSubmitBtn').style.display = n===3 ? '' : 'none';
-  if (n===2) rwLoadNodes();
+  if (n===2) {
+    document.getElementById('rw_safety_row').style.display = _rwState.isDR ? 'none' : '';
+    document.getElementById('rw_node_row').style.display   = _rwState.isDR ? 'none' : '';
+    if (!_rwState.isDR) rwLoadNodes();
+  }
   if (n===3) rwBuildSummary();
 }
 
@@ -2977,21 +3085,27 @@ async function rwLoadNodes() {
 }
 
 function rwBuildSummary() {
-  var snap = _rwState.snap;
-  if (!snap) { rwUpdateStep(1); return; }
+  var snapDisplay = _rwState.isDR ? _rwState.snapName : (_rwState.snap ? _rwState.snap.snap_name : '—');
+  if (!snapDisplay) { rwUpdateStep(1); return; }
   var method = document.getElementById('rw_method').value;
-  var node   = document.getElementById('rw_target_node').value || 'auto';
+  var node   = _rwState.isDR ? 'DR (automatic)' : (document.getElementById('rw_target_node').value||'auto');
   var startA = document.getElementById('rw_start_after').checked;
-  document.getElementById('rw_sum_safety').checked = document.getElementById('rw_safety').checked;
-  document.getElementById('rw_sum_snap').textContent    = snap.snap_name;
-  document.getElementById('rw_sum_vmid').textContent    = _rwState.vmid + (_rwState.name?' – '+_rwState.name:'');
+  document.getElementById('rw_sum_snap').textContent    = snapDisplay;
+  document.getElementById('rw_sum_vmid').textContent    = _rwState.vmid+(_rwState.name?' – '+_rwState.name:'');
   document.getElementById('rw_sum_method').textContent  = method;
   document.getElementById('rw_sum_node').textContent    = node;
   document.getElementById('rw_sum_start').textContent   = startA ? 'Yes' : 'No';
-  document.getElementById('rw_sum_expected').textContent= snap.snap_name;
+  document.getElementById('rw_sum_expected').textContent= snapDisplay;
   document.getElementById('rw_confirm_input').value     = '';
   document.getElementById('rwSubmitBtn').disabled       = true;
-  document.getElementById('rw_sum_blast').innerHTML     = _blastRadiusHtml(snap.vmids||[], snap.vm_names||{});
+  var blastRow    = document.getElementById('rw_blast_row');
+  var safetyRow   = document.getElementById('rw_sum_safety_row');
+  if (blastRow)  blastRow.style.display  = _rwState.isDR ? 'none' : '';
+  if (safetyRow) safetyRow.style.display = _rwState.isDR ? 'none' : '';
+  if (!_rwState.isDR) {
+    document.getElementById('rw_sum_safety').checked = document.getElementById('rw_safety').checked;
+    if (_rwState.snap) document.getElementById('rw_sum_blast').innerHTML = _blastRadiusHtml(_rwState.snap.vmids||[], _rwState.snap.vm_names||{});
+  }
 }
 
 function rwCheckConfirm() {
@@ -3000,27 +3114,45 @@ function rwCheckConfirm() {
 }
 
 function rwNext() {
-  if (_rwState.step===1 && !_rwState.snap) { toast('Please select a snapshot','error'); return; }
+  if (_rwState.step===1) {
+    if (_rwState.isDR && !_rwState.snapName) { toast('Please select a snapshot','error'); return; }
+    if (!_rwState.isDR && !_rwState.snap)    { toast('Please select a snapshot','error'); return; }
+  }
   if (_rwState.step<3) rwUpdateStep(_rwState.step+1);
 }
 function rwBack() { if (_rwState.step>1) rwUpdateStep(_rwState.step-1); }
 
 async function doRestore() {
-  var snap   = _rwState.snap;
   var vmid   = _rwState.vmid;
-  var method = document.getElementById('rw_method').value;
   var node   = document.getElementById('rw_target_node').value;
-  var safety = document.getElementById('rw_sum_safety').checked;
   var startA = document.getElementById('rw_start_after').checked;
-  if (!snap||!vmid) return;
+  if (!vmid) return;
   var btn = document.getElementById('rwSubmitBtn');
   btn.disabled=true; btn.textContent='Running…';
+
+  if (_rwState.isDR) {
+    if (!_rwState.snapName || !_rwState.relId || !_rwState.mappingId) {
+      toast('Missing DR restore parameters','error'); btn.disabled=false; btn.textContent='Start Restore'; return;
+    }
+    try {
+      var r = await apiPost('restore/dr-start', { relationship_id:_rwState.relId, snap_name:_rwState.snapName, vmid:vmid, mapping_id:_rwState.mappingId });
+      toast('DR Restore started — Job '+r.job_id,'success');
+      closeRestoreWizard();
+      setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
+    } catch(e) { toast(e.message,'error',e.detail); btn.disabled=false; btn.textContent='Start Restore'; }
+    return;
+  }
+
+  var snap   = _rwState.snap;
+  var method = document.getElementById('rw_method').value;
+  var safety = document.getElementById('rw_sum_safety').checked;
+  if (!snap) return;
   if (safety) {
     try {
       var today = new Date().toISOString().slice(0,10).replace(/-/g,'');
       await apiPost('snapshots/create',{mapping_id:snap.mapping_id,name:'safety_pre_restore_'+today,consistency:'crash',vmids:[]});
     } catch(e) {
-      var cont = await uiConfirm('Safety snapshot failed: '+(e.message||e)+'\n\nProceed with restore anyway?','Proceed','btn-danger');
+      var cont = await uiConfirm('Safety snapshot failed: '+(e.message||e)+'\n\nProceed anyway?','Proceed','btn-danger');
       if (!cont) { btn.disabled=false; btn.textContent='Start Restore'; return; }
     }
   }
@@ -3033,21 +3165,19 @@ async function doRestore() {
     toast('Restore started — Job '+r.job_id,'success');
     closeRestoreWizard();
     setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
-  } catch(e) {
-    toast(e.message,'error',e.detail);
-    btn.disabled=false; btn.textContent='Start Restore';
-  }
+  } catch(e) { toast(e.message,'error',e.detail); btn.disabled=false; btn.textContent='Start Restore'; }
 }
 
 // ── Clone Wizard ──────────────────────────────────────────────────────────
 
-var _cwState = { vmid:null, name:'', mappingId:'', isSan:false, pveClusterId:'', snap:null, step:1 };
+var _cwState = { vmid:null, name:'', mappingId:'', relId:'', isDR:false, isSan:false, pveClusterId:'', snap:null, snapName:'', step:1 };
 
 function openCloneWizard(vmid, preSnapId) {
   var vm = _rcVms.find(function(v){ return v.vmid===vmid; });
   if (!vm) { toast('VM not found in snapshot history','error'); return; }
-  _cwState = { vmid:vmid, name:vm.name, mappingId:vm.mappingId, isSan:vm.isSan, pveClusterId:vm.pveClusterId, snap:null, step:1 };
-  document.getElementById('cw_vm_hdr').textContent = (vm.name||'VM')+' (ID: '+vmid+')';
+  _cwState = { vmid:vmid, name:vm.name, mappingId:vm.mappingId, relId:vm.relId||'', isDR:!!vm.isDR,
+               isSan:vm.isSan, pveClusterId:vm.pveClusterId, snap:null, snapName:'', step:1 };
+  document.getElementById('cw_vm_hdr').textContent = (vm.name||'VM')+' (ID: '+vmid+(vm.isDR?' · DR Secondary':'')+')';
   cwPopulateSnaps(preSnapId);
   cwUpdateStep(1);
   var modal = document.getElementById('cwModal');
@@ -3061,20 +3191,27 @@ function closeCloneWizard() {
   document.body.style.overflow = '';
 }
 
-function cwPopulateSnaps(preSnapId) {
+async function cwPopulateSnaps(preSnapId) {
+  var sel = document.getElementById('cw_snap');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  if (_cwState.isDR) {
+    try {
+      var data = await apiFetch('snapmirror/secondary-snapshots?relationship_id='+encodeURIComponent(_cwState.relId));
+      var snaps = data.snapshots||[];
+      sel.innerHTML = snaps.length
+        ? snaps.map(function(s){ return '<option value="'+esc(s.name)+'">'+esc(s.name)+(s.created_at?' ('+fmtDate(s.created_at)+')':'')+'</option>'; }).join('')
+        : '<option value="">— no secondary snapshots —</option>';
+    } catch(e) { sel.innerHTML = '<option value="">— error loading —</option>'; }
+    _cwState.snapName = sel.value;
+    document.getElementById('cw_snap_info').textContent = 'SnapMirror® secondary snapshot · DR Clone';
+    return;
+  }
   var done = _allSnapshots.filter(function(s){
     return s.status==='done' && s.mapping_id===_cwState.mappingId &&
       s.vmids && s.vmids.indexOf(_cwState.vmid)>=0;
   });
-  if (!_cwState.isSan) {
-    _allSnapshots.forEach(function(s){
-      if (s.status==='done' && s.mapping_id===_cwState.mappingId && s.source==='ontap_native'
-          && !done.find(function(d){ return d.id===s.id; })) done.push(s);
-    });
-  }
   var plugin = done.filter(function(s){ return s.source!=='ontap_native'; });
-  var native = done.filter(function(s){ return s.source==='ontap_native'; });
-  var sel = document.getElementById('cw_snap');
+  var native  = done.filter(function(s){ return s.source==='ontap_native'; });
   var all = plugin.concat(native);
   sel.innerHTML = all.length
     ? all.map(function(s){
@@ -3087,13 +3224,14 @@ function cwPopulateSnaps(preSnapId) {
 }
 
 function cwSnapChanged() {
+  if (_cwState.isDR) { _cwState.snapName = document.getElementById('cw_snap').value; return; }
   var sid = document.getElementById('cw_snap').value;
   _cwState.snap = _allSnapshots.find(function(s){ return String(s.id)===sid; })||null;
   var info = document.getElementById('cw_snap_info');
   if (!_cwState.snap) { info.textContent=''; return; }
   var proto = (_cwState.snap.storage_protocol||'nfs').toLowerCase();
-  var method = {nvme:'NVMe — LV-copy via volume clone',iscsi:'iSCSI — LV-copy via LUN clone',nfs:'NFS — file clone (CoW)'}[proto]||'';
-  info.textContent = method+' · '+(_cwState.snap.vmids||[]).length+' VM(s) in snapshot';
+  var label = {nvme:'NVMe — LV-copy',iscsi:'iSCSI — LV-copy',nfs:'NFS — file clone (CoW)'}[proto]||'';
+  info.textContent = label+' · '+(_cwState.snap.vmids||[]).length+' VM(s) in snapshot';
 }
 
 function cwUpdateStep(n) {
@@ -3107,14 +3245,18 @@ function cwUpdateStep(n) {
   document.getElementById('cwBackBtn').style.display   = n>1 ? '' : 'none';
   document.getElementById('cwNextBtn').style.display   = n<3 ? '' : 'none';
   document.getElementById('cwSubmitBtn').style.display = n===3 ? '' : 'none';
-  if (n===2) { cwLoadNodes(); cwSuggestId(); }
+  if (n===2) {
+    document.getElementById('cw_node_row').style.display = _cwState.isDR ? 'none' : '';
+    if (!_cwState.isDR) cwLoadNodes();
+    cwSuggestId();
+  }
   if (n===3) cwBuildSummary();
 }
 
 async function cwLoadNodes() {
   var sel = document.getElementById('cw_target_node');
   sel.innerHTML = '<option value="">Auto (any host in cluster)</option>';
-  if (!_cwState.pveClusterId) return;
+  if (!_cwState.pveClusterId || _cwState.isDR) return;
   try {
     var d = await apiFetch('clone/nodes?pve_cluster_id='+encodeURIComponent(_cwState.pveClusterId));
     (d.nodes||[]).forEach(function(n){ var o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
@@ -3130,15 +3272,14 @@ async function cwSuggestId() {
 }
 
 function cwBuildSummary() {
-  var snap = _cwState.snap;
-  if (!snap) { cwUpdateStep(1); return; }
+  var snapDisplay = _cwState.isDR ? _cwState.snapName : (_cwState.snap ? _cwState.snap.snap_name : '—');
   var newName = document.getElementById('cw_new_name').value.trim();
   var newVmid = document.getElementById('cw_new_vmid').value;
-  var node    = document.getElementById('cw_target_node').value||'auto';
+  var node    = _cwState.isDR ? 'auto (DR)' : (document.getElementById('cw_target_node').value||'auto');
   var netIso  = document.getElementById('cw_network_isolated').checked;
   var startA  = document.getElementById('cw_start_after').checked;
   document.getElementById('cw_sum_src').textContent   = _cwState.vmid+(_cwState.name?' – '+_cwState.name:'');
-  document.getElementById('cw_sum_snap').textContent  = snap.snap_name;
+  document.getElementById('cw_sum_snap').textContent  = snapDisplay;
   document.getElementById('cw_sum_vmid').textContent  = newVmid||'—';
   document.getElementById('cw_sum_name').textContent  = newName||'(auto)';
   document.getElementById('cw_sum_node').textContent  = node;
@@ -3148,23 +3289,42 @@ function cwBuildSummary() {
 }
 
 function cwNext() {
-  if (_cwState.step===1 && !_cwState.snap) { toast('Please select a snapshot','error'); return; }
+  if (_cwState.step===1) {
+    if (_cwState.isDR && !_cwState.snapName) { toast('Please select a snapshot','error'); return; }
+    if (!_cwState.isDR && !_cwState.snap)    { toast('Please select a snapshot','error'); return; }
+  }
   if (_cwState.step===2 && !document.getElementById('cw_new_vmid').value) { toast('Please enter a new VM ID','error'); return; }
   if (_cwState.step<3) cwUpdateStep(_cwState.step+1);
 }
 function cwBack() { if (_cwState.step>1) cwUpdateStep(_cwState.step-1); }
 
 async function doClone() {
-  var snap    = _cwState.snap;
   var srcVmid = _cwState.vmid;
   var newVmid = parseInt(document.getElementById('cw_new_vmid').value);
-  var node    = document.getElementById('cw_target_node').value;
   var newName = document.getElementById('cw_new_name').value.trim();
   var netIso  = document.getElementById('cw_network_isolated').checked;
   var startA  = document.getElementById('cw_start_after').checked;
-  if (!snap||!srcVmid||!newVmid) return;
+  if (!srcVmid||!newVmid) return;
   var btn = document.getElementById('cwSubmitBtn');
   btn.disabled=true; btn.textContent='Starting…';
+
+  if (_cwState.isDR) {
+    if (!_cwState.snapName || !_cwState.relId || !_cwState.mappingId) {
+      toast('Missing DR clone parameters','error'); btn.disabled=false; btn.textContent='Start Clone'; return;
+    }
+    try {
+      var r = await apiPost('clone/dr-start', { relationship_id:_cwState.relId, snap_name:_cwState.snapName,
+        src_vmid:srcVmid, new_vmid:newVmid, new_name:newName, mapping_id:_cwState.mappingId, start_after:startA });
+      toast('DR Clone started — Job '+r.job_id,'success');
+      closeCloneWizard();
+      setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
+    } catch(e) { toast(e.message,'error',e.detail); btn.disabled=false; btn.textContent='Start Clone'; }
+    return;
+  }
+
+  var snap = _cwState.snap;
+  var node = document.getElementById('cw_target_node').value;
+  if (!snap) return;
   var isNative = snap.source==='ontap_native';
   var payload = isNative
     ? {native:true,mapping_id:snap.mapping_id,snap_name:snap.snap_name,
@@ -3176,10 +3336,7 @@ async function doClone() {
     toast('Clone started — Job '+r.job_id,'success');
     closeCloneWizard();
     setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); setTimeout(loadAllJobs,800); },300);
-  } catch(e) {
-    toast(e.message,'error',e.detail);
-    btn.disabled=false; btn.textContent='Start Clone';
-  }
+  } catch(e) { toast(e.message,'error',e.detail); btn.disabled=false; btn.textContent='Start Clone'; }
 }
 
 // ── Navigate from snapshot table ─────────────────────────────────────────
@@ -9321,82 +9478,102 @@ loadSnapshots();
 
 <!-- ══════════════ RESTORE WIZARD MODAL ══════════════ -->
 <div id="rwModal" role="dialog" aria-modal="true" aria-label="Restore Wizard"
-     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9150;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center;flex-direction:column">
-  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:640px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9150;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
+  <div style="max-width:640px;width:100%;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+
     <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0">
-      <div>
-        <h2 style="margin:0;font-size:18px;font-weight:600">
-          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:6px;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Restore VM
-        </h2>
-        <p id="rw_vm_hdr" style="margin:4px 0 0;font-size:13px;color:var(--muted)"></p>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        <span style="font-size:15px;font-weight:700">Restore VM</span>
+        <span id="rw_vm_hdr" style="font-size:13px;color:var(--muted);margin-left:4px"></span>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="closeRestoreWizard()" aria-label="Close" style="font-size:18px;padding:4px 8px">✕</button>
+      <button onclick="closeRestoreWizard()" style="background:none;border:none;color:var(--text);opacity:.6;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>
     </div>
+
     <!-- Step pills -->
-    <div style="display:flex;gap:8px;padding:16px 24px 0">
-      <div id="rwPill1" class="setup-step-pill active">① Snapshot &amp; Method</div>
-      <div id="rwPill2" class="setup-step-pill">② Options</div>
-      <div id="rwPill3" class="setup-step-pill">③ Confirm</div>
+    <div style="padding:16px 20px 0">
+      <div style="display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+        <div id="rwPill1" class="setup-step-pill active">① Snapshot &amp; Method</div>
+        <div id="rwPill2" class="setup-step-pill">② Options</div>
+        <div id="rwPill3" class="setup-step-pill">③ Confirm</div>
+      </div>
     </div>
-    <!-- Step 1: Snapshot + Method -->
-    <div id="rwStep1" style="padding:20px 24px">
+
+    <!-- Step 1 -->
+    <div id="rwStep1" style="padding:20px">
       <div class="form-group">
         <label class="form-label">Snapshot</label>
         <select id="rw_snap" class="form-control" onchange="rwSnapChanged()" style="width:100%"></select>
-        <div id="rw_snap_info" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div id="rw_snap_info" class="hint"></div>
       </div>
       <div class="form-group" style="margin-top:14px">
         <label class="form-label">Restore Method</label>
         <select id="rw_method" class="form-control" onchange="rwMethodChanged()" style="width:100%"></select>
-        <div id="rw_method_hint" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div id="rw_method_hint" class="hint"></div>
       </div>
     </div>
-    <!-- Step 2: Options -->
-    <div id="rwStep2" style="display:none;padding:20px 24px">
-      <div class="form-group">
+
+    <!-- Step 2 -->
+    <div id="rwStep2" style="display:none;padding:20px">
+      <div id="rw_node_row" class="form-group">
         <label class="form-label">Target Host</label>
         <select id="rw_target_node" class="form-control" style="width:100%">
           <option value="">Auto (any host in cluster)</option>
         </select>
       </div>
-      <div class="form-group" style="margin-top:14px;display:flex;align-items:center;gap:10px">
-        <input type="checkbox" id="rw_start_after" style="width:16px;height:16px">
-        <label for="rw_start_after" style="margin:0;cursor:pointer">Start VM after restore</label>
+      <div class="form-group" style="margin-top:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="rw_start_after" style="width:15px;height:15px">
+          Start VM after restore
+        </label>
       </div>
-      <div class="form-group" style="margin-top:10px;display:flex;align-items:center;gap:10px">
-        <input type="checkbox" id="rw_safety" checked style="width:16px;height:16px">
-        <label for="rw_safety" style="margin:0;cursor:pointer">Create safety snapshot before restore <span style="color:var(--muted);font-size:12px">(recommended)</span></label>
+      <div id="rw_safety_row" class="form-group" style="margin-top:8px">
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;padding:10px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg)">
+          <input type="checkbox" id="rw_safety" checked style="width:15px;height:15px;margin-top:2px;flex-shrink:0">
+          <span><strong>Create safety snapshot before restore</strong><br>
+            <span style="font-size:11px;opacity:.7">Creates <code>safety_pre_restore_YYYYMMDD</code> before the restore runs.</span>
+          </span>
+        </label>
       </div>
     </div>
-    <!-- Step 3: Confirm (danger) -->
-    <div id="rwStep3" style="display:none;padding:20px 24px">
-      <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 16px;margin-bottom:16px">
-        <div style="font-weight:600;color:var(--danger);margin-bottom:8px">⚠ Destructive Action — Restore will overwrite VM data</div>
-        <table style="font-size:13px;width:100%;border-collapse:collapse">
-          <tr><td style="color:var(--muted);padding:2px 8px 2px 0;white-space:nowrap">Snapshot</td><td id="rw_sum_snap" style="font-family:var(--mono)"></td></tr>
-          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">VM</td><td id="rw_sum_vmid"></td></tr>
-          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">Method</td><td id="rw_sum_method"></td></tr>
-          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">Target Host</td><td id="rw_sum_node"></td></tr>
-          <tr><td style="color:var(--muted);padding:2px 8px 2px 0">Start after</td><td id="rw_sum_start"></td></tr>
-        </table>
-        <div style="margin-top:10px">
-          <label style="font-size:12px;color:var(--muted)">Affected VMs (blast radius)</label>
-          <div id="rw_sum_blast" style="margin-top:4px"></div>
+
+    <!-- Step 3 -->
+    <div id="rwStep3" style="display:none;padding:20px">
+      <div style="border:1px solid rgba(217,83,79,.4);border-radius:8px;overflow:hidden;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(217,83,79,.07);border-bottom:1px solid rgba(217,83,79,.25)">
+          <svg width="16" height="16" fill="none" stroke="#d9534f" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <span style="font-size:13px;font-weight:700;color:#d9534f">Destructive Action — Restore will overwrite VM data</span>
         </div>
-        <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="rw_sum_safety" style="width:16px;height:16px">
-          <label for="rw_sum_safety" style="margin:0;font-size:13px;cursor:pointer">Create safety snapshot first</label>
+        <div style="padding:12px 14px">
+          <table style="font-size:13px;width:100%;border-collapse:collapse">
+            <tr><td style="color:var(--muted);padding:3px 10px 3px 0;white-space:nowrap">Snapshot</td><td id="rw_sum_snap" style="font-family:monospace"></td></tr>
+            <tr><td style="color:var(--muted);padding:3px 10px 3px 0">VM</td><td id="rw_sum_vmid"></td></tr>
+            <tr><td style="color:var(--muted);padding:3px 10px 3px 0">Method</td><td id="rw_sum_method"></td></tr>
+            <tr><td style="color:var(--muted);padding:3px 10px 3px 0">Target Host</td><td id="rw_sum_node"></td></tr>
+            <tr><td style="color:var(--muted);padding:3px 10px 3px 0">Start after</td><td id="rw_sum_start"></td></tr>
+          </table>
+          <div id="rw_blast_row" style="margin-top:10px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d9534f;text-transform:uppercase;margin-bottom:6px">Affected VMs</div>
+            <div id="rw_sum_blast" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+          </div>
+          <div id="rw_sum_safety_row" style="margin-top:10px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="rw_sum_safety" style="width:15px;height:15px">
+              Create safety snapshot first
+            </label>
+          </div>
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label" style="color:var(--danger)">Type the snapshot name to confirm:</label>
-        <div style="font-family:var(--mono);background:var(--bg-alt);padding:6px 10px;border-radius:6px;margin-bottom:8px;font-size:13px" id="rw_sum_expected"></div>
-        <input type="text" id="rw_confirm_input" class="form-control" oninput="rwCheckConfirm()" placeholder="Type snapshot name…" autocomplete="off">
+        <label style="font-size:13px;font-weight:600;color:#d9534f">Type the snapshot name to confirm:</label>
+        <div style="font-size:12px;color:var(--muted);margin:4px 0 8px">Enter <code id="rw_sum_expected" style="background:rgba(0,0,0,.2);padding:1px 6px;border-radius:3px"></code> to continue</div>
+        <input id="rw_confirm_input" oninput="rwCheckConfirm()" placeholder="Type snapshot name…" autocomplete="off" style="border:1px solid rgba(217,83,79,.5);background:rgba(217,83,79,.04);width:100%">
       </div>
     </div>
+
     <!-- Footer -->
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-top:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border);background:var(--bg)">
       <button id="rwBackBtn" class="btn btn-secondary" onclick="rwBack()" style="display:none">← Back</button>
       <span></span>
       <div style="display:flex;gap:8px">
@@ -9405,76 +9582,82 @@ loadSnapshots();
         <button id="rwSubmitBtn" class="btn btn-danger" onclick="doRestore()" style="display:none" disabled>Start Restore</button>
       </div>
     </div>
+
   </div>
 </div>
 
 <!-- ══════════════ CLONE WIZARD MODAL ══════════════ -->
 <div id="cwModal" role="dialog" aria-modal="true" aria-label="Clone Wizard"
-     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9150;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center;flex-direction:column">
-  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:100%;max-width:640px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9150;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center">
+  <div style="max-width:640px;width:100%;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+
     <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 0">
-      <div>
-        <h2 style="margin:0;font-size:18px;font-weight:600">
-          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:6px;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>Clone VM
-        </h2>
-        <p id="cw_vm_hdr" style="margin:4px 0 0;font-size:13px;color:var(--muted)"></p>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        <span style="font-size:15px;font-weight:700">Clone VM</span>
+        <span id="cw_vm_hdr" style="font-size:13px;color:var(--muted);margin-left:4px"></span>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="closeCloneWizard()" aria-label="Close" style="font-size:18px;padding:4px 8px">✕</button>
+      <button onclick="closeCloneWizard()" style="background:none;border:none;color:var(--text);opacity:.6;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1">✕</button>
     </div>
+
     <!-- Step pills -->
-    <div style="display:flex;gap:8px;padding:16px 24px 0">
-      <div id="cwPill1" class="setup-step-pill active">① Snapshot</div>
-      <div id="cwPill2" class="setup-step-pill">② Options</div>
-      <div id="cwPill3" class="setup-step-pill">③ Summary</div>
+    <div style="padding:16px 20px 0">
+      <div style="display:flex;gap:0;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+        <div id="cwPill1" class="setup-step-pill active">① Snapshot</div>
+        <div id="cwPill2" class="setup-step-pill">② Options</div>
+        <div id="cwPill3" class="setup-step-pill">③ Summary</div>
+      </div>
     </div>
-    <!-- Step 1: Snapshot -->
-    <div id="cwStep1" style="padding:20px 24px">
+
+    <!-- Step 1 -->
+    <div id="cwStep1" style="padding:20px">
       <div class="form-group">
         <label class="form-label">Snapshot to clone from</label>
         <select id="cw_snap" class="form-control" onchange="cwSnapChanged()" style="width:100%"></select>
-        <div id="cw_snap_info" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
+        <div id="cw_snap_info" class="hint"></div>
       </div>
     </div>
-    <!-- Step 2: Options -->
-    <div id="cwStep2" style="display:none;padding:20px 24px">
+
+    <!-- Step 2 -->
+    <div id="cwStep2" style="display:none;padding:20px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div class="form-group">
-          <label class="form-label">New VM ID <span style="color:var(--danger)">*</span></label>
+          <label class="form-label">New VM ID <span style="color:#d9534f">*</span></label>
           <input type="number" id="cw_new_vmid" class="form-control" placeholder="e.g. 200" min="100" max="999999999" oninput="cwBuildSummary()">
         </div>
         <div class="form-group">
-          <label class="form-label">New VM Name <span style="color:var(--muted);font-size:12px">(optional)</span></label>
+          <label class="form-label">New Name <span style="color:var(--muted);font-size:12px">(optional)</span></label>
           <input type="text" id="cw_new_name" class="form-control" placeholder="auto" oninput="cwBuildSummary()">
         </div>
       </div>
-      <div class="form-group" style="margin-top:6px">
+      <div id="cw_node_row" class="form-group" style="margin-top:10px">
         <label class="form-label">Target Host</label>
         <select id="cw_target_node" class="form-control" style="width:100%">
           <option value="">Auto (any host in cluster)</option>
         </select>
       </div>
       <div class="form-group" style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="checkbox" id="cw_network_isolated" checked style="width:16px;height:16px">
-          <label for="cw_network_isolated" style="margin:0;cursor:pointer">
-            Disconnect from network after clone
-            <span style="display:block;font-size:12px;color:var(--muted)">Sets link_down=1 on all network interfaces — prevents IP conflicts</span>
-          </label>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="checkbox" id="cw_start_after" style="width:16px;height:16px">
-          <label for="cw_start_after" style="margin:0;cursor:pointer">Start VM after clone</label>
-        </div>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px;padding:10px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg)">
+          <input type="checkbox" id="cw_network_isolated" checked style="width:15px;height:15px;margin-top:2px;flex-shrink:0">
+          <span><strong>Disconnect from network after clone</strong><br>
+            <span style="font-size:11px;opacity:.7">Sets link_down=1 on all network interfaces — prevents IP conflicts</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="cw_start_after" style="width:15px;height:15px">
+          Start VM after clone
+        </label>
       </div>
     </div>
-    <!-- Step 3: Summary -->
-    <div id="cwStep3" style="display:none;padding:20px 24px">
-      <div style="background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+
+    <!-- Step 3 -->
+    <div id="cwStep3" style="display:none;padding:20px">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
         <table style="font-size:13px;width:100%;border-collapse:collapse">
           <tr><td style="color:var(--muted);padding:3px 12px 3px 0;white-space:nowrap">Source VM</td><td id="cw_sum_src"></td></tr>
-          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Snapshot</td><td id="cw_sum_snap" style="font-family:var(--mono)"></td></tr>
-          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">New VM ID</td><td id="cw_sum_vmid" style="font-family:var(--mono)"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Snapshot</td><td id="cw_sum_snap" style="font-family:monospace"></td></tr>
+          <tr><td style="color:var(--muted);padding:3px 12px 3px 0">New VM ID</td><td id="cw_sum_vmid" style="font-family:monospace"></td></tr>
           <tr><td style="color:var(--muted);padding:3px 12px 3px 0">New Name</td><td id="cw_sum_name"></td></tr>
           <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Target Host</td><td id="cw_sum_node"></td></tr>
           <tr><td style="color:var(--muted);padding:3px 12px 3px 0">Network</td><td id="cw_sum_net"></td></tr>
@@ -9482,8 +9665,9 @@ loadSnapshots();
         </table>
       </div>
     </div>
+
     <!-- Footer -->
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-top:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border);background:var(--bg)">
       <button id="cwBackBtn" class="btn btn-secondary" onclick="cwBack()" style="display:none">← Back</button>
       <span></span>
       <div style="display:flex;gap:8px">
@@ -9492,6 +9676,7 @@ loadSnapshots();
         <button id="cwSubmitBtn" class="btn btn-primary" onclick="doClone()" style="display:none" disabled>Start Clone</button>
       </div>
     </div>
+
   </div>
 </div>
 
