@@ -1366,15 +1366,24 @@ function applyI18n() {
 
     <!-- ═══════════════════════ SCHEDULES ═══════════════════════ -->
     <div id="tab-schedules" class="tab-panel" style="display:none">
-      <div class="section-actions">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <button class="btn btn-primary" onclick="showAddScheduleForm()" data-i18n="btn_add_schedule">+ Add Schedule</button>
+        <input id="schedSearch" type="text" placeholder="Filter by name, datastore or label…" oninput="schedFilterChanged()" style="flex:1;min-width:140px;max-width:240px;margin-left:4px">
       </div>
 
       <div class="card table-scroll">
         <table style="min-width:860px">
           <thead><tr>
-            <th data-i18n="th_name">Name</th><th data-i18n="th_volume">Volume</th><th data-i18n="th_vms">VMs</th><th data-i18n="th_schedule">Schedule</th>
-            <th data-i18n="th_label">Label</th><th data-i18n="th_retention">Retention</th><th data-i18n="th_status">Status</th><th data-i18n="th_last_run">Last run</th><th>SnapMirror®</th><th data-i18n="th_actions">Actions</th>
+            <th class="sortable" onclick="schedColSort('name')"><span data-i18n="th_name">Name</span> <span class="si" id="schs_name">↑</span></th>
+            <th class="sortable" onclick="schedColSort('volume')"><span data-i18n="th_volume">Volume</span> <span class="si" id="schs_volume">⇅</span></th>
+            <th data-i18n="th_vms">VMs</th>
+            <th data-i18n="th_schedule">Schedule</th>
+            <th data-i18n="th_label">Label</th>
+            <th class="sortable" onclick="schedColSort('retention')"><span data-i18n="th_retention">Retention</span> <span class="si" id="schs_retention">⇅</span></th>
+            <th class="sortable" onclick="schedColSort('status')"><span data-i18n="th_status">Status</span> <span class="si" id="schs_status">⇅</span></th>
+            <th class="sortable" onclick="schedColSort('lastRun')"><span data-i18n="th_last_run">Last run</span> <span class="si" id="schs_lastRun">⇅</span></th>
+            <th>SnapMirror®</th>
+            <th data-i18n="th_actions">Actions</th>
           </tr></thead>
           <tbody id="schedulesBody">
             <tr><td colspan="10" class="empty"><span class="spinner"></span></td></tr>
@@ -1396,16 +1405,7 @@ function applyI18n() {
           <button id="rcSrcPrimary" class="btn btn-primary btn-sm" onclick="rcSetSource('primary')">Primary</button>
           <button id="rcSrcSecondary" class="btn btn-ghost btn-sm" onclick="rcSetSource('secondary')">SnapMirror Secondary</button>
         </div>
-        <input id="rcSearch" type="text" placeholder="Filter by VM name or ID…" oninput="rcFilterChanged()" style="flex:1;min-width:140px;max-width:200px;margin-left:4px">
-        <select id="rcSort" onchange="rcSortChanged()" style="max-width:170px;font-size:12px">
-          <option value="lastSnap_desc">Newest snapshot ↓</option>
-          <option value="lastSnap_asc">Oldest snapshot ↑</option>
-          <option value="name_asc">Name A → Z</option>
-          <option value="name_desc">Name Z → A</option>
-          <option value="vmid_asc">VMID ↑</option>
-          <option value="vmid_desc">VMID ↓</option>
-          <option value="count_desc">Most snapshots ↓</option>
-        </select>
+        <input id="rcSearch" type="text" placeholder="Filter by VM name, ID or datastore…" oninput="rcFilterChanged()" style="flex:1;min-width:140px;max-width:220px;margin-left:4px">
         <button class="btn btn-ghost btn-sm" onclick="_rcSource==='secondary'?rcDrRelChanged():loadRcVmList()">
           <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh
         </button>
@@ -1421,90 +1421,19 @@ function applyI18n() {
       <div class="card table-scroll">
         <table style="min-width:700px">
           <thead><tr>
-            <th>VMID</th><th>Name</th><th>Datastore</th><th>Protocol</th>
-            <th>Snapshots</th><th>Last Snapshot</th><th>Actions</th>
+            <th class="sortable" onclick="rcColSort('vmid')">VMID <span class="si" id="rcs_vmid">⇅</span></th>
+            <th class="sortable" onclick="rcColSort('name')">Name <span class="si" id="rcs_name">⇅</span></th>
+            <th class="sortable" onclick="rcColSort('dsName')">Datastore <span class="si" id="rcs_dsName">⇅</span></th>
+            <th class="sortable" onclick="rcColSort('proto')">Protocol <span class="si" id="rcs_proto">⇅</span></th>
+            <th class="sortable" onclick="rcColSort('count')">Snapshots <span class="si" id="rcs_count">⇅</span></th>
+            <th class="sortable" onclick="rcColSort('lastSnap')">Last Snapshot <span class="si" id="rcs_lastSnap">↓</span></th>
+            <th>Actions</th>
           </tr></thead>
           <tbody id="rcVmTbody">
             <tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>
           </tbody>
         </table>
         <p style="font-size:11px;color:var(--muted);padding:6px 14px 8px;margin:0">All VMs that have ever been snapshotted — including VMs no longer in the cluster — appear here.</p>
-      </div>
-
-      <!-- ── SnapMirror® DR ─────────────────────────────────────────────── -->
-      <div class="sub-header" style="margin-top:24px">
-        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>SnapMirror® DR Restore &amp; Clone</span>
-      </div>
-
-      <!-- DR Restore from SnapMirror® secondary -->
-      <div class="card">
-        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg><span data-i18n="sm_dr_title">Restore from SnapMirror® Secondary System</span></div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="sm_select_rel">SnapMirror® Relationship</label>
-            <select id="dr_relationship" onchange="loadDrSecondarySnaps()"><option value=""></option></select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="sm_select_snap">Secondary Snapshot</label>
-            <select id="dr_snap_name" onchange="loadDrSnapVmids()"><option value=""></option></select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_vm_id">VM-ID</label>
-            <select id="dr_vmid" style="display:none"><option value=""></option></select>
-            <input id="dr_vmid_input" type="number" placeholder="Enter VM ID" style="display:none">
-            <p id="dr_vmid_hint" class="hint" style="color:var(--muted);margin:4px 0 0;display:none"></p>
-          </div>
-        </div>
-        <p id="dr_no_ep_hint" class="hint" style="color:var(--warning,#e5a800);display:none" data-i18n="sm_no_dest_ep">No secondary endpoint configured — run scan first</p>
-        <div class="form-actions">
-          <button class="btn btn-ghost btn-sm" onclick="drCheckSecondary()" data-i18n="sm_ensure_export">Check Secondary</button>
-          <button class="btn btn-primary" onclick="startDrRestore()" data-i18n="sm_btn_start_dr">Start DR Restore</button>
-        </div>
-      </div>
-
-      <!-- DR Clone from SnapMirror® secondary -->
-      <div class="card" style="margin-top:16px">
-        <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg><span data-i18n="ct_dr_clone">DR Clone from Secondary System</span></div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label data-i18n="sm_select_rel">Select relationship</label>
-            <select id="dr_clone_relationship" onchange="loadDrCloneSnaps()"><option value=""></option></select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="sm_select_snap">Select snapshot</label>
-            <select id="dr_clone_snap_name"><option value=""></option></select>
-          </div>
-          <div class="form-group">
-            <label data-i18n="lbl_source_vm">Source VM</label>
-            <select id="dr_clone_src_vmid"><option value=""></option></select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_new_name">New Name</span> <span style="opacity:.6" data-i18n="lbl_new_name_hint">(optional)</span></label>
-            <input id="dr_clone_new_name" placeholder="e.g. dr-clone-webserver">
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="lbl_new_vmid">New VM-ID</span>
-              <button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="suggestDrCloneNextId()" data-i18n="btn_suggest">Suggest</button>
-            </label>
-            <input id="dr_clone_new_vmid" type="number" placeholder="e.g. 201">
-          </div>
-          <div class="form-group" style="display:flex;align-items:center;padding-top:20px">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
-              <input id="dr_clone_start_after" type="checkbox">
-              <span data-i18n="lbl_start_after">Start VM after cloning</span>
-            </label>
-          </div>
-        </div>
-        <p id="dr_clone_no_ep_hint" style="display:none;color:var(--danger);margin:8px 0 0" data-i18n="sm_no_dest_ep"></p>
-        <div class="form-actions">
-          <button class="btn btn-primary" onclick="startDrClone()" data-i18n="btn_start_dr_clone">Start DR Clone</button>
-        </div>
-      </div>
-
-      <!-- ── Import VMs (temporary — moving to Storage tab in next release) ── -->
-      <div class="sub-header" style="margin-top:28px">
-        <span class="sub-header-title"><svg class="tab-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Import VMs from Datastore</span>
-        <button class="btn btn-primary btn-sm" onclick="showVmImportModal()">+ Import VMs</button>
       </div>
 
     </div>
@@ -1518,18 +1447,19 @@ function applyI18n() {
       <div class="section-actions">
         <button class="btn btn-primary" onclick="showProvWizard()">+ Provision New</button>
         <button class="btn btn-secondary" onclick="showBindWizard()">⇢ Mount existing</button>
-        <button class="btn btn-ghost" onclick="runDiscovery()">
-          <span id="discoverSpinner" style="display:none" class="spinner"></span>
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Detect
+        <button class="btn btn-ghost" onclick="showVmImportModal()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Import VMs
         </button>
-        <button class="btn btn-ghost" onclick="scanSnapMirror()">↻ Scan SnapMirror</button>
-        <button class="btn btn-ghost" onclick="loadStorageUnified()">⟳ Refresh</button>
+        <button class="btn btn-ghost" onclick="runDetectAndScan()">
+          <span id="discoverSpinner" style="display:none" class="spinner"></span>
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>Detect &amp; Scan
+        </button>
       </div>
 
       <!-- ── All Datastores table ──────────────────────────────── -->
       <div class="card table-scroll">
         <div class="card-title"><svg class="tab-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>All Datastores</div>
-        <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click "Detect" to discover existing datastores, or "+ Provision New" to create one.</div>
+        <div id="storageEmpty" class="empty" style="display:none">No datastores found. Click "Detect &amp; Scan" to discover existing datastores and SnapMirror relationships, or "+ Provision New" to create one.</div>
         <table style="min-width:1040px">
           <thead><tr>
             <th>Datastore / SVM / System</th><th>Protocol</th><th>Volume</th><th>VG / Mount</th>
@@ -2023,7 +1953,7 @@ document.querySelectorAll('.subtab').forEach(function(t) {
     var loaders = {
       snapshots: loadSnapshots,
       schedules: loadSchedules,
-      restore:   function(){ loadRcVmList(); loadDrRelationshipSelector(); loadDrCloneRelationshipSelector(); },
+      restore:   function(){ loadRcVmList(); },
       storage:   loadStorageUnified,
       jobs:      loadAllJobs,
       settings:  function(){ loadEndpoints(); loadPveHosts(); loadSmtp(); },
@@ -2825,7 +2755,8 @@ var _currentLogJobId = null;
 
 var _rcVms       = [];
 var _rcSearch    = '';
-var _rcSortKey   = 'lastSnap_desc';
+var _rcSortCol   = 'lastSnap';
+var _rcSortDir   = -1;
 var _rcSource    = 'primary';
 var _rcDrRelId   = '';
 var _rcDrMappingId = '';
@@ -2867,9 +2798,14 @@ function renderRcVmList() {
   _renderRcRows();
 }
 
+function rcColSort(col) {
+  if (_rcSortCol === col) { _rcSortDir = -_rcSortDir; }
+  else { _rcSortCol = col; _rcSortDir = col === 'lastSnap' ? -1 : 1; }
+  _renderRcRows();
+}
+
 function _rcSorted(rows) {
-  var parts = (_rcSortKey||'lastSnap_desc').split('_');
-  var col = parts[0], dir = parts[parts.length-1]==='asc' ? 1 : -1;
+  var col = _rcSortCol, dir = _rcSortDir;
   return rows.slice().sort(function(a,b){
     var av, bv;
     if (col==='lastSnap'){ av=a.lastSnap||''; bv=b.lastSnap||''; return dir*av.localeCompare(bv); }
@@ -2880,6 +2816,8 @@ function _rcSorted(rows) {
     }
     if (col==='vmid') return dir*(a.vmid-b.vmid);
     if (col==='count') return dir*(a.snapCount-b.snapCount);
+    if (col==='dsName'){ av=(a.dsName||'').toLowerCase(); bv=(b.dsName||'').toLowerCase(); return dir*av.localeCompare(bv); }
+    if (col==='proto'){ av=(a.protocol||'').toLowerCase(); bv=(b.protocol||'').toLowerCase(); return dir*av.localeCompare(bv); }
     return 0;
   });
 }
@@ -2902,14 +2840,17 @@ function _renderRcRows() {
     tbody.innerHTML = _emptyRow(7, svgVm, msg, sub, (!q&&_rcSource==='primary') ? 'Go to Snapshots' : null, (!q&&_rcSource==='primary') ? "document.querySelector('[data-tab=\"snapshots\"]').click()" : null);
     return;
   }
+  var _rcProtoBg = {NFS:'#0ea5e9', ISCSI:'#f97316', NVME:'#a855f7'};
   tbody.innerHTML = rows.map(function(v){
     var cnt = v.snapCount===1 ? '1 snapshot' : v.snapCount+' snapshots';
     var drBadge = v.isDR ? '<span style="display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(88,166,255,.15);color:#58A6FF;border:1px solid rgba(88,166,255,.3);margin-right:4px">DR</span>' : '';
+    var protoBg = _rcProtoBg[v.protocol] || '#888';
+    var protoBadge = '<span class="badge" style="background:'+protoBg+';color:#fff;font-size:10px">'+esc(v.protocol)+'</span>';
     return '<tr>'+
       '<td><code style="font-size:12px">'+v.vmid+'</code></td>'+
       '<td>'+drBadge+(v.name ? esc(v.name) : '<span style="opacity:.4">—</span>')+'</td>'+
       '<td><code style="font-size:11px">'+esc(v.dsName)+'</code></td>'+
-      '<td><span class="corp-badge corp-badge-ha">'+esc(v.protocol)+'</span></td>'+
+      '<td>'+protoBadge+'</td>'+
       '<td style="color:var(--muted)">'+cnt+'</td>'+
       '<td style="color:var(--muted)">'+fmtDateRel(v.lastSnap)+'</td>'+
       '<td><div class="row-actions">'+
@@ -2920,15 +2861,22 @@ function _renderRcRows() {
       '</div></td>'+
     '</tr>';
   }).join('');
+  ['vmid','name','dsName','proto','count','lastSnap'].forEach(function(c){
+    var span = document.getElementById('rcs_'+c);
+    var th   = span && span.parentElement;
+    if (!span) return;
+    if (c === _rcSortCol) {
+      span.textContent = _rcSortDir === 1 ? '↑' : '↓';
+      if (th) th.classList.add('sort-active');
+    } else {
+      span.textContent = '⇅';
+      if (th) th.classList.remove('sort-active');
+    }
+  });
 }
 
 function rcFilterChanged() {
   _rcSearch = (document.getElementById('rcSearch')||{}).value || '';
-  _renderRcRows();
-}
-
-function rcSortChanged() {
-  _rcSortKey = (document.getElementById('rcSort')||{}).value || 'lastSnap_desc';
   _renderRcRows();
 }
 
@@ -3762,60 +3710,110 @@ async function startClone() {
 
 // ═══════════════════════════ SCHEDULES ════════════════════════════════════
 
-var _schedulesCache = [];
-var _schedWizStep = 1;
-var _schedWizHasSM = false;
+var _schedulesCache  = [];
+var _schedVmNameMap  = {};
+var _schedSearch     = '';
+var _schedSortCol    = 'name';
+var _schedSortDir    = 1;
+var _schedWizStep    = 1;
+var _schedWizHasSM   = false;
 
 async function loadSchedules() {
   try {
     var rows = await apiFetch('schedules');
     _schedulesCache = rows;
-    var tbody = document.getElementById('schedulesBody');
-    if (!rows.length) {
-      tbody.innerHTML = _emptyRow(10, _svgClock, 'No schedules configured', 'Without a schedule, snapshots must be created manually. Add a schedule to automate protection.', '+ Add Schedule', 'showAddScheduleForm()');
-      return;
-    }
-    // Load VM names for all mappings
-    var vmNameMap = {};
+    _schedVmNameMap = {};
     var uniqueMids = rows.map(function(r){ return r.mapping_id; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
     await Promise.all(uniqueMids.map(async function(mid) {
       try {
         var d = await apiFetch('snapshots/vms-for-mapping?mapping_id='+encodeURIComponent(mid));
-        (d.vms||[]).forEach(function(v){ vmNameMap[v.vmid] = v.name || ''; });
+        (d.vms||[]).forEach(function(v){ _schedVmNameMap[v.vmid] = v.name || ''; });
       } catch(e) {}
     }));
-    tbody.innerHTML = rows.map(function(s) {
-      var lastRun = s.last_run_at ? fmtDate(s.last_run_at)+' '+statusBadge(s.last_run_status) : '–';
-      var vmDisplay = '<div class="vm-bubble-box">';
-      if (s.sync_vmids) {
-        vmDisplay += '<span class="badge" style="background:var(--primary);color:#fff;margin-right:4px" title="VMs are fetched from the datastore before each run">Auto</span>';
-      }
-      vmDisplay += (s.vmids||[]).map(function(id){
-        var n = vmNameMap[id];
-        return vmBadge(id, n);
-      }).join('');
-      if (s.sync_vmids && !(s.vmids||[]).length) {
-        vmDisplay += '<span style="color:var(--muted);font-size:11px">will be populated on first run</span>';
-      }
-      vmDisplay += '</div>';
-      return '<tr>' +
-        '<td><strong>'+esc(s.name)+'</strong></td>' +
-        '<td><code style="font-size:11px">'+esc(s.pve_storage_id||'')+'</code>'+(s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:10px;opacity:.6">'+esc(s.volume_name)+'</code>':'')+'</td>' +
-        '<td>'+vmDisplay+'</td>' +
-        '<td>'+esc(cronHuman(s.cron_expr))+'</td>' +
-        '<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
-        '<td>'+s.retention_count+'×</td>' +
-        '<td>'+(s.enabled?'<span class="corp-badge corp-badge-online">'+t('badge_active')+'</span>':'<span class="corp-badge corp-badge-stopped">'+t('badge_inactive')+'</span>')+'</td>' +
-        '<td style="color:var(--muted)">'+lastRun+'</td>' +
-        '<td>'+schedSmBadge(s.snapmirror)+'</td>' +
-        '<td><div class="row-actions">' +
-          '<button class="btn btn-ghost btn-sm" onclick="toggleSchedule(\''+s.id+'\','+s.enabled+')">'+(s.enabled?t('act_deactivate'):t('act_activate'))+'</button>' +
-          '<button class="btn btn-primary btn-sm" onclick="runNow(\''+s.id+'\',\''+esc(s.name)+'\')">'+t('act_run_now')+'</button>' +
-          '<button class="btn btn-ghost btn-sm" onclick="editSchedule(\''+s.id+'\')">'+t('act_edit')+'</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="deleteSchedule(\''+s.id+'\',\''+esc(s.name)+'\')">'+t('act_delete')+'</button>' +
-        '</div></td></tr>';
-    }).join('');
+    _renderSchedules();
   } catch(e) { toast(e.message,'error'); }
+}
+
+function schedFilterChanged() {
+  _schedSearch = (document.getElementById('schedSearch')||{}).value || '';
+  _renderSchedules();
+}
+
+function schedColSort(col) {
+  if (_schedSortCol === col) { _schedSortDir = -_schedSortDir; }
+  else { _schedSortCol = col; _schedSortDir = col === 'lastRun' ? -1 : 1; }
+  _renderSchedules();
+}
+
+function _renderSchedules() {
+  var tbody = document.getElementById('schedulesBody');
+  if (!tbody) return;
+  var q = (_schedSearch||'').toLowerCase();
+  var rows = _schedulesCache.filter(function(s){
+    if (!q) return true;
+    return (s.name||'').toLowerCase().indexOf(q)>=0
+      || (s.pve_storage_id||'').toLowerCase().indexOf(q)>=0
+      || (s.volume_name||'').toLowerCase().indexOf(q)>=0
+      || (s.label||'').toLowerCase().indexOf(q)>=0;
+  });
+  var col = _schedSortCol, dir = _schedSortDir;
+  rows = rows.slice().sort(function(a,b){
+    var av, bv;
+    if (col==='name'){    av=(a.name||'').toLowerCase();         bv=(b.name||'').toLowerCase();         return dir*av.localeCompare(bv); }
+    if (col==='volume'){  av=(a.pve_storage_id||'').toLowerCase(); bv=(b.pve_storage_id||'').toLowerCase(); return dir*av.localeCompare(bv); }
+    if (col==='retention') return dir*(a.retention_count-b.retention_count);
+    if (col==='status')    return dir*((a.enabled?1:0)-(b.enabled?1:0));
+    if (col==='lastRun'){ av=a.last_run_at||''; bv=b.last_run_at||''; return dir*av.localeCompare(bv); }
+    return 0;
+  });
+  if (!rows.length) {
+    tbody.innerHTML = q
+      ? _emptyRow(10, _svgClock, 'No schedules match "'+esc(q)+'".')
+      : _emptyRow(10, _svgClock, 'No schedules configured', 'Without a schedule, snapshots must be created manually. Add a schedule to automate protection.', '+ Add Schedule', 'showAddScheduleForm()');
+    return;
+  }
+  tbody.innerHTML = rows.map(function(s) {
+    var lastRun = s.last_run_at ? fmtDate(s.last_run_at)+' '+statusBadge(s.last_run_status) : '–';
+    var vmDisplay = '<div class="vm-bubble-box">';
+    if (s.sync_vmids) {
+      vmDisplay += '<span class="badge" style="background:var(--primary);color:#fff;margin-right:4px" title="VMs are fetched from the datastore before each run">Auto</span>';
+    }
+    vmDisplay += (s.vmids||[]).map(function(id){
+      return vmBadge(id, _schedVmNameMap[id]);
+    }).join('');
+    if (s.sync_vmids && !(s.vmids||[]).length) {
+      vmDisplay += '<span style="color:var(--muted);font-size:11px">will be populated on first run</span>';
+    }
+    vmDisplay += '</div>';
+    return '<tr>' +
+      '<td><strong>'+esc(s.name)+'</strong></td>' +
+      '<td><code style="font-size:11px">'+esc(s.pve_storage_id||'')+'</code>'+(s.volume_name&&s.volume_name!==s.pve_storage_id?'<br><code style="font-size:10px;opacity:.6">'+esc(s.volume_name)+'</code>':'')+'</td>' +
+      '<td>'+vmDisplay+'</td>' +
+      '<td>'+esc(cronHuman(s.cron_expr))+'</td>' +
+      '<td>'+(s.label?'<span class="corp-badge corp-badge-ha">'+esc(s.label)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td>' +
+      '<td>'+s.retention_count+'×</td>' +
+      '<td>'+(s.enabled?'<span class="corp-badge corp-badge-online">'+t('badge_active')+'</span>':'<span class="corp-badge corp-badge-stopped">'+t('badge_inactive')+'</span>')+'</td>' +
+      '<td style="color:var(--muted)">'+lastRun+'</td>' +
+      '<td>'+schedSmBadge(s.snapmirror)+'</td>' +
+      '<td><div class="row-actions">' +
+        '<button class="btn btn-ghost btn-sm" onclick="toggleSchedule(\''+s.id+'\','+s.enabled+')">'+(s.enabled?t('act_deactivate'):t('act_activate'))+'</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="runNow(\''+s.id+'\',\''+esc(s.name)+'\')">'+t('act_run_now')+'</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="editSchedule(\''+s.id+'\')">'+t('act_edit')+'</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="deleteSchedule(\''+s.id+'\',\''+esc(s.name)+'\')">'+t('act_delete')+'</button>' +
+      '</div></td></tr>';
+  }).join('');
+  ['name','volume','retention','status','lastRun'].forEach(function(c){
+    var span = document.getElementById('schs_'+c);
+    var th   = span && span.parentElement;
+    if (!span) return;
+    if (c === _schedSortCol) {
+      span.textContent = _schedSortDir === 1 ? '↑' : '↓';
+      if (th) th.classList.add('sort-active');
+    } else {
+      span.textContent = '⇅';
+      if (th) th.classList.remove('sort-active');
+    }
+  });
 }
 
 function cronHuman(expr) {
@@ -5111,13 +5109,35 @@ function schedSmBadge(sm) {
 // loadSnapMirrorRelationships() removed — SnapMirror status is now
 // shown inline in the Storage tab via loadStorageUnified().
 
+async function runDetectAndScan() {
+  var sp = document.getElementById('discoverSpinner');
+  if (sp) sp.style.display = 'inline-block';
+  try {
+    var [disc, sm] = await Promise.allSettled([
+      apiPost('discover', {}),
+      apiPost('snapmirror/scan', {}),
+    ]);
+    var msgs = [];
+    if (disc.status === 'fulfilled') {
+      var n = Object.keys((disc.value.mappings||[]).reduce(function(a,m){ a[m.volume_uuid||m.id]=1; return a; }, {})).length || disc.value.count || 0;
+      msgs.push(n + ' datastore(s) found');
+    } else { msgs.push('Detect: ' + disc.reason.message); }
+    if (sm.status === 'fulfilled') {
+      msgs.push(sm.value.found + ' SnapMirror relationship(s)');
+    } else { msgs.push('SnapMirror: ' + sm.reason.message); }
+    var hasError = disc.status === 'rejected' || sm.status === 'rejected';
+    toast(msgs.join(' · '), hasError ? 'error' : 'success');
+    loadStorageUnified();
+  } finally {
+    if (sp) sp.style.display = 'none';
+  }
+}
+
 async function scanSnapMirror() {
-  toast('Scanning SnapMirror® relationships…', 'info');
   try {
     var r = await apiPost('snapmirror/scan', {});
     toast(r.found + ' relationship(s) found' + (r.errors.length ? ' ('+r.errors.length+' error(s))' : ''), 'success');
     loadStorageUnified();
-    loadDrRelationshipSelector();
   } catch(e) { toast(e.message, 'error', e.detail); }
 }
 
@@ -5125,216 +5145,6 @@ async function smUpdateNow(relId) {
   try {
     await apiPost('snapmirror/update', {relationship_id:relId});
     toast(t('sm_update_now'), 'success');
-  } catch(e) { toast(e.message, 'error', e.detail); }
-}
-
-async function loadDrRelationshipSelector() {
-  var sel = document.getElementById('dr_relationship');
-  if (!sel) return;
-  try {
-    var rels = await apiFetch('snapmirror/relationships');
-    var matched = rels.filter(function(r){ return r.dest_endpoint_id; });
-    sel.innerHTML = '<option value=""></option>' + matched.map(function(r){
-      return '<option value="'+r.id+'">'+esc(r.source_volume)+' → '+esc(r.dest_cluster_name)+':'+esc(r.dest_volume)+'</option>';
-    }).join('');
-    document.getElementById('dr_no_ep_hint').style.display = matched.length ? 'none' : '';
-  } catch(e) {}
-}
-
-async function loadDrSecondarySnaps() {
-  var relId = document.getElementById('dr_relationship').value;
-  var sel = document.getElementById('dr_snap_name');
-  sel.innerHTML = '<option value=""></option>';
-  _drVmidReset();
-  if (!relId) return;
-  try {
-    var data = await apiFetch('snapmirror/secondary-snapshots?relationship_id='+encodeURIComponent(relId));
-    sel.innerHTML = '<option value=""></option>' + (data.snapshots||[]).map(function(s){
-      return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>';
-    }).join('');
-  } catch(e) { toast(e.message, 'error', e.detail); }
-}
-
-function _drVmidReset() {
-  var sel = document.getElementById('dr_vmid');
-  var inp = document.getElementById('dr_vmid_input');
-  var hint = document.getElementById('dr_vmid_hint');
-  sel.innerHTML = '<option value=""></option>';
-  sel.style.display = 'none';
-  inp.value = '';
-  inp.style.display = 'none';
-  hint.style.display = 'none';
-}
-
-async function loadDrSnapVmids() {
-  var relId = document.getElementById('dr_relationship').value;
-  var snap  = document.getElementById('dr_snap_name').value;
-  _drVmidReset();
-  if (!relId || !snap) return;
-  var sel  = document.getElementById('dr_vmid');
-  var inp  = document.getElementById('dr_vmid_input');
-  var hint = document.getElementById('dr_vmid_hint');
-  try {
-    var d = await apiPost('snapmirror/dr-snap-vms', {relationship_id: relId, snap_name: snap});
-    if (d.vms && d.vms.length > 0) {
-      sel.innerHTML = '<option value=""></option>' + d.vms.map(function(v){
-        var label = v.vmid + (v.name && v.name !== 'vm-'+v.vmid ? ' – '+esc(v.name) : '');
-        if (v.vm_type && v.vm_type !== 'qemu') label += ' ('+esc(v.vm_type)+')';
-        return '<option value="'+v.vmid+'">'+label+'</option>';
-      }).join('');
-      sel.style.display = '';
-    } else {
-      // No manifest data — fall back to free-text entry
-      inp.style.display = '';
-      if (d.hint) { hint.textContent = d.hint; hint.style.display = ''; }
-    }
-  } catch(e) {
-    inp.style.display = '';
-    hint.textContent = 'Could not load VMs — enter ID manually';
-    hint.style.display = '';
-  }
-}
-
-async function drEnsureExport() { return drCheckSecondary(); } // legacy alias
-
-async function drCheckSecondary() {
-  var relId = document.getElementById('dr_relationship').value;
-  if (!relId) { toast('Please select a relationship', 'error'); return; }
-  try {
-    var r = await apiPost('snapmirror/check-secondary', {relationship_id:relId});
-    toast(r.details || 'Secondary OK', 'success');
-  } catch(e) { toast(e.message, 'error', e.detail); }
-}
-
-async function startDrRestore() {
-  var relId   = document.getElementById('dr_relationship').value;
-  var snap    = document.getElementById('dr_snap_name').value;
-  var sel     = document.getElementById('dr_vmid');
-  var inp     = document.getElementById('dr_vmid_input');
-  var vmid    = (sel.style.display !== 'none' ? sel.value : inp.value) || '';
-  if (!relId || !snap || !vmid) { toast('Please fill in all fields', 'error'); return; }
-
-  // Derive mapping_id from the relationships
-  var rels;
-  try { rels = await apiFetch('snapmirror/relationships'); } catch(e) { toast(e.message,'error'); return; }
-  var rel = rels.find(function(r){ return r.id === relId; });
-  if (!rel) { toast('Relationship not found', 'error'); return; }
-
-  // Determine mapping_id via source_volume_uuid
-  var mappings;
-  try { mappings = await apiFetch('volume-mappings'); } catch(e) { mappings = []; }
-  var mapping = mappings.find(function(m){ return m.volume_uuid === rel.source_volume_uuid; });
-  if (!mapping) { toast('No volume mapping found for this volume', 'error'); return; }
-
-  /* confirm() is blocked in iframe context — proceed directly */
-  try {
-    var r = await apiPost('restore/dr-start', {
-      relationship_id: relId,
-      snap_name: snap,
-      vmid: parseInt(vmid),
-      mapping_id: mapping.id,
-    });
-    toast('DR Restore started: Job '+r.job_id, 'success');
-    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); }, 800);
-  } catch(e) { toast(e.message, 'error', e.detail); }
-}
-
-// ── DR-Clone ──────────────────────────────────────────────────────────────────
-
-async function loadDrCloneRelationshipSelector() {
-  var sel = document.getElementById('dr_clone_relationship');
-  if (!sel) return;
-  try {
-    var rels = await apiFetch('snapmirror/relationships');
-    var matched = rels.filter(function(r){ return r.dest_endpoint_id; });
-    sel.innerHTML = '<option value=""></option>' + matched.map(function(r){
-      return '<option value="'+r.id+'">'+esc(r.source_volume)+' → '+esc(r.dest_cluster_name)+':'+esc(r.dest_volume)+'</option>';
-    }).join('');
-    var hint = document.getElementById('dr_clone_no_ep_hint');
-    if (hint) hint.style.display = matched.length ? 'none' : '';
-  } catch(e) {}
-}
-
-async function loadDrCloneSnaps() {
-  var relId = document.getElementById('dr_clone_relationship').value;
-  var sel = document.getElementById('dr_clone_snap_name');
-  sel.innerHTML = '<option value=""></option>';
-  document.getElementById('dr_clone_src_vmid').innerHTML = '<option value=""></option>';
-  if (!relId) return;
-  try {
-    var data = await apiFetch('snapmirror/secondary-snapshots?relationship_id='+encodeURIComponent(relId));
-    sel.innerHTML = '<option value=""></option>' + (data.snapshots||[]).map(function(s){
-      return '<option value="'+esc(s.name)+'">'+esc(s.name)+'</option>';
-    }).join('');
-  } catch(e) { toast(e.message, 'error', e.detail); }
-  loadDrCloneVmids(relId);
-}
-
-async function loadDrCloneVmids(relId) {
-  var vmSel = document.getElementById('dr_clone_src_vmid');
-  vmSel.innerHTML = '<option value=""></option>';
-  if (!relId) return;
-  try {
-    var rels = await apiFetch('snapmirror/relationships');
-    var rel = (rels||[]).find(function(r){ return r.id === relId; });
-    if (!rel) return;
-    var mappings = await apiFetch('volume-mappings');
-    var mapping = (mappings||[]).find(function(m){ return m.volume_uuid === rel.source_volume_uuid; });
-    if (!mapping) return;
-    var d = await apiFetch('snapshots/vms-for-mapping?mapping_id='+encodeURIComponent(mapping.id));
-    vmSel.innerHTML = '<option value=""></option>' + (d.vms||[]).map(function(v){
-      return '<option value="'+v.vmid+'">'+v.vmid+' – '+esc(v.name||'')+(v.node?' ('+esc(v.node)+')':'')+'</option>';
-    }).join('');
-  } catch(e) {}
-}
-
-async function suggestDrCloneNextId() {
-  var relId = document.getElementById('dr_clone_relationship').value;
-  if (!relId) { toast(t('sm_select_rel'), 'error'); return; }
-  try {
-    var rels = await apiFetch('snapmirror/relationships');
-    var rel = rels.find(function(r){ return r.id === relId; });
-    if (!rel) return;
-    var mappings = await apiFetch('volume-mappings');
-    var mapping = mappings.find(function(m){ return m.volume_uuid === rel.source_volume_uuid; });
-    if (!mapping) { toast('No mapping found', 'error'); return; }
-    var r = await apiFetch('clone/nextid?pve_cluster_id='+encodeURIComponent(mapping.pve_cluster_id));
-    if (r.vmid) document.getElementById('dr_clone_new_vmid').value = r.vmid;
-  } catch(e) { toast(e.message, 'error', e.detail); }
-}
-
-async function startDrClone() {
-  var relId      = document.getElementById('dr_clone_relationship').value;
-  var snap       = document.getElementById('dr_clone_snap_name').value;
-  var srcVmid    = document.getElementById('dr_clone_src_vmid').value;
-  var newVmid    = document.getElementById('dr_clone_new_vmid').value;
-  var newName    = document.getElementById('dr_clone_new_name').value.trim();
-  var startAfter = document.getElementById('dr_clone_start_after').checked;
-  if (!relId || !snap || !srcVmid || !newVmid) { toast(t('msg_fill_required'), 'error'); return; }
-
-  var rels;
-  try { rels = await apiFetch('snapmirror/relationships'); } catch(e) { toast(e.message,'error'); return; }
-  var rel = rels.find(function(r){ return r.id === relId; });
-  if (!rel) { toast('Relationship not found', 'error'); return; }
-
-  var mappings;
-  try { mappings = await apiFetch('volume-mappings'); } catch(e) { mappings = []; }
-  var mapping = mappings.find(function(m){ return m.volume_uuid === rel.source_volume_uuid; });
-  if (!mapping) { toast('No volume mapping found', 'error'); return; }
-
-  /* confirm() is blocked in iframe context — proceed directly */
-  try {
-    var r = await apiPost('clone/dr-start', {
-      relationship_id: relId,
-      snap_name:       snap,
-      src_vmid:        parseInt(srcVmid),
-      new_vmid:        parseInt(newVmid),
-      new_name:        newName,
-      mapping_id:      mapping.id,
-      start_after:     startAfter,
-    });
-    toast('DR Clone started: Job '+r.job_id, 'success');
-    setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); }, 800);
   } catch(e) { toast(e.message, 'error', e.detail); }
 }
 
@@ -6236,8 +6046,7 @@ async function rcvBind() {
   try {
     var r = await api('POST', 'provisioning/recovery/bind', body);
     toast('Bind job started — see Jobs tab for progress', 'success');
-    rcvShowStep(1);
-    document.getElementById('rcvVolumeTableWrap').style.display='none';
+    hideBindWizard();
     setTimeout(function(){ document.querySelector('[data-tab="jobs"]').click(); }, 800);
   } catch(e) {
     document.getElementById('rcvBindErr').textContent = e.message||String(e);
@@ -6256,6 +6065,8 @@ function showBindWizard() {
 function hideBindWizard() {
   document.getElementById('bindWizModal').style.display = 'none';
   document.body.style.overflow = '';
+  rcvShowStep(1);
+  document.getElementById('rcvVolumeTableWrap').style.display = 'none';
 }
 
 // ── Recovery Tab — VM Import ──────────────────────────────────────────────────
@@ -6645,6 +6456,7 @@ function impResetWizard() {
 var _setupCurrentStep = 1;
 var _setupPveHosts    = [];  // cached from status call
 var _setupPkgData     = {};  // host_id → {host, packages, error}
+var _wizClusters      = [];  // cached from PegaProx cluster list
 
 function setupWizardOpen() {
   document.getElementById('setupWizardModal').style.display = '';
@@ -6724,7 +6536,7 @@ async function setupWizardInit() {
 
 function setupShowStep(n) {
   _setupCurrentStep = n;
-  for (var i = 1; i <= 5; i++) {
+  for (var i = 1; i <= 4; i++) {
     var card = document.getElementById('setupStep' + i);
     var pill = document.getElementById('spill' + i);
     if (card) card.style.display = (i === n) ? '' : 'none';
@@ -6733,135 +6545,246 @@ function setupShowStep(n) {
       if (i === n) pill.classList.add('active');
     }
   }
-  if (n === 2) wizLoadClusters();
-  if (n === 4) wizRefreshEndpoints();
+  if (n === 2) wizStep2Load();
+  if (n === 3) wizRefreshEndpoints();
 }
 
-// ── Step 2: PVE Hosts — import from PegaProx ─────────────────────────────
+// ── Step 2: PVE Hosts & Packages — unified load ──────────────────────────
 
-async function wizLoadClusters() {
-  var el = document.getElementById('wizClusterList');
+var _wizHostStatus = {};  // host.id → { ssh: {ok,error}, pkgs: {pkg:bool}|null }
+var _wizFixHostId  = null;
+
+var _WIZ_PKGS = ['nfs-common','open-iscsi','multipath-tools','lvm2','nvme-cli'];
+
+async function wizStep2Load() {
+  var el = document.getElementById('wizHostTable');
+  var sp = document.getElementById('wizStep2Spinner');
   if (!el) return;
-  el.innerHTML = '<span style="color:var(--muted);font-size:13px">Loading clusters from PegaProx…</span>';
+  el.innerHTML = '<span style="color:var(--muted);font-size:13px">Detecting hosts…</span>';
+  if (sp) sp.style.display = '';
+
+  // 1. Load clusters + import all nodes (idempotent)
   try {
-    var r = await apiFetch('setup/pve-clusters');
-    var clusters = r.clusters || [];
-    if (!clusters.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-size:13px">No clusters configured in PegaProx yet.</div>';
-      return;
+    if (!_wizClusters.length) {
+      var rc = await apiFetch('setup/pve-clusters');
+      _wizClusters = rc.clusters || [];
     }
-    var html = '';
-    clusters.forEach(function(c) {
-      html += '<div style="margin-bottom:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px">';
-      html += '<div style="font-weight:600;font-size:13px;margin-bottom:6px">🖥️ ' + esc(c.name) + ' <span style="font-weight:400;color:var(--muted);font-size:11px">(' + esc(c.host) + ':' + c.port + ')</span>';
-      if (c.error) html += ' <span class="setup-err" style="font-size:11px">⚠️ ' + esc(c.error) + '</span>';
-      html += '</div>';
-      if (c.nodes && c.nodes.length) {
-        html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-        c.nodes.forEach(function(n) {
-          var online = n.status === 'online';
-          var nodeId = 'wizNode_' + c.id + '_' + n.node;
-          html += '<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;' +
-                  'padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:var(--card)">' +
-                  '<input type="checkbox" class="wiz-node-cb" ' +
-                  'data-cluster-id="' + esc(c.id) + '" ' +
-                  'data-node="' + esc(n.node) + '" ' +
-                  (online ? 'checked' : '') + ' ' +
-                  'id="' + nodeId + '">' +
-                  '<span>' + esc(n.node) + '</span>' +
-                  (online ? '<span style="color:var(--success);font-size:10px">●</span>'
-                           : '<span style="color:var(--muted);font-size:10px">○ offline</span>') +
-                  '</label>';
-        });
-        html += '</div>';
-      } else if (!c.error) {
-        html += '<span style="color:var(--muted);font-size:12px">No nodes returned</span>';
+    await Promise.all(_wizClusters.map(async function(c) {
+      if (!c.nodes || !c.nodes.length) return;
+      var nodes = c.nodes.map(function(n) { return n.node; });
+      try { await apiPost('setup/import-pve-nodes', { cluster_id: c.id, nodes: nodes }); }
+      catch(e) { /* already imported is fine */ }
+    }));
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ Failed to load clusters: ' + esc(e.message || String(e)) + '</span>';
+    if (sp) sp.style.display = 'none';
+    return;
+  }
+
+  // 2. Load PVE host list
+  var hosts = [];
+  try {
+    hosts = await apiFetch('pve-hosts');
+    _setupPveHosts = hosts;
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ Failed to load PVE hosts: ' + esc(e.message || String(e)) + '</span>';
+    if (sp) sp.style.display = 'none';
+    return;
+  }
+
+  if (!hosts.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0">No PVE hosts found — make sure PegaProx clusters are configured.</div>';
+    if (sp) sp.style.display = 'none';
+    return;
+  }
+
+  // 3. SSH test all hosts at once
+  var sshByName = {};
+  try {
+    var sr = await apiPost('setup/test-ssh', {});
+    (sr.results || []).forEach(function(r) { sshByName[r.name] = r; });
+  } catch(e) { /* will show as unknown */ }
+
+  // 4. Package check for reachable hosts in parallel
+  var pkgById = {};
+  await Promise.all(hosts.map(async function(h) {
+    var ssh = sshByName[h.name];
+    if (ssh && !ssh.ok) { pkgById[h.id] = null; return; }
+    try {
+      var pr = await apiPost('setup/check-packages', { host_id: h.id });
+      pkgById[h.id] = pr.packages || {};
+    } catch(e) {
+      pkgById[h.id] = null;
+    }
+  }));
+
+  if (sp) sp.style.display = 'none';
+
+  // Build status map for fix dialog
+  _wizHostStatus = {};
+  hosts.forEach(function(h) {
+    _wizHostStatus[h.id] = { host: h, ssh: sshByName[h.name] || null, pkgs: pkgById[h.id] };
+  });
+
+  _wizRenderHostTable(hosts, sshByName, pkgById);
+  loadPveHosts();
+}
+
+function _wizRenderHostTable(hosts, sshByName, pkgById) {
+  var el = document.getElementById('wizHostTable');
+  if (!el) return;
+
+  var html = '<table style="border-collapse:collapse;width:100%;font-size:13px">';
+  html += '<thead><tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:2px solid var(--border)">';
+  html += '<th style="text-align:left;padding:5px 12px 5px 0;font-weight:600">Host</th>';
+  html += '<th style="text-align:left;padding:5px 8px;font-weight:600">SSH</th>';
+  html += '<th style="text-align:left;padding:5px 8px;font-weight:600">Packages</th>';
+  html += '<th style="padding:5px 0"></th>';
+  html += '</tr></thead><tbody>';
+
+  hosts.forEach(function(h) {
+    var ssh  = sshByName[h.name] || null;
+    var pkgs = pkgById[h.id];
+
+    // SSH cell
+    var sshCell;
+    if (!ssh)         sshCell = '<span style="color:var(--muted)">—</span>';
+    else if (ssh.ok)  sshCell = '<span class="setup-ok">✅ OK</span>';
+    else              sshCell = '<span class="setup-err">❌ Failed</span>';
+
+    // Packages cell
+    var pkgCell;
+    if (!ssh || !ssh.ok) {
+      pkgCell = '<span style="color:var(--muted)">—</span>';
+    } else if (pkgs === null) {
+      pkgCell = '<span style="color:var(--muted)">—</span>';
+    } else {
+      var missing = _WIZ_PKGS.filter(function(p) { return pkgs[p] === false; });
+      pkgCell = missing.length === 0
+        ? '<span class="setup-ok">✅ All present</span>'
+        : '<span class="setup-warn">⚠️ ' + missing.length + ' missing</span>';
+    }
+
+    // Action cell
+    var actionCell = '';
+    if (ssh && !ssh.ok) {
+      actionCell = '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="wizShowHostFix(' + JSON.stringify(h.id) + ')">Fix →</button>';
+    } else if (pkgs !== null) {
+      var miss2 = _WIZ_PKGS.filter(function(p) { return pkgs[p] === false; });
+      if (miss2.length) {
+        actionCell = '<button class="btn btn-warning btn-sm" style="font-size:11px" onclick="wizInstallHostPkgs(' + JSON.stringify(h.id) + ',' + JSON.stringify(miss2) + ')">Install ' + miss2.length + ' pkg' + (miss2.length > 1 ? 's' : '') + '</button>';
       }
-      html += '</div>';
-    });
-    el.innerHTML = html;
-    // Refresh already-imported list too
-    wizRefreshPveHosts();
+    }
+
+    html += '<tr style="border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:7px 12px 7px 0"><strong>' + esc(h.name) + '</strong> ' +
+            '<span style="color:var(--muted);font-size:11px">' + esc(h.host) + ':' + (h.port || 8006) + '</span></td>';
+    html += '<td style="padding:7px 8px;white-space:nowrap">' + sshCell + '</td>';
+    html += '<td style="padding:7px 8px;white-space:nowrap">' + pkgCell + '</td>';
+    html += '<td style="padding:7px 0;white-space:nowrap">' + actionCell + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function wizInstallHostPkgs(hostId, packages) {
+  var el = document.getElementById('wizPkgInstallMsg');
+  el.textContent = 'Starting install…';
+  try {
+    var r = await apiPost('setup/install-packages', { host_id: hostId, packages: packages });
+    if (r.job_id) {
+      el.innerHTML = '✅ Install job started — <a href="#" onclick="showTabByName(\'jobs\');return false">view in Jobs tab</a>';
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Failed') + '</span>';
+    }
   } catch(e) {
     el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
   }
 }
 
-async function wizImportSelectedNodes() {
-  var sp = document.getElementById('wizImportSpinner');
-  var el = document.getElementById('wizImportResult');
-  sp.style.display = '';
-  el.textContent   = '';
+// ── SSH Fix Panel ─────────────────────────────────────────────────────────
 
-  // Group checked nodes by cluster
-  var byCluster = {};
-  document.querySelectorAll('.wiz-node-cb:checked').forEach(function(cb) {
-    var cid  = cb.dataset.clusterId;
-    var node = cb.dataset.node;
-    if (!byCluster[cid]) byCluster[cid] = [];
-    byCluster[cid].push(node);
-  });
+function wizShowHostFix(hostId) {
+  _wizFixHostId = hostId;
+  var st  = _wizHostStatus[hostId] || {};
+  var h   = st.host || {};
+  var ssh = st.ssh  || {};
 
-  if (!Object.keys(byCluster).length) {
-    el.innerHTML = '<span class="setup-warn">⚠️ No nodes selected.</span>';
-    sp.style.display = 'none';
-    return;
+  var infoEl = document.getElementById('wizFixHostInfo');
+  if (infoEl) {
+    var errLine = ssh.error
+      ? '<div style="color:var(--danger);font-size:12px;margin-top:4px">Error: ' + esc(ssh.error) + '</div>'
+      : '';
+    infoEl.innerHTML = '<strong>' + esc(h.name || '') + '</strong> ' +
+      '<span style="color:var(--muted)">' + esc(h.host || '') + ':' + (h.port || 8006) + '</span>' + errLine;
   }
 
-  var imported = [], skipped = [], sshPushed = [], sshFailed = [], errors = [];
-  await Promise.all(Object.entries(byCluster).map(async function(entry) {
-    var clusterId = entry[0], nodes = entry[1];
-    try {
-      var r = await apiPost('setup/import-pve-nodes', { cluster_id: clusterId, nodes: nodes });
-      imported  = imported.concat(r.imported   || []);
-      skipped   = skipped.concat(r.skipped     || []);
-      sshPushed = sshPushed.concat(r.ssh_pushed || []);
-      sshFailed = sshFailed.concat(r.ssh_failed || []);
-    } catch(e) {
-      errors.push(e.message || String(e));
-    }
-  }));
+  var keyEl  = document.getElementById('wizFixSshKey');
+  var srcKey = document.getElementById('setupSshPubKey');
+  if (keyEl) keyEl.textContent = (srcKey && srcKey.textContent) || 'Run System Check first to generate the key.';
 
-  var parts = [];
-  if (imported.length)   parts.push('<span class="setup-ok">✅ Imported: '       + imported.map(esc).join(', ') + '</span>');
-  if (skipped.length)    parts.push('<span style="color:var(--muted)">Already present: ' + skipped.map(esc).join(', ') + '</span>');
-  if (sshPushed.length)  parts.push('<span class="setup-ok">🔑 SSH key pushed: ' + sshPushed.map(esc).join(', ') + '</span>');
-  if (sshFailed.length)  parts.push('<span class="setup-warn">⚠️ SSH key failed: ' +
-    sshFailed.map(function(f){ return esc(f.node || f) + (f.error ? ' (' + esc(f.error) + ')' : ''); }).join('; ') + '</span>');
-  if (errors.length)     parts.push('<span class="setup-err">❌ ' + errors.map(esc).join('; ') + '</span>');
-  el.innerHTML = parts.join('<br>') || '<span class="setup-ok">✅ Done.</span>';
-  sp.style.display = 'none';
-  await wizRefreshPveHosts();
-  loadPveHosts();
+  var sshRes  = document.getElementById('wizFixSshResult');
+  var pushRes = document.getElementById('wizFixPushResult');
+  var passEl  = document.getElementById('wizFixHostPass');
+  if (sshRes)  sshRes.innerHTML  = '';
+  if (pushRes) pushRes.innerHTML = '';
+  if (passEl)  passEl.value      = '';
+
+  document.getElementById('wizHostMainView').style.display = 'none';
+  document.getElementById('wizFixPanel').style.display     = '';
 }
 
-function wizShowAddPveBox() { /* kept for manual fallback — not used in main flow */ }
+function wizHideHostFix() {
+  document.getElementById('wizFixPanel').style.display     = 'none';
+  document.getElementById('wizHostMainView').style.display = '';
+}
 
-async function wizRefreshPveHosts() {
+function wizFixCopySshKey() {
+  var key = document.getElementById('wizFixSshKey').textContent;
+  if (key) navigator.clipboard.writeText(key).catch(function() {});
+}
+
+async function wizRetestHostSsh() {
+  var sp = document.getElementById('wizFixSshSpinner');
+  var el = document.getElementById('wizFixSshResult');
+  sp.style.display = '';
+  el.textContent   = '';
   try {
-    var rows = await apiFetch('pve-hosts');
-    _setupPveHosts = rows;
-    // Render already-imported host list
-    var el = document.getElementById('wizPveList');
-    if (!el) return;
-    if (!rows.length) {
-      el.innerHTML = '';
-      return;
+    var r = await apiPost('setup/test-ssh', { host_id: _wizFixHostId });
+    var result = (r.results && r.results[0]) || r;
+    if (result.ok) {
+      el.innerHTML = '<span class="setup-ok">✅ SSH OK — close this dialog and re-check all.</span>';
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ Still failing: ' + esc(result.error || 'Unknown error') + '</span>';
     }
-    var html = '<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">Imported Hosts</div>';
-    html += '<table style="border-collapse:collapse;width:100%;font-size:13px;margin-bottom:8px"><tbody>';
-    rows.forEach(function(h) {
-      html += '<tr style="border-bottom:1px solid var(--border)">' +
-        '<td style="padding:5px 10px 5px 0"><strong>' + esc(h.name) + '</strong>' +
-        '<br><span style="color:var(--muted);font-size:11px">' + esc(h.host) + ':' + (h.port||8006) + ' · ' + esc(h.username) + '</span></td>' +
-        '<td id="wizPveSsh_' + h.id + '" style="font-size:12px;color:var(--muted);padding:5px 6px">—</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table>';
-    el.innerHTML = html;
   } catch(e) {
-    var el2 = document.getElementById('wizPveList');
-    if (el2) el2.innerHTML = '<span class="setup-err">Failed to load hosts: ' + esc(e.message) + '</span>';
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
+  }
+}
+
+async function wizPushHostKey() {
+  var sp   = document.getElementById('wizFixPushSpinner');
+  var el   = document.getElementById('wizFixPushResult');
+  var pass = document.getElementById('wizFixHostPass').value;
+  if (!pass) { el.innerHTML = '<span class="setup-err">Enter the root password first.</span>'; return; }
+  sp.style.display = '';
+  el.textContent   = '';
+  try {
+    var r = await apiPost('setup/push-ssh-key', { host_id: _wizFixHostId, password: pass });
+    if (r.ok) {
+      el.innerHTML = '<span class="setup-ok">✅ ' + esc(r.message || 'Key pushed.') + ' Test SSH to verify.</span>';
+      document.getElementById('wizFixHostPass').value = '';
+    } else {
+      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Failed') + '</span>';
+    }
+  } catch(e) {
+    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
+  } finally {
+    sp.style.display = 'none';
   }
 }
 
@@ -6930,8 +6853,11 @@ async function wizAddOntapSystem() {
         : '🔑 User <code>' + esc(newUser) + '</code> already existed — endpoint updated');
       lines.push(r.ep_created ? '📝 Endpoint registered.' : '📝 Endpoint credentials updated.');
       el.innerHTML = '<span class="setup-ok">' + lines.join('<br>') + '</span>';
-      // Clear sensitive fields
+      // Clear fields so form is ready for the next system
+      document.getElementById('wiz_ep_name').value       = '';
+      document.getElementById('wiz_ep_host').value       = '';
       document.getElementById('wiz_ep_admin_pass').value = '';
+      document.getElementById('wiz_ep_pass').value       = '';
       await wizRefreshEndpoints();
       loadEndpoints();
       setupTestEndpoints();
@@ -7100,153 +7026,6 @@ async function setupCreateOntapUser() {
   }
 }
 
-// ── Step 4: SSH test + key push ───────────────────────────────────────────
-
-async function setupTestSsh() {
-  var sp = document.getElementById('setupSshSpinner');
-  var el = document.getElementById('setupSshResult');
-  sp.style.display = '';
-  el.textContent = 'Testing…';
-  try {
-    var r       = await apiPost('setup/test-ssh', {});
-    var results = r.results || [];
-    if (!results.length) {
-      el.innerHTML = '<span class="setup-warn">⚠️ No PVE hosts configured. Add one below.</span>';
-      return;
-    }
-    var html = '<table style="border-collapse:collapse;width:100%;font-size:13px"><tbody>';
-    results.forEach(function(h) {
-      var ico = h.ok ? '✅' : '❌';
-      var cls = h.ok ? 'setup-ok' : 'setup-err';
-      html += '<tr>';
-      html += '<td style="padding:3px 8px 3px 0;width:220px"><strong>' + esc(h.name) + '</strong> <span style="color:var(--muted);font-size:11px">' + esc(h.host) + '</span></td>';
-      html += '<td class="' + cls + '">' + ico + ' ' + (h.ok ? 'SSH OK' : 'Failed') + '</td>';
-      html += '<td style="color:var(--error);font-size:11px">' + esc(h.error || '') + '</td>';
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  } catch(e) {
-    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
-  } finally {
-    sp.style.display = 'none';
-  }
-}
-
-async function setupPushSshKey() {
-  var sp      = document.getElementById('setupPushSpinner');
-  var el      = document.getElementById('setupPushResult');
-  var host_id = document.getElementById('setupPushKeyHost').value;
-  var pass    = document.getElementById('setupPushKeyPass').value;
-  if (!host_id) { el.innerHTML = '<span class="setup-err">Select a host first</span>'; return; }
-  sp.style.display = '';
-  el.textContent = '';
-  try {
-    var r = await apiPost('setup/push-ssh-key', { host_id: host_id, password: pass });
-    if (r.ok) {
-      el.innerHTML = '<span class="setup-ok">✅ ' + esc(r.message) + '</span>';
-      document.getElementById('setupPushKeyPass').value = '';
-    } else {
-      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Failed') + '</span>';
-    }
-  } catch(e) {
-    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
-  } finally {
-    sp.style.display = 'none';
-  }
-}
-
-// ── Step 5: Packages ──────────────────────────────────────────────────────
-
-async function setupCheckAllPackages() {
-  var sp = document.getElementById('setupPkgCheckSpinner');
-  var el = document.getElementById('setupPkgTable');
-  sp.style.display = '';
-  el.innerHTML = 'Checking…';
-  _setupPkgData = {};
-  var hosts = _setupPveHosts;
-  if (!hosts.length) {
-    sp.style.display = 'none';
-    el.innerHTML = '<span class="setup-warn">⚠️ No PVE hosts configured.</span>';
-    return;
-  }
-  await Promise.all(hosts.map(async function(h) {
-    try {
-      var r = await apiPost('setup/check-packages', { host_id: h.id });
-      _setupPkgData[h.id] = { host: h, packages: r.packages || {} };
-    } catch(e) {
-      _setupPkgData[h.id] = { host: h, packages: {}, error: e.message || String(e) };
-    }
-  }));
-  sp.style.display = 'none';
-  _setupRenderPkgTable();
-}
-
-function _setupRenderPkgTable() {
-  var el   = document.getElementById('setupPkgTable');
-  var pkgs = ['nfs-common','open-iscsi','multipath-tools','lvm2','nvme-cli'];
-  var html = '<table style="border-collapse:collapse;width:100%;font-size:12px">';
-  html += '<thead><tr style="color:var(--muted)">';
-  html += '<th style="text-align:left;padding:4px 8px 4px 0;min-width:140px">Host</th>';
-  pkgs.forEach(function(p) { html += '<th style="padding:4px 6px;text-align:center">' + p + '</th>'; });
-  html += '<th style="padding:4px 6px">Action</th></tr></thead><tbody>';
-  Object.values(_setupPkgData).forEach(function(d) {
-    var h = d.host;
-    html += '<tr><td style="padding:4px 8px 4px 0"><strong>' + esc(h.name) + '</strong><br><span style="color:var(--muted);font-size:11px">' + esc(h.host) + '</span></td>';
-    pkgs.forEach(function(p) {
-      var ok = d.packages[p];
-      html += '<td style="text-align:center;padding:4px 6px">';
-      if (d.error)         html += '<span style="color:var(--muted)">—</span>';
-      else if (ok === undefined) html += '<span style="color:var(--muted)">?</span>';
-      else                 html += ok ? '<span class="setup-ok">✅</span>' : '<span class="setup-err">❌</span>';
-      html += '</td>';
-    });
-    var missing = pkgs.filter(function(p) { return d.packages[p] === false; });
-    html += '<td style="padding:4px 6px">';
-    if (missing.length)
-      html += '<button class="btn btn-warning btn-sm" style="font-size:11px" onclick="setupInstallForHost(' + JSON.stringify(h.id) + ',' + JSON.stringify(missing) + ')">Install ' + missing.length + ' pkg' + (missing.length > 1 ? 's' : '') + '</button>';
-    else if (d.error)
-      html += '<span class="setup-err" style="font-size:11px">SSH error</span>';
-    else
-      html += '<span class="setup-ok" style="font-size:11px">✅ All OK</span>';
-    html += '</td></tr>';
-  });
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
-async function setupInstallForHost(hostId, packages) {
-  var el = document.getElementById('setupPkgInstallResult');
-  el.textContent = 'Starting…';
-  try {
-    var r = await apiPost('setup/install-packages', { host_id: hostId, packages: packages });
-    if (r.job_id) {
-      el.innerHTML = '✅ Install job started — <a href="#" onclick="showTabByName(\'jobs\');return false">view in Jobs tab</a> (ID: <code>' + esc(r.job_id.substring(0,8)) + '…</code>)';
-    } else {
-      el.innerHTML = '<span class="setup-err">❌ ' + esc(r.error || 'Failed') + '</span>';
-    }
-  } catch(e) {
-    el.innerHTML = '<span class="setup-err">❌ ' + esc(e.message || String(e)) + '</span>';
-  }
-}
-
-async function setupInstallSelected() {
-  var el     = document.getElementById('setupPkgInstallResult');
-  var pkgs   = ['nfs-common','open-iscsi','multipath-tools','lvm2','nvme-cli'];
-  var started = 0;
-  await Promise.all(Object.values(_setupPkgData).map(async function(d) {
-    var missing = pkgs.filter(function(p) { return d.packages[p] === false; });
-    if (missing.length) {
-      try { await apiPost('setup/install-packages', { host_id: d.host.id, packages: missing }); started++; }
-      catch(e) {}
-    }
-  }));
-  if (started > 0) {
-    el.innerHTML = '✅ Started ' + started + ' install job(s) — <a href="#" onclick="showTabByName(\'jobs\');return false">view in Jobs tab</a>';
-  } else {
-    el.innerHTML = '<span style="color:var(--muted)">Nothing to install — all packages already present.</span>';
-  }
-}
 
 // helper: click a top-level nav tab by data-tab name
 function showTabByName(name) {
@@ -8003,7 +7782,7 @@ loadSnapshots();
 
     <!-- Modal header -->
     <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
-      <span style="font-size:20px;line-height:1">🚀</span>
+      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;color:var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       <span style="font-size:14px;font-weight:600">Deploy Wizard</span>
       <span style="font-size:12px;color:var(--muted)">— Initial Setup</span>
       <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:15px;padding:2px 8px;line-height:1" onclick="setupWizardClose()">✕</button>
@@ -8016,9 +7795,8 @@ loadSnapshots();
       <div style="display:flex;gap:0;margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
         <div class="setup-step-pill" id="spill1" onclick="setupShowStep(1)">① System</div>
         <div class="setup-step-pill" id="spill2" onclick="setupShowStep(2)">② PVE Hosts</div>
-        <div class="setup-step-pill" id="spill3" onclick="setupShowStep(3)">③ Packages</div>
-        <div class="setup-step-pill" id="spill4" onclick="setupShowStep(4)">④ NetApp</div>
-        <div class="setup-step-pill" id="spill5" onclick="setupShowStep(5)">⑤ Ready</div>
+        <div class="setup-step-pill" id="spill3" onclick="setupShowStep(3)">③ NetApp</div>
+        <div class="setup-step-pill" id="spill4" onclick="setupShowStep(4)">④ Ready</div>
       </div>
 
       <!-- ── Step 1: PegaProx System Check ── -->
@@ -8043,72 +7821,83 @@ loadSnapshots();
         </div>
       </div>
 
-      <!-- ── Step 2: PVE Hosts ── -->
+      <!-- ── Step 2: PVE Hosts & Packages ── -->
       <div class="card setup-step-card" id="setupStep2" style="display:none">
-        <div class="card-title">② Proxmox VE Hosts</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Your Proxmox nodes are imported from PegaProx — no need to enter them again.
-          Select the nodes to import; the SSH key is pushed automatically.
-        </p>
+        <div class="card-title">② Proxmox VE Hosts &amp; Packages</div>
 
-        <!-- Cluster + node list (loaded from PegaProx) -->
-        <div id="wizClusterList" style="margin-bottom:12px">
-          <span style="color:var(--muted);font-size:13px">Loading clusters from PegaProx…</span>
+        <!-- Main view: host table -->
+        <div id="wizHostMainView">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
+            Hosts are imported from PegaProx automatically. SSH and packages are checked on every host — use the Fix button to resolve any issues.
+          </p>
+          <div id="wizHostTable" style="margin-bottom:12px">
+            <span style="color:var(--muted);font-size:13px">Loading…</span>
+          </div>
+          <div id="wizPkgInstallMsg" style="font-size:12px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="wizStep2Load()">
+              ↻ Re-check All <span id="wizStep2Spinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:14px">
+            <button class="btn btn-ghost btn-sm" onclick="setupShowStep(1)">← Back</button>
+            <button class="btn btn-secondary btn-sm" onclick="setupShowStep(3)">Next →</button>
+          </div>
         </div>
 
-        <!-- Import button -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn btn-primary" onclick="wizImportSelectedNodes()">
-            ↓ Import Selected Nodes <span id="wizImportSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick="wizLoadClusters()">↻ Refresh</button>
-        </div>
-        <div id="wizImportResult" style="font-size:12px;margin-bottom:10px"></div>
+        <!-- Fix view: SSH troubleshoot panel (shown instead of main view) -->
+        <div id="wizFixPanel" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <button class="btn btn-ghost btn-sm" onclick="wizHideHostFix()">← Back</button>
+            <span style="font-size:13px;font-weight:600">Fix SSH Connection</span>
+          </div>
 
-        <!-- Already-imported hosts + SSH test -->
-        <div id="wizPveList" style="margin-bottom:10px"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-          <button class="btn btn-secondary" onclick="setupTestSsh()">
-            Test SSH to All <span id="setupSshSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-        </div>
-        <div id="setupSshResult" style="margin-bottom:8px"></div>
+          <!-- Host info + error -->
+          <div id="wizFixHostInfo" style="margin-bottom:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px"></div>
 
-        <div style="display:flex;justify-content:space-between;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(1)">← Back</button>
-          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(3)">Next →</button>
+          <!-- Test SSH -->
+          <div style="margin-bottom:16px">
+            <button class="btn btn-primary" onclick="wizRetestHostSsh()">
+              Test SSH
+              <span id="wizFixSshSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+            </button>
+            <div id="wizFixSshResult" style="font-size:12px;margin-top:6px"></div>
+          </div>
+
+          <!-- SSH public key -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px">SSH Public Key</div>
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px;display:flex;align-items:flex-start;gap:8px">
+              <code id="wizFixSshKey" style="font-size:10px;word-break:break-all;flex:1;color:var(--text)">—</code>
+              <button class="btn btn-ghost btn-sm" style="font-size:11px;flex-shrink:0;padding:2px 6px" onclick="wizFixCopySshKey()">📋 Copy</button>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Paste into <code>/root/.ssh/authorized_keys</code>, or use the form below to push automatically.</div>
+          </div>
+
+          <!-- Push key via password -->
+          <div>
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">Push Key via Password</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input class="form-control" id="wizFixHostPass" type="password" placeholder="root password" style="max-width:180px">
+              <button class="btn btn-secondary" onclick="wizPushHostKey()">
+                Push Key
+                <span id="wizFixPushSpinner" class="spinner" style="display:none;margin-left:4px"></span>
+              </button>
+            </div>
+            <div id="wizFixPushResult" style="font-size:12px;margin-top:6px"></div>
+          </div>
         </div>
+
       </div>
 
-      <!-- ── Step 3: PVE Packages ── -->
+      <!-- ── Step 3: NetApp ONTAP (add + create user in one go) ── -->
       <div class="card setup-step-card" id="setupStep3" style="display:none">
-        <div class="card-title">③ PVE Host Packages</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
-          Installs the required packages for each storage protocol on every PVE host.
-        </p>
-        <div id="setupPkgTable" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" onclick="setupCheckAllPackages()">
-            Check All Hosts <span id="setupPkgCheckSpinner" class="spinner" style="display:none;margin-left:4px"></span>
-          </button>
-          <button class="btn btn-secondary" onclick="setupInstallSelected()">
-            Install Selected Packages
-          </button>
-        </div>
-        <div id="setupPkgInstallResult" style="margin-top:8px;font-size:12px"></div>
-        <div style="display:flex;justify-content:space-between;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(2)">← Back</button>
-          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(4)">Next →</button>
-        </div>
-      </div>
-
-      <!-- ── Step 4: NetApp ONTAP (add + create user in one go) ── -->
-      <div class="card setup-step-card" id="setupStep4" style="display:none">
-        <div class="card-title">④ NetApp ONTAP Systems</div>
+        <div class="card-title">③ NetApp ONTAP Systems</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
           Enter the cluster management IP and your admin credentials. The wizard will
           create a dedicated <code>pegaprox</code> account on ONTAP and register
-          the system — the admin password is only used for this step and never stored.
+          the system — the admin password is only used here and never stored.
+          Add as many systems as you need (primary, secondary, DR cluster).
         </p>
 
         <!-- Already-registered endpoints -->
@@ -8176,26 +7965,27 @@ loadSnapshots();
         <div id="setupEpResult" style="margin-bottom:4px"></div>
 
         <div style="display:flex;justify-content:space-between;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(3)">← Back</button>
-          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(5)">Next →</button>
+          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(2)">← Back</button>
+          <button class="btn btn-secondary btn-sm" onclick="setupShowStep(4)">Next →</button>
         </div>
       </div>
 
-      <!-- ── Step 5: Ready ── -->
-      <div class="card setup-step-card" id="setupStep5" style="display:none">
-        <div class="card-title">⑤ Ready — Run Initial Discovery</div>
+      <!-- ── Step 4: Ready ── -->
+      <div class="card setup-step-card" id="setupStep4" style="display:none">
+        <div class="card-title">④ Ready — Run Initial Discovery</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
           Everything is configured. Run Auto-Discovery to detect datastores already present on your PVE cluster.
         </p>
         <div id="setupReadySummary" style="margin-bottom:12px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" onclick="runDiscovery(); setupWizardClose();">
-            🔍 Run Discovery &amp; Close
+          <button class="btn btn-primary" onclick="runDetectAndScan(); setupWizardClose();">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            Detect &amp; Scan — Close
           </button>
           <button class="btn btn-ghost" onclick="setupWizardClose()">Close</button>
         </div>
         <div style="display:flex;justify-content:flex-start;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(4)">← Back</button>
+          <button class="btn btn-ghost btn-sm" onclick="setupShowStep(3)">← Back</button>
         </div>
       </div>
 

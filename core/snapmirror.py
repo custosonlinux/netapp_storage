@@ -275,9 +275,15 @@ def ensure_secondary_nfs_export(db, relationship_id):
             )
 
     if not junction:
-        raise RuntimeError(
-            f"Volume '{rel['dest_volume']}' has no NFS junction path. "
-            "The volume must be mounted on the SVM."
+        junction = f"/{rel['dest_volume']}"
+        log.info(
+            f"[netapp_storage] DP volume '{rel['dest_volume']}' has no junction path "
+            f"— mounting at {junction}"
+        )
+        client.mount_volume(rel["dest_volume_uuid"], junction)
+        db.execute(
+            "UPDATE netapp_snapmirror_relationships SET dest_junction_path=? WHERE id=?",
+            (junction, rel["id"]),
         )
 
     created = False

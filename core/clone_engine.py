@@ -1492,9 +1492,10 @@ def _run_dr_clone(job_id, params, username):
 
         # ── Ensure NFS export ─────────────────────────────────────────
         jlog.log("Checking NFS export on secondary system …")
-        nfs_ip, junction_path, created = ensure_secondary_nfs_export(db, relationship_id)
-        if created:
-            jlog.log("NFS export rule created.")
+        nfs_ip, junction_path, mounted = ensure_secondary_nfs_export(db, relationship_id)
+        if mounted:
+            jlog.log(f"NFS export rule created on secondary.")
+        jlog.log(f"Secondary NFS: {nfs_ip}:{junction_path}")
         if not nfs_ip or not junction_path:
             raise RuntimeError(
                 "Secondary volume has no NFS IP or junction path. "
@@ -1527,12 +1528,16 @@ def _run_dr_clone(job_id, params, username):
             manifest = {"vms": [{"vmid": src_vmid, "disks": [], "vm_type": "qemu"}]}
             jlog.log("Manifest not found — disk files will be auto-discovered.")
 
-        vm_entry = _find_vm_in_manifest(manifest, src_vmid)
-        disks    = vm_entry.get("disks", [])
-        vm_type  = vm_entry.get("vm_type", "qemu")
+        try:
+            vm_entry = _find_vm_in_manifest(manifest, src_vmid)
+        except RuntimeError:
+            jlog.log(f"VM {src_vmid} not in manifest — trying auto-discovery …")
+            vm_entry = {"vmid": src_vmid, "disks": [], "vm_type": "qemu"}
+        disks   = vm_entry.get("disks", [])
+        vm_type = vm_entry.get("vm_type", "qemu")
 
         if not disks:
-            jlog.log("No disks in manifest — searching .snapshot directory …")
+            jlog.log("Searching .snapshot directory for disk files …")
             try:
                 out = ssh_run(
                     pve_host, pve_user, pve_pass,
@@ -1548,7 +1553,26 @@ def _run_dr_clone(job_id, params, username):
                 pass
 
         if not disks:
-            raise RuntimeError(f"No disks found for VM {src_vmid}.")
+            # Diagnostic: show which VMIDs actually exist in this snapshot
+            try:
+                diag = ssh_run(
+                    pve_host, pve_user, pve_pass,
+                    f"ls {shlex.quote(snap_base + '/images/')} 2>/dev/null | head -30",
+                    capture=True, key_material=pve_key,
+                )
+                avail = [l.strip() for l in diag.splitlines() if l.strip()]
+                if avail:
+                    jlog.log(f"VMIDs present in snapshot '{snap_name}': {', '.join(avail)}")
+                else:
+                    jlog.log(f"Snapshot '{snap_name}' contains no VM images at all — "
+                             "the snapshot may predate this VM or target the wrong volume.")
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"VM {src_vmid} has no disk files in snapshot '{snap_name}'. "
+                "Take a new snapshot on the primary to include this VM, "
+                "or check that the correct SnapMirror volume is selected."
+            )
 
         _re_set_progress(db, job_id, 25)
 
