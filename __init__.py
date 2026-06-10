@@ -127,6 +127,10 @@ def _init_db():
         # v1.1: recovery bind
         _add_column_if_missing(db, "netapp_provisioned_datastores", "imported_from",
                                "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(db, "netapp_provisioned_datastores", "snapinfo_initialized",
+                               "INTEGER NOT NULL DEFAULT 0")
+        _add_column_if_missing(db, "netapp_provisioned_datastores", "snapinfo_lv_name",
+                               "TEXT NOT NULL DEFAULT 'netapp_snapmanifest'")
 
         # v1.2: DR site SSH test log + sync password
         _add_column_if_missing(db, "netapp_dr_sites", "last_test_at",          "TEXT NOT NULL DEFAULT ''")

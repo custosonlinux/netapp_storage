@@ -1825,7 +1825,7 @@ function applyI18n() {
   </div><!-- /.content -->
 </div><!-- /.layout -->
 
-<div id="toast" class="toast" style="display:none;position:relative" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="toast" class="toast" style="display:none" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 const API = '/api/plugins/netapp_storage/api';
@@ -1843,6 +1843,14 @@ let _selectedRestoreSnap = null;  // active snapshot in the restore form
 
 // ── Toast ──────────────────────────────────────────────────────────────────
 let _toastTimer;
+function _toastHide() {
+  var el = document.getElementById('toast');
+  el.style.display = 'none';
+  if (_uiDialogDepth === 0) {
+    document.documentElement.style.overflow = '';
+    document.body.style.overflow = '';
+  }
+}
 function toast(msg, type, detail) {
   type = type || 'info';
   var el = document.getElementById('toast');
@@ -1858,11 +1866,13 @@ function toast(msg, type, detail) {
   }
   el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'
     + '<span>' + esc(msg) + detailHtml + '</span>'
-    + '<button onclick="document.getElementById(\'toast\').style.display=\'none\'" style="background:none;border:none;padding:0;cursor:pointer;font-size:15px;line-height:1;opacity:.6;flex-shrink:0;margin-top:-1px">✕</button>'
+    + '<button onclick="_toastHide()" style="background:none;border:none;padding:0;cursor:pointer;font-size:15px;line-height:1;opacity:.6;flex-shrink:0;margin-top:-1px">✕</button>'
     + '</div>';
+  document.documentElement.style.overflow = 'visible';
+  document.body.style.overflow = 'visible';
   el.style.display = 'block';
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(function(){ el.style.display = 'none'; }, isErr ? 12000 : 4500);
+  _toastTimer = setTimeout(_toastHide, isErr ? 12000 : 4500);
 }
 
 // ── API helpers ────────────────────────────────────────────────────────────
