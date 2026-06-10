@@ -2724,7 +2724,7 @@ function renderSnapshots() {
 async function createSnapshot() {
   var mapping_id  = document.getElementById('snap_mapping').value;
   var sel         = document.getElementById('snap_vmids_select');
-  var vmids       = Array.from(sel.selectedOptions).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
+  var vmids       = Array.from(sel.options).filter(function(o){ return !o.disabled && o.value; }).map(function(o){ return parseInt(o.value); }).filter(function(v){ return !isNaN(v); });
   var consistency = document.getElementById('snap_consistency').value;
   var labelEl     = document.getElementById('snap_label');
   var label       = labelEl ? labelEl.value : '';
@@ -2732,7 +2732,6 @@ async function createSnapshot() {
   var smUpdEl     = document.getElementById('snap_sm_update');
   var sm_update   = smUpdEl ? smUpdEl.checked : false;
   if (!mapping_id) { toast(t('msg_snap_mapping_req'),'error'); return; }
-  if (!vmids.length) { toast(t('msg_snap_vm_req'),'error'); return; }
   if (!name) { toast(t('msg_snap_name_req'),'error'); return; }
   try {
     await apiPost('snapshots/create', {mapping_id, vmids, consistency, label, name, snapmirror_update: sm_update});
@@ -8722,12 +8721,9 @@ loadSnapshots();
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">This snapshot covers the entire volume — <strong id="snap_blast_count">0</strong> VM(s) will be included.</div>
         <div id="snap_blast_list" style="display:flex;flex-wrap:wrap;gap:4px"></div>
       </div>
-      <div class="form-group">
-        <label><span data-i18n="lbl_vms">VMs</span> &nbsp;<button class="btn btn-ghost btn-sm" style="float:right;margin-top:-2px" onclick="selectAllVms()" data-i18n="btn_all">All</button></label>
-        <select id="snap_vmids_select" multiple size="12" style="min-height:220px">
-          <option disabled data-i18n="hint_mapping_first">Select mapping …</option>
-        </select>
-      </div>
+      <select id="snap_vmids_select" style="display:none" multiple>
+        <option disabled data-i18n="hint_mapping_first">Select mapping …</option>
+      </select>
       <div class="form-group">
         <label><span data-i18n="lbl_name">Name</span> <span style="opacity:.6" data-i18n-html="lbl_name_hint">(snapshot will be named NPP_<em>Name</em>)</span></label>
         <input id="snap_name" placeholder="e.g. before-update, test-migration">
