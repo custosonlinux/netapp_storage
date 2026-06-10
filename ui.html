@@ -2356,8 +2356,8 @@ async function deleteMapping(mappingId, storageId) {
 async function importToProvisioning(mappingId, storageId) {
   if (!await uiConfirm(
     'Add "'+storageId+'" to the managed datastores?\n\n' +
-    'The plugin will look up the ONTAP objects (iGroup, LUN, subsystem) automatically. ' +
-    'The datastore will appear as "managed" and can then be resized or removed.',
+    'The plugin will register this volume as managed. ' +
+    'It will then appear as "managed" and can be extended or removed.',
     'Add to managed', 'btn-primary')) return;
   try {
     var r = await apiPost('provisioning/datastores/import', {mapping_id: mappingId});
@@ -5420,11 +5420,15 @@ async function loadStorageUnified() {
             + (ds.size_bytes||0)+',\''+esc(ds.protocol||'')+'\')">Resize</button> '
           + '<button class="btn btn-danger btn-sm" onclick="confirmRemoveDatastore(\''+ds.id+'\',\''+esc(ds.name)+'\')">Remove</button>';
       } else {
-        var smBtn = ds.snapinfo_initialized
-          ? '<button class="btn btn-sm" style="font-size:10px;padding:2px 7px;background:var(--success);color:#000;border:none"'
-            + ' onclick="snapmanifestCheck(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Check snapmanifest">snapmanifest ✓</button> '
-          : '<button class="btn btn-sm" style="font-size:10px;padding:2px 7px;background:var(--warning);color:#000;border:none"'
-            + ' onclick="snapmanifestInit(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Setup snapmanifest">Setup snapmanifest</button> ';
+        var _isSan = ds.protocol && ds.protocol !== 'nfs';
+        var smBtn = '';
+        if (_isSan) {
+          smBtn = ds.snapinfo_initialized
+            ? '<button class="btn btn-sm" style="font-size:10px;padding:2px 7px;background:var(--success);color:#000;border:none"'
+              + ' onclick="snapmanifestCheck(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Check snapmanifest">snapmanifest ✓</button> '
+            : '<button class="btn btn-sm" style="font-size:10px;padding:2px 7px;background:var(--warning);color:#000;border:none"'
+              + ' onclick="snapmanifestInit(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')" title="Setup snapmanifest">Setup snapmanifest</button> ';
+        }
         actions = smBtn
           + '<button class="btn btn-ghost btn-sm"'
             + ' onclick="importToProvisioning(\''+esc(ds.mapping_id)+'\',\''+esc(ds.name)+'\')"'
@@ -5470,7 +5474,7 @@ function showProvWizard() {
   var r=document.querySelector('input[name="provProto"][value="iscsi"]');
   if(r) r.checked=true;
   provProtoChange();
-  document.getElementById('provWizModal').style.display = '';
+  document.getElementById('provWizModal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
   loadProvEndpoints();
 }
@@ -6222,7 +6226,7 @@ async function rcvBind() {
 // ── Provisioning Tab — Bind Wizard toggle ────────────────────────────────────
 
 function showBindWizard() {
-  document.getElementById('bindWizModal').style.display = '';
+  document.getElementById('bindWizModal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
   rcvLoadEndpoints();
 }
@@ -8177,7 +8181,7 @@ loadSnapshots();
 </div><!-- /setupWizardModal -->
 
 <!-- ── Provision New Datastore Modal ─────────────────────────────── -->
-<div id="provWizModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="provWizBackdropClick(event)">
+<div id="provWizModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center" onclick="provWizBackdropClick(event)">
   <div style="max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700">📦 Provision New Datastore</div>
@@ -8403,7 +8407,7 @@ loadSnapshots();
 </div><!-- /provWizModal -->
 
 <!-- ── Mount existing Datastore Modal ─────────────────────────────── -->
-<div id="bindWizModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto" onclick="bindWizBackdropClick(event)">
+<div id="bindWizModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;padding:24px 16px;overflow-y:auto;align-items:flex-start;justify-content:center" onclick="bindWizBackdropClick(event)">
   <div style="max-width:700px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg)">
       <div style="font-size:16px;font-weight:700">⇢ Mount existing Datastore</div>
