@@ -36,7 +36,7 @@
   }
 
   /* ── Layout ─────────────────────────────────────────────────── */
-  .layout { display: flex; flex-direction: column; height: 100vh; }
+  .layout { display: flex; flex-direction: column; height: 100vh; position: relative; }
 
   /* ── Sub-tabs (matching PegaProx rounded-tab style) ─────────── */
   .subtabs {
@@ -1891,10 +1891,14 @@ async function api(method, path, body) {
 }
 
 // confirm() and alert() are blocked in iframe context — use inline modals instead.
+function _uiOverlayRoot() {
+  return document.querySelector('.layout') || document.body;
+}
 function uiConfirm(msg, okLabel, okClass) {
   return new Promise(function(resolve) {
+    var root = _uiOverlayRoot();
     var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
+    overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
     var box = document.createElement('div');
     box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:280px;max-width:460px;word-break:break-word';
     box.innerHTML = '<div style="margin-bottom:16px;white-space:pre-line">'+esc(msg)+'</div>'
@@ -1902,8 +1906,8 @@ function uiConfirm(msg, okLabel, okClass) {
       + '<button class="_uc-cancel btn btn-ghost">Cancel</button>'
       + '<button class="_uc-ok btn '+(okClass||'btn-danger')+'">'+(okLabel||'OK')+'</button></div>';
     overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    function done(v){ document.body.removeChild(overlay); resolve(v); }
+    root.appendChild(overlay);
+    function done(v){ root.removeChild(overlay); resolve(v); }
     box.querySelector('._uc-cancel').onclick = function(){ done(false); };
     box.querySelector('._uc-ok').onclick     = function(){ done(true); };
     overlay.addEventListener('keydown', function(ev){ if(ev.key==='Escape') done(false); });
@@ -1911,10 +1915,10 @@ function uiConfirm(msg, okLabel, okClass) {
   });
 }
 function uiConfirmDanger(msg, confirmLabel) {
-  /* Like uiConfirm but with Yes/No buttons and a required safety checkbox. */
   return new Promise(function(resolve) {
+    var root = _uiOverlayRoot();
     var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
+    overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
     var box = document.createElement('div');
     box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:300px;max-width:480px;word-break:break-word';
     var cbId = 'uiCd_' + Math.random().toString(36).slice(2);
@@ -1927,8 +1931,8 @@ function uiConfirmDanger(msg, confirmLabel) {
       + '<button class="_ucd-no btn btn-ghost">No</button>'
       + '<button class="_ucd-yes btn btn-danger" id="'+cbId+'ok" disabled>Yes</button></div>';
     overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    function done(v){ document.body.removeChild(overlay); resolve(v); }
+    root.appendChild(overlay);
+    function done(v){ root.removeChild(overlay); resolve(v); }
     box.querySelector('._ucd-no').onclick  = function(){ done(false); };
     box.querySelector('._ucd-yes').onclick = function(){ done(true); };
     overlay.addEventListener('keydown', function(ev){ if(ev.key==='Escape') done(false); });
@@ -1936,16 +1940,17 @@ function uiConfirmDanger(msg, confirmLabel) {
 }
 function uiAlert(msg) {
   return new Promise(function(resolve) {
+    var root = _uiOverlayRoot();
     var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
+    overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:9500;display:flex;align-items:center;justify-content:center';
     var box = document.createElement('div');
     box.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:280px;max-width:460px;word-break:break-word';
     box.innerHTML = '<div style="margin-bottom:16px;white-space:pre-line">'+esc(msg)+'</div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
       + '<button class="_ua-ok btn btn-primary">OK</button></div>';
     overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    function done(){ document.body.removeChild(overlay); resolve(); }
+    root.appendChild(overlay);
+    function done(){ root.removeChild(overlay); resolve(); }
     box.querySelector('._ua-ok').onclick = done;
     overlay.addEventListener('keydown', function(ev){ if(ev.key==='Escape'||ev.key==='Enter') done(); });
     setTimeout(function(){ box.querySelector('._ua-ok').focus(); }, 50);
